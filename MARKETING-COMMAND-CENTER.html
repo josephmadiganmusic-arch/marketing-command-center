@@ -395,6 +395,11 @@
     .header .container .logo { font-size: 16px; gap: 8px !important; }
     .header .container .logo img { height: 36px !important; }
     .badge { font-size: 9px; letter-spacing: 1.5px; }
+    /* Gamification responsive */
+    #achStatsGrid { grid-template-columns: repeat(2, 1fr) !important; }
+    #achBadgesGrid { grid-template-columns: repeat(2, 1fr) !important; }
+    #achLevelRoadmap { grid-template-columns: repeat(3, 1fr) !important; }
+    #xpHeaderBar > div:nth-child(2) { width: 60px !important; }
 
     /* Tabs — scroll indicator gradient */
     .tabs { margin: 20px 0; position: relative; }
@@ -1112,18 +1117,6 @@
           </select>
           <button class="btn-save" onclick="egDeleteSavedRelease()" title="Delete selected">Delete</button>
         </div>
-        <div class="template-bar">
-          <span style="font-size:12px;color:#555;align-self:center;margin-right:4px;">Theme:</span>
-          <button class="template-btn active" data-theme="dark" onclick="egSetTheme('dark',this)">Cosmic Night</button>
-          <button class="template-btn" data-theme="light" onclick="egSetTheme('light',this)">Clean White</button>
-          <button class="template-btn" data-theme="blue" onclick="egSetTheme('blue',this)">Midnight Blue</button>
-          <button class="template-btn" data-theme="royal" onclick="egSetTheme('royal',this)">Royal Purple</button>
-          <button class="template-btn" data-theme="fire" onclick="egSetTheme('fire',this)">Ember</button>
-          <button class="template-btn" data-theme="emerald" onclick="egSetTheme('emerald',this)">Emerald</button>
-          <button class="template-btn" data-theme="cream" onclick="egSetTheme('cream',this)">Warm Cream</button>
-          <button class="template-btn" data-theme="slate" onclick="egSetTheme('slate',this)">Slate Indigo</button>
-          <button class="template-btn" data-theme="rose" onclick="egSetTheme('rose',this)">Neon Rose</button>
-        </div>
         <form id="egReleaseForm" onsubmit="return false;">
           <div class="form-section">
             <div class="form-section-title">Cover Art</div>
@@ -1261,6 +1254,18 @@ This track is a powerful declaration of faith. I would be honored if you would c
         </form>
       </div>
       <div class="eg-preview-panel" id="egPreviewPanel">
+        <div class="template-bar" style="margin-bottom:12px;">
+          <span style="font-size:12px;color:#555;align-self:center;margin-right:4px;">Theme:</span>
+          <button class="template-btn active" data-theme="dark" onclick="egSetTheme('dark',this)">Cosmic Night</button>
+          <button class="template-btn" data-theme="light" onclick="egSetTheme('light',this)">Clean White</button>
+          <button class="template-btn" data-theme="blue" onclick="egSetTheme('blue',this)">Midnight Blue</button>
+          <button class="template-btn" data-theme="royal" onclick="egSetTheme('royal',this)">Royal Purple</button>
+          <button class="template-btn" data-theme="fire" onclick="egSetTheme('fire',this)">Ember</button>
+          <button class="template-btn" data-theme="emerald" onclick="egSetTheme('emerald',this)">Emerald</button>
+          <button class="template-btn" data-theme="cream" onclick="egSetTheme('cream',this)">Warm Cream</button>
+          <button class="template-btn" data-theme="slate" onclick="egSetTheme('slate',this)">Slate Indigo</button>
+          <button class="template-btn" data-theme="rose" onclick="egSetTheme('rose',this)">Neon Rose</button>
+        </div>
         <div id="egGmailCopyBar" style="display:none;margin-bottom:16px;padding:16px;background:rgba(123,47,247,0.08);border:1px solid rgba(123,47,247,0.25);border-radius:10px;text-align:center;">
           <button onclick="egCopyForGmail()" style="width:100%;padding:18px 24px;background:var(--gradient-primary);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;letter-spacing:1px;transition:all 0.3s;min-height:52px;" onmouseover="this.style.boxShadow='0 6px 30px rgba(123,47,247,0.5)'" onmouseout="this.style.boxShadow='none'">COPY FOR GMAIL</button>
           <p style="margin:10px 0 0;font-size:13px;color:#888;line-height:1.5;">Click the button above, then open Gmail, click Compose, and paste (Ctrl+V / Cmd+V). Done!</p>
@@ -1823,6 +1828,9 @@ const TRIAL_DAYS = parseInt('%%TRIAL_DAYS%%', 10) || 0;
 const SUB_STATUS = '%%SUB_STATUS%%';
 const USER_EMAIL = '%%USER_EMAIL%%';
 
+// HTML-escape utility
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 // Scope localStorage per user — prefixes all keys with user ID
 function ukey(key) { return 'u' + USER_ID + '_' + key; }
 
@@ -2210,7 +2218,7 @@ let campaignGenerated = false;
 
 function lockTabs() {
   document.querySelectorAll('#mainTabs .tab').forEach((t, i) => {
-    if (panelNames[i] !== 'intake') t.classList.add('locked');
+    if (panelNames[i] !== 'intake' && panelNames[i] !== 'achievements') t.classList.add('locked');
   });
 }
 function unlockTabs() {
@@ -2252,6 +2260,7 @@ function copyText(text, btn) {
     btn.textContent = 'Copied!';
     btn.classList.add('copied');
     setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
+    awardXP('content_copy');
   });
 }
 
@@ -3453,6 +3462,7 @@ function egGenerateEmail() {
     document.getElementById('egPreviewPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 100);
   showToast('Email generated! Copy it for Gmail below.');
+  awardXP('email_generate');
 }
 
 function egCopyForGmail() {
@@ -3691,6 +3701,7 @@ function aiCopyText(text, btn) {
     btn.textContent = 'Copied!'; btn.classList.add('copied');
     setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
     showToast('Copied to clipboard!');
+    awardXP('content_copy');
   });
 }
 
@@ -3902,6 +3913,7 @@ async function runResearch(action) {
       analysis.replace(/## (.*)/g, '<h3 style="color:#00d4ff;margin:16px 0 8px;">$1</h3>')
               .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fff;">$1</strong>')
               .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#00d4ff;">$1</a>');
+    awardXP('research_run');
   } catch(err) {
     results.innerHTML = `<div style="color:#ff6b6b;">Error: ${err.message}</div>`;
     if (err.message.includes('not configured')) {
@@ -3932,7 +3944,7 @@ async function runAiAction(action) {
   loadingEl.classList.add('active'); resultsEl.innerHTML = '';
   const submitBtn = loadingEl.previousElementSibling;
   if(submitBtn && submitBtn.classList.contains('ai-submit-btn')) submitBtn.disabled = true;
-  try { const result = await callClaude(userPrompt); renderAiResults('aiResults-'+action,result); }
+  try { const result = await callClaude(userPrompt); renderAiResults('aiResults-'+action,result); awardXP('research_run'); }
   catch(err) { resultsEl.innerHTML = `<div class="ai-result-card" style="border-color:#ff4444;"><p style="color:#ff4444;">Error: ${err.message}</p></div>`; }
   finally { loadingEl.classList.remove('active'); if(submitBtn && submitBtn.classList.contains('ai-submit-btn')) submitBtn.disabled=false; }
 }
