@@ -360,7 +360,7 @@
     <div style="display:flex;align-items:center;gap:16px;">
       <div id="trialBanner" style="display:none;"></div>
       <div class="badge">Release Management</div>
-      <button onclick="fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);padding:6px 14px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--accent-1)';this.style.color='var(--accent-2)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">Logout</button>
+      <button onclick="doLogout()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);padding:6px 14px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--accent-1)';this.style.color='var(--accent-2)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">Logout</button>
     </div>
   </div>
 </header>
@@ -1920,6 +1920,30 @@ function intakeGetData() {
 
 let _autosaveTimer = null;
 let _namedSaveTimer = null;
+
+// Force-save all intake data immediately (no debounce)
+function intakeForceFlush() {
+  try {
+    const d = intakeGetData();
+    const slim = Object.assign({}, d, { coverArt: null });
+    localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
+    saveArtistProfile();
+    // Save to named releases if title is valid
+    if (d.songTitle && d.songTitle.length >= 3) {
+      const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+      saved[d.songTitle] = slim;
+      localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
+    }
+  } catch(e) {}
+}
+
+function doLogout() {
+  intakeForceFlush();
+  fetch('/api/logout', { method: 'POST' }).then(() => location.href = '/login');
+}
+
+// Save on page close / refresh / navigate away
+window.addEventListener('beforeunload', intakeForceFlush);
 
 // ============================
 // ARTIST PROFILE — sticky fields that carry over between releases
@@ -4543,7 +4567,7 @@ function showSubscriptionGate() {
       <h2 style="font-size:26px;font-weight:800;color:#fff;margin-bottom:12px;">Your Trial Has Ended</h2>
       <p style="color:#6b7094;font-size:15px;line-height:1.6;margin-bottom:32px;">Subscribe to Rollout Heaven to continue using all release management tools, AI features, and research capabilities.</p>
       <a href="/subscribe" style="display:inline-block;padding:14px 40px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-size:16px;font-weight:700;border-radius:10px;text-decoration:none;transition:all 0.3s;box-shadow:0 0 20px rgba(123,47,247,0.3);">Upgrade Now</a>
-      <p style="margin-top:16px;"><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login');return false;" style="color:#6b7094;font-size:13px;text-decoration:underline;">Log out</a></p>
+      <p style="margin-top:16px;"><a href="#" onclick="doLogout();return false;" style="color:#6b7094;font-size:13px;text-decoration:underline;">Log out</a></p>
     </div>
   `;
   document.body.appendChild(overlay);
