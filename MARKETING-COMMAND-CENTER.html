@@ -355,6 +355,7 @@
         <option value="">-- Load Saved Release --</option>
       </select>
       <button class="btn-intake-action" onclick="intakeDelete()">Delete</button>
+      <button class="btn-intake-action" onclick="intakeCleanupSaves()">Cleanup Saves</button>
       <button class="btn-intake-action" onclick="intakeClear()">Clear Form</button>
     </div>
     <div class="intake-form-area">
@@ -1748,6 +1749,7 @@ function intakeGetData() {
 }
 
 let _autosaveTimer = null;
+let _namedSaveTimer = null;
 
 async function generateEmailIntro(btn) {
   const d = intakeGetData();
@@ -1907,31 +1909,29 @@ function intakeUpdate() {
   setSum('label', d.label);
   setSum('splits', splitList);
 
-  // Autosave — debounce 500ms so we don't hammer localStorage on every keystroke
+  // Autosave working data — debounce 500ms
   clearTimeout(_autosaveTimer);
-  _autosaveTimer = setTimeout(() => intakeAutosave(d), 500);
-}
+  _autosaveTimer = setTimeout(() => {
+    if (!d) d = intakeGetData();
+    try {
+      localStorage.setItem('release_data', JSON.stringify(d));
+    } catch(e) {
+      const slim = Object.assign({}, d, { coverArt: null });
+      try { localStorage.setItem('release_data', JSON.stringify(slim)); } catch(e2) {}
+    }
+  }, 500);
 
-function intakeAutosave(d) {
-  if (!d) d = intakeGetData();
-  try {
-    // Save current working release (with cover art)
-    localStorage.setItem('release_data', JSON.stringify(d));
-  } catch(e) {
-    // If even this fails, try without cover art
-    const slim = Object.assign({}, d, { coverArt: null });
-    try { localStorage.setItem('release_data', JSON.stringify(slim)); } catch(e2) {}
-  }
-  // Save to named releases list WITHOUT cover art to avoid quota
-  if (d.songTitle) {
+  // Save to named releases list — debounce 5 seconds so partial titles don't create junk entries
+  clearTimeout(_namedSaveTimer);
+  _namedSaveTimer = setTimeout(() => {
+    const data = intakeGetData();
+    if (!data.songTitle || data.songTitle.length < 3) return;
     const saved = JSON.parse(localStorage.getItem('release_data_all') || '{}');
-    const toSave = Object.assign({}, d, { coverArt: null });
-    saved[d.songTitle] = toSave;
+    const toSave = Object.assign({}, data, { coverArt: null });
+    saved[data.songTitle] = toSave;
     try {
       localStorage.setItem('release_data_all', JSON.stringify(saved));
     } catch(e) {
-      // Still over quota — try clearing old releases
-      console.warn('Storage quota exceeded, trimming old releases');
       const keys = Object.keys(saved);
       if (keys.length > 5) {
         keys.slice(0, keys.length - 5).forEach(k => delete saved[k]);
@@ -1940,8 +1940,8 @@ function intakeAutosave(d) {
     }
     intakeLoadList();
     const sel = document.getElementById('intakeReleaseSelect');
-    if (sel) sel.value = d.songTitle;
-  }
+    if (sel) sel.value = data.songTitle;
+  }, 5000);
 }
 
 function intakeCopyField(key, btn) {
@@ -2084,6 +2084,28 @@ function intakeDelete() {
   localStorage.setItem('release_data_all', JSON.stringify(saved));
   intakeLoadList();
   showToast('Release deleted');
+}
+
+function intakeCleanupSaves() {
+  const saved = JSON.parse(localStorage.getItem('release_data_all') || '{}');
+  const keys = Object.keys(saved);
+  if (!keys.length) { showToast('No saved releases'); return; }
+  // Remove entries with titles under 3 chars or that look like partial typing
+  let removed = 0;
+  keys.forEach(k => {
+    if (k.length < 3) { delete saved[k]; removed++; }
+  });
+  // Also find groups of incrementally typed titles and keep only the longest
+  const remaining = Object.keys(saved).sort();
+  for (let i = 0; i < remaining.length - 1; i++) {
+    if (remaining[i+1].startsWith(remaining[i]) && remaining[i].length < remaining[i+1].length) {
+      delete saved[remaining[i]];
+      removed++;
+    }
+  }
+  localStorage.setItem('release_data_all', JSON.stringify(saved));
+  intakeLoadList();
+  showToast(removed > 0 ? `Cleaned up ${removed} junk entries` : 'No junk entries found');
 }
 
 function intakeClear() {
