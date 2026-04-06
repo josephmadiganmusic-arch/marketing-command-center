@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- v2.1 Mobile + Gmail Copy -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -711,6 +712,14 @@
   <div class="container">
     <div class="logo" style="display:flex;align-items:center;gap:12px;"><img src="/logo.png" alt="Rollout Heaven" style="height:44px;width:auto;filter:drop-shadow(0 0 8px rgba(123,47,247,0.3));">ROLLOUT <span>HEAVEN</span></div>
     <div style="display:flex;align-items:center;gap:16px;">
+      <div id="xpHeaderBar" style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="showPanel('achievements')" title="View Achievements">
+        <div id="xpHeaderLevel" style="background:var(--gradient-primary);color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:12px;white-space:nowrap;">LVL 1</div>
+        <div style="position:relative;width:100px;height:8px;background:var(--bg-input);border-radius:4px;border:1px solid var(--border);overflow:hidden;">
+          <div id="xpHeaderFill" style="height:100%;background:var(--gradient-primary);border-radius:4px;width:0%;transition:width 0.8s ease;"></div>
+        </div>
+        <div id="xpHeaderXP" style="font-size:11px;color:var(--text-dim);font-weight:600;white-space:nowrap;">0 XP</div>
+        <div id="xpHeaderStreak" style="font-size:13px;white-space:nowrap;display:none;">🔥<span id="xpStreakNum" style="font-size:11px;font-weight:700;color:#ffd700;">0</span></div>
+      </div>
       <div id="trialBanner" style="display:none;"></div>
       <div class="badge">Release Management</div>
       <button onclick="doLogout()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);padding:6px 14px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--accent-1)';this.style.color='var(--accent-2)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">Logout</button>
@@ -728,6 +737,7 @@
     <button class="tab" onclick="showPanel('calendar')">Calendar</button>
     <button class="tab" onclick="showPanel('checklist')">Action Items</button>
     <button class="tab" onclick="showPanel('claudeai')">Music Agent Pro</button>
+    <button class="tab" onclick="showPanel('achievements')" style="background:none;border:none;position:relative;"><span style="position:relative;">Achievements</span></button>
     <button class="tab" id="adminTab" style="display:none;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;font-weight:700;" onclick="showPanel('admin')">Master Admin</button>
   </div>
 
@@ -1571,6 +1581,72 @@ This track is a powerful declaration of faith. I would be honored if you would c
     <div id="aiResultsArea"></div>
   </div><!-- end panel-claudeai -->
 
+  <!-- ACHIEVEMENTS TAB -->
+  <div class="panel" id="panel-achievements">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+      <h2>Achievements</h2>
+      <div id="achLevelBadge" style="display:flex;align-items:center;gap:12px;">
+        <span id="achLevelIcon" style="font-size:32px;">🚀</span>
+        <div>
+          <div style="font-size:20px;font-weight:800;color:#fff;" id="achLevelTitle">Level 1</div>
+          <div style="font-size:13px;color:var(--accent-2);font-weight:600;" id="achLevelName">Newcomer</div>
+        </div>
+      </div>
+    </div>
+    <p class="subtitle">Track your progress, earn XP, unlock badges, and level up your release game.</p>
+
+    <!-- XP Progress Bar (large) -->
+    <div class="section" style="position:relative;overflow:hidden;">
+      <div class="section-title">Experience Points</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:28px;font-weight:800;background:var(--gradient-primary);-webkit-background-clip:text;-webkit-text-fill-color:transparent;" id="achTotalXP">0 XP</span>
+        <span style="font-size:13px;color:var(--text-dim);" id="achXPToNext">0 / 100 XP to next level</span>
+      </div>
+      <div style="position:relative;height:16px;background:var(--bg-input);border-radius:8px;border:1px solid var(--border);overflow:hidden;">
+        <div id="achXPBar" style="height:100%;background:var(--gradient-primary);border-radius:8px;width:0%;transition:width 1s ease;position:relative;">
+          <div style="position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent);animation:shimmer 2s infinite;background-size:200% 100%;"></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;">
+        <span style="font-size:11px;color:var(--text-dim);" id="achLevelCurrent">Level 1</span>
+        <span style="font-size:11px;color:var(--text-dim);" id="achLevelNext">Level 2</span>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stat-grid" id="achStatsGrid" style="grid-template-columns:repeat(4,1fr);">
+      <div class="stat-card"><div class="num" id="achStatStreak">0</div><div class="label">🔥 Day Streak</div></div>
+      <div class="stat-card"><div class="num" id="achStatTasks">0</div><div class="label">✅ Tasks Done</div></div>
+      <div class="stat-card"><div class="num" id="achStatCampaigns">0</div><div class="label">🎯 Campaigns</div></div>
+      <div class="stat-card"><div class="num" id="achStatResearch">0</div><div class="label">🔍 Researches</div></div>
+      <div class="stat-card"><div class="num" id="achStatEmails">0</div><div class="label">📧 Emails</div></div>
+      <div class="stat-card"><div class="num" id="achStatPlaylists">0</div><div class="label">🎵 Playlists</div></div>
+      <div class="stat-card"><div class="num" id="achStatContent">0</div><div class="label">📝 Content</div></div>
+      <div class="stat-card"><div class="num" id="achStatLogins">0</div><div class="label">📅 Logins</div></div>
+    </div>
+
+    <!-- Achievement Badges -->
+    <div class="section">
+      <div class="section-title">Badges</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;" id="achCategoryFilter">
+        <button class="template-btn active" onclick="filterAchievements('all',this)">All</button>
+      </div>
+      <div id="achBadgesGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;"></div>
+    </div>
+
+    <!-- Recent XP Activity -->
+    <div class="section">
+      <div class="section-title">Recent Activity</div>
+      <div id="achRecentXP" style="max-height:300px;overflow-y:auto;"></div>
+    </div>
+
+    <!-- Level Roadmap -->
+    <div class="section">
+      <div class="section-title">Level Roadmap</div>
+      <div id="achLevelRoadmap" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;"></div>
+    </div>
+  </div>
+
   <!-- MASTER ADMIN TAB (admin only) -->
   <div class="panel" id="panel-admin">
     <h2>Master Admin</h2>
@@ -2107,7 +2183,7 @@ const regPlatforms = [
 // ============================
 // CORE UI
 // ============================
-const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','admin'];
+const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','admin'];
 let campaignGenerated = false;
 
 function lockTabs() {
