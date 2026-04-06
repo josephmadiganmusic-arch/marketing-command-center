@@ -1228,13 +1228,16 @@ This track is a powerful declaration of faith. I would be honored if you would c
           </div>
         </form>
       </div>
-      <div class="eg-preview-panel" onclick="egOpenFullscreen()">
-        <div class="preview-hint">Click for Full Screen Preview</div>
+      <div class="eg-preview-panel" id="egPreviewPanel">
+        <div id="egGmailCopyBar" style="display:none;margin-bottom:16px;padding:16px;background:rgba(123,47,247,0.08);border:1px solid rgba(123,47,247,0.25);border-radius:10px;text-align:center;">
+          <button onclick="egCopyForGmail()" style="width:100%;padding:18px 24px;background:var(--gradient-primary);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;letter-spacing:1px;transition:all 0.3s;min-height:52px;" onmouseover="this.style.boxShadow='0 6px 30px rgba(123,47,247,0.5)'" onmouseout="this.style.boxShadow='none'">COPY FOR GMAIL</button>
+          <p style="margin:10px 0 0;font-size:13px;color:#888;line-height:1.5;">Click the button above, then open Gmail, click Compose, and paste (Ctrl+V / Cmd+V). Done!</p>
+        </div>
         <div class="preview-header">
           <span class="preview-title">Live Preview</span>
           <div class="preview-tabs">
-            <button class="preview-tab active" onclick="event.stopPropagation();egShowPreview('visual',this)">Visual</button>
-            <button class="preview-tab" onclick="event.stopPropagation();egShowPreview('code',this)">HTML Code</button>
+            <button class="preview-tab active" onclick="egShowPreview('visual',this)">Visual</button>
+            <button class="preview-tab" onclick="egShowPreview('code',this)">HTML Code</button>
           </div>
         </div>
         <div class="preview-frame-wrap">
@@ -1245,28 +1248,8 @@ This track is a powerful declaration of faith. I would be honored if you would c
     </div>
   </div><!-- end panel-emailgen -->
 
-  <!-- Email Fullscreen Preview Modal -->
-  <div class="eg-fullscreen-overlay" id="egFullscreenOverlay" onclick="if(event.target===this)egCloseFullscreen()">
-    <div class="eg-fullscreen-bar">
-      <button class="theme-pill active" data-theme="dark" onclick="egFullscreenTheme('dark',this)">Dark Gold</button>
-      <button class="theme-pill" data-theme="light" onclick="egFullscreenTheme('light',this)">Clean White</button>
-      <button class="theme-pill" data-theme="blue" onclick="egFullscreenTheme('blue',this)">Midnight Blue</button>
-      <button class="theme-pill" data-theme="royal" onclick="egFullscreenTheme('royal',this)">Royal Purple</button>
-      <button class="theme-pill" data-theme="fire" onclick="egFullscreenTheme('fire',this)">Ember</button>
-      <button class="theme-pill" data-theme="emerald" onclick="egFullscreenTheme('emerald',this)">Emerald</button>
-      <button class="theme-pill" data-theme="cream" onclick="egFullscreenTheme('cream',this)">Warm Cream</button>
-      <button class="theme-pill" data-theme="slate" onclick="egFullscreenTheme('slate',this)">Slate Indigo</button>
-      <button class="theme-pill" data-theme="rose" onclick="egFullscreenTheme('rose',this)">Neon Rose</button>
-      <div class="eg-fullscreen-actions">
-        <button class="eg-fullscreen-copy" onclick="egCopyHTML();showToast('HTML copied!')">Copy HTML</button>
-        <button class="eg-fullscreen-close" onclick="egCloseFullscreen()">Close</button>
-      </div>
-    </div>
-    <div class="eg-fullscreen-instructions" style="width:100%;padding:10px 20px;background:rgba(123,47,247,0.08);border-bottom:1px solid rgba(123,47,247,0.2);text-align:center;font-size:13px;color:#ccc;line-height:1.6;">
-      Click inside the preview below, then <strong style="color:#00d4ff;">Ctrl+A</strong> (Windows) or <strong style="color:#00d4ff;">Cmd+A</strong> (Mac) to select all, then <strong style="color:#00d4ff;">Ctrl+C</strong> / <strong style="color:#00d4ff;">Cmd+C</strong> to copy. Paste directly into Gmail Compose.
-    </div>
-    <iframe class="eg-fullscreen-frame" id="egFullscreenFrame"></iframe>
-  </div>
+  <!-- Hidden container for Gmail rich-text copy -->
+  <div id="egGmailCopyContainer" style="position:fixed;left:-9999px;top:0;"></div>
 
   <!-- OUTREACH -->
   <div class="panel" id="panel-outreach">
@@ -3360,40 +3343,42 @@ function egGenerateEmail() {
   const doc = frame.contentDocument||frame.contentWindow.document;
   doc.open(); doc.write(egGeneratedHTML); doc.close();
   document.getElementById('egCodeContent').textContent = egGeneratedHTML;
-  showToast('Email generated!');
-  // Auto-open fullscreen preview
-  egOpenFullscreen();
+
+  // Show the Copy for Gmail bar and scroll user to it
+  document.getElementById('egGmailCopyBar').style.display = 'block';
+  setTimeout(() => {
+    document.getElementById('egPreviewPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+  showToast('Email generated! Copy it for Gmail below.');
+}
+
+function egCopyForGmail() {
+  if (!egGeneratedHTML) { egGenerateEmail(); return; }
+  // Strip the doctype/html/head/body wrappers — extract just the body content
+  const bodyMatch = egGeneratedHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  const bodyHTML = bodyMatch ? bodyMatch[1] : egGeneratedHTML;
+  // Copy as rich text so Gmail preserves formatting
+  const blob = new Blob([bodyHTML], { type: 'text/html' });
+  const textBlob = new Blob([' '], { type: 'text/plain' });
+  navigator.clipboard.write([new ClipboardItem({ 'text/html': blob, 'text/plain': textBlob })]).then(() => {
+    showToast('Copied! Open Gmail → Compose → Paste (Ctrl+V / Cmd+V)');
+  }).catch(() => {
+    // Fallback for older browsers
+    const container = document.getElementById('egGmailCopyContainer');
+    container.innerHTML = bodyHTML;
+    const range = document.createRange();
+    range.selectNodeContents(container);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('copy');
+    sel.removeAllRanges();
+    container.innerHTML = '';
+    showToast('Copied! Open Gmail → Compose → Paste (Ctrl+V / Cmd+V)');
+  });
 }
 
 function egCopyHTML() { if(!egGeneratedHTML) egGenerateEmail(); navigator.clipboard.writeText(egGeneratedHTML).then(()=>showToast('HTML copied!')); }
-
-function egOpenFullscreen() {
-  if (!egGeneratedHTML) egGenerateEmail();
-  const overlay = document.getElementById('egFullscreenOverlay');
-  overlay.classList.add('active');
-  const frame = document.getElementById('egFullscreenFrame');
-  frame.srcdoc = egGeneratedHTML;
-  // Sync active theme pill
-  overlay.querySelectorAll('.theme-pill').forEach(p => p.classList.toggle('active', p.dataset.theme === egCurrentTheme));
-  document.body.style.overflow = 'hidden';
-}
-
-function egCloseFullscreen() {
-  document.getElementById('egFullscreenOverlay').classList.remove('active');
-  document.body.style.overflow = '';
-}
-
-function egFullscreenTheme(theme, btn) {
-  // Update main theme too
-  egCurrentTheme = theme;
-  // Update pills
-  document.getElementById('egFullscreenOverlay').querySelectorAll('.theme-pill').forEach(p => p.classList.toggle('active', p.dataset.theme === theme));
-  // Also sync the form theme buttons
-  document.querySelectorAll('#panel-emailgen .template-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
-  // Regenerate and update both frames
-  egGenerateEmail();
-  document.getElementById('egFullscreenFrame').srcdoc = egGeneratedHTML;
-}
 function egDownloadHTML() {
   if(!egGeneratedHTML) egGenerateEmail();
   const slug = (document.getElementById('egSongTitle').value.trim()||'release').toLowerCase().replace(/[^a-z0-9]+/g,'-');
