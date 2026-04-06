@@ -44,11 +44,6 @@
   .day-label { color: #c9a84c; font-weight: 700; white-space: nowrap; }
   .outreach-card { background: #0a0a0a; border: 1px solid #1f1f1f; border-radius: 10px; padding: 20px; margin-bottom: 12px; position: relative; }
   .outreach-card h4 { color: #fff; font-size: 14px; margin-bottom: 4px; }
-  .outreach-fields { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; padding-bottom: 12px; border-bottom: 1px solid #1a1a1a; }
-  .outreach-fields label { font-size: 11px; color: #666; display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 140px; }
-  .outreach-fields input { background: #0a0a0a; border: 1px solid #222; border-radius: 6px; padding: 8px 10px; color: #c9a84c; font-size: 13px; font-family: 'Inter', sans-serif; transition: border-color 0.2s; }
-  .outreach-fields input:focus { outline: none; border-color: #c9a84c; }
-  .outreach-fields input::placeholder { color: #444; }
   .outreach-card .type-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #1a2a1a; color: #4a8; }
   .outreach-card .body { font-size: 13px; color: #bbb; line-height: 1.7; margin-top: 12px; white-space: pre-wrap; }
   .checklist { list-style: none; padding: 0; }
@@ -568,11 +563,38 @@
 
       </div><!-- end intake-form-area -->
 
-      <div class="form-section" id="generateSection" style="text-align:center;">
-        <div class="form-section-title">Launch Campaign</div>
-        <p style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.6;">Fill in your release details above, then generate your complete marketing campaign. Claude AI will analyze your song, genre, and artist niche to create personalized content across all tabs — including pre-release strategy for up to 1 month before your release date.</p>
-        <button class="btn-generate-campaign" id="btnGenerateCampaign" onclick="generateCampaign()">Generate Campaign</button>
-        <div class="generate-status" id="generateStatus"></div>
+      <div class="form-section" id="generateSection">
+        <div class="form-section-title">Outreach Targets</div>
+        <p style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.6;">Add names of specific curators, playlists, blogs, podcasts, and collaborators you want to target. These will be filled into your outreach templates when you generate.</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Playlist Curators (comma-separated)</label>
+            <input type="text" id="gen-curators" placeholder="e.g., DJ Holy Fire, ChristianBeats, Grace Playlist" oninput="intakeUpdate()">
+          </div>
+          <div class="form-group">
+            <label>Target Playlists (comma-separated)</label>
+            <input type="text" id="gen-playlists" placeholder="e.g., CHH Hits 2026, Faith & Fire, Worship Trap" oninput="intakeUpdate()">
+          </div>
+          <div class="form-group">
+            <label>Blogs / Media Outlets (comma-separated)</label>
+            <input type="text" id="gen-blogs" placeholder="e.g., Rapzilla, Wade-O Radio, Trackstarz" oninput="intakeUpdate()">
+          </div>
+          <div class="form-group">
+            <label>Podcasts (comma-separated)</label>
+            <input type="text" id="gen-podcasts" placeholder="e.g., God & Grit Podcast, The Christ Culture" oninput="intakeUpdate()">
+          </div>
+          <div class="form-group full-width">
+            <label>Collab Partners / Friends / Network (comma-separated)</label>
+            <input type="text" id="gen-collabs" placeholder="e.g., Datin, Rogue2Redeemed, Pastor Mike" oninput="intakeUpdate()">
+          </div>
+        </div>
+
+        <div style="text-align:center;margin-top:24px;">
+          <div class="form-section-title">Launch Campaign</div>
+          <p style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.6;">Fill in your release details and outreach targets above, then generate your complete marketing campaign. Claude AI will create personalized content with real names — no placeholders.</p>
+          <button class="btn-generate-campaign" id="btnGenerateCampaign" onclick="generateCampaign()">Generate Campaign</button>
+          <div class="generate-status" id="generateStatus"></div>
+        </div>
       </div>
 
   </div><!-- end panel-intake -->
@@ -2193,58 +2215,19 @@ function renderCalendar(week) {
   </table>`;
 }
 
-let _outreachCounter = 0;
-
-function buildOutreachCard(m) {
-  const id = _outreachCounter++;
-  // Detect placeholders in the body
-  const placeholderMap = {
-    '[Name]': 'Recipient Name',
-    '[Name / Music Director]': 'Name / Music Director',
-    '[Playlist Name]': 'Playlist Name',
-    '[Blog/Platform Name]': 'Blog / Platform Name',
-    '[Podcast Name]': 'Podcast Name'
-  };
-  const found = [];
-  for (const [ph, label] of Object.entries(placeholderMap)) {
-    if (m.body.includes(ph)) found.push({ ph, label });
-  }
-
-  const fieldsHTML = found.length > 0 ? `
-    <div class="outreach-fields">
-      ${found.map(f => `<label>${f.label}<input type="text" placeholder="${f.label}" data-ph="${f.ph}" data-card="${id}" oninput="updateOutreachBody(${id})"></label>`).join('')}
-    </div>` : '';
-
-  return `<div class="outreach-card" id="outreach-card-${id}">
-    <button class="copy-btn" onclick="copyOutreach(${id},this)">Copy</button>
-    <h4>${m.title}</h4><span class="type-badge">${m.type}</span>
-    ${fieldsHTML}
-    <div class="body" data-original="${m.body.replace(/"/g, '&quot;')}">${m.body}</div>
-  </div>`;
-}
-
-function updateOutreachBody(cardId) {
-  const card = document.getElementById('outreach-card-' + cardId);
-  const bodyEl = card.querySelector('.body');
-  let text = bodyEl.getAttribute('data-original');
-  card.querySelectorAll('.outreach-fields input').forEach(inp => {
-    const ph = inp.getAttribute('data-ph');
-    const val = inp.value.trim();
-    if (val) text = text.split(ph).join(val);
-  });
-  bodyEl.textContent = text;
-}
-
-function copyOutreach(cardId, btn) {
-  const card = document.getElementById('outreach-card-' + cardId);
-  const text = card.querySelector('.body').textContent;
-  copyText(text, btn);
-}
-
 function renderOutreach() {
-  _outreachCounter = 0;
-  document.getElementById('curator-messages').innerHTML = curatorMessages.map(m => buildOutreachCard(m)).join('');
-  document.getElementById('followup-messages').innerHTML = followupMessages.map(m => buildOutreachCard(m)).join('');
+  document.getElementById('curator-messages').innerHTML = curatorMessages.map(m => `
+    <div class="outreach-card">
+      <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.body').textContent,this)">Copy</button>
+      <h4>${m.title}</h4><span class="type-badge">${m.type}</span>
+      <div class="body">${m.body}</div>
+    </div>`).join('');
+  document.getElementById('followup-messages').innerHTML = followupMessages.map(m => `
+    <div class="outreach-card">
+      <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.body').textContent,this)">Copy</button>
+      <h4>${m.title}</h4><span class="type-badge">${m.type}</span>
+      <div class="body">${m.body}</div>
+    </div>`).join('');
   document.getElementById('media-messages').innerHTML = '<p style="font-size:13px;color:#555;">Use the Email Generator tab for the full HTML press email.</p>';
 }
 
@@ -2909,6 +2892,13 @@ async function generateCampaign() {
   if (d.matInstrumental) materials.push('instrumental');
   if (d.matAcapella) materials.push('acapella');
 
+  // Gather outreach targets
+  const targetCurators = (document.getElementById('gen-curators').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const targetPlaylists = (document.getElementById('gen-playlists').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const targetBlogs = (document.getElementById('gen-blogs').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const targetPodcasts = (document.getElementById('gen-podcasts').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const targetCollabs = (document.getElementById('gen-collabs').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+
   const ctx = `SONG: "${d.songTitle}"${feat}
 ARTIST: ${d.primaryArtist}
 ALBUM/SINGLE: ${d.albumName || d.songTitle}
@@ -2922,7 +2912,12 @@ SOCIALS: ${socials || 'N/A'}
 AVAILABLE MATERIALS: ${materials.join(', ') || 'None specified'}
 SPOTIFY: ${d.linkSpotify || 'N/A'}
 EPK: ${d.epk || 'N/A'}
-EMAIL: ${d.email || 'N/A'}`;
+EMAIL: ${d.email || 'N/A'}
+TARGET CURATORS: ${targetCurators.join(', ') || 'N/A'}
+TARGET PLAYLISTS: ${targetPlaylists.join(', ') || 'N/A'}
+TARGET BLOGS/MEDIA: ${targetBlogs.join(', ') || 'N/A'}
+TARGET PODCASTS: ${targetPodcasts.join(', ') || 'N/A'}
+COLLAB PARTNERS/NETWORK: ${targetCollabs.join(', ') || 'N/A'}`;
 
   function markStep(id, state) {
     const el = document.getElementById('genStep-' + id);
@@ -2998,21 +2993,46 @@ Requirements:
 
     // --- 3. Outreach ---
     markStep('outreach', 'active');
+
+    // Build outreach target instructions
+    let outreachTargetInstructions = '';
+    if (targetCurators.length) {
+      outreachTargetInstructions += `\nTARGET CURATORS TO WRITE TO: ${targetCurators.join(', ')}. Write a SEPARATE curator DM addressed to EACH curator by name. Use their real name in the message, not a placeholder.`;
+    }
+    if (targetPlaylists.length) {
+      outreachTargetInstructions += `\nTARGET PLAYLISTS: ${targetPlaylists.join(', ')}. Reference these specific playlist names in curator messages where relevant.`;
+    }
+    if (targetBlogs.length) {
+      outreachTargetInstructions += `\nTARGET BLOGS/MEDIA: ${targetBlogs.join(', ')}. Write a SEPARATE email pitch addressed to EACH blog/outlet by name.`;
+    }
+    if (targetPodcasts.length) {
+      outreachTargetInstructions += `\nTARGET PODCASTS: ${targetPodcasts.join(', ')}. Write a SEPARATE guest pitch addressed to EACH podcast by name.`;
+    }
+    if (targetCollabs.length) {
+      outreachTargetInstructions += `\nCOLLAB PARTNERS/NETWORK: ${targetCollabs.join(', ')}. Write personalized messages to EACH person by name.`;
+    }
+    if (!outreachTargetInstructions) {
+      outreachTargetInstructions = '\nNo specific targets provided. Write 5 general templates with [Name] and [Playlist Name] as placeholders.';
+    }
+
     const outreachResult = await callClaude(`${ctx}
 
-Generate outreach message templates for this release. Return ONLY valid JSON (no markdown, no code fences):
+Generate outreach messages for this release. IMPORTANT: Use REAL NAMES from the targets provided — do NOT use bracket placeholders like [Name] when a real name is available.
+${outreachTargetInstructions}
+
+Return ONLY valid JSON (no markdown, no code fences):
 {
-  "curatorMessages": [{"title":"Template Title","type":"Type Badge","body":"Full message text"}, ...],
-  "followupMessages": [{"title":"Template Title","type":"Type Badge","body":"Full message text"}, ...]
+  "curatorMessages": [{"title":"Message title (include recipient name)","type":"Type Badge","body":"Full message text with real names"}, ...],
+  "followupMessages": [{"title":"Message title (include recipient name)","type":"Type Badge","body":"Full message text with real names"}, ...]
 }
 
 Requirements:
-- 5 curator messages: Standard DM, Short Cold DM, Email to Curators/Blogs, Radio Station Pitch, Podcast Guest Pitch
-- 5 follow-up messages: 7-Day Follow-Up DM, Follow-Up Email, Collab Partner Promo Push, Friends/Family/Church Network, Pre-Release Influencer Outreach
-- All messages should reference this specific song, artist, and genre
-- Include [Playlist Name] and [Name] placeholders where appropriate
-- Include pre-release outreach templates (reaching out BEFORE release to build buzz)
-- Professional but personal tone`);
+- curatorMessages: One message per target curator/blog/podcast. If no targets given, write 5 general templates.
+- followupMessages: Follow-ups for each target, plus a collab partner message for each collab name, plus a friends/family/church message
+- Every message must reference this specific song title, artist name, genre, and include the Spotify link, EPK, and email
+- Include pre-release outreach if release date is in the future
+- Professional but personal tone — write like a real person, not a form letter
+- NO bracket placeholders like [Name] or [Playlist Name] when you have real names. Only use brackets if no target was provided for that category.`);
 
     try {
       const o = JSON.parse(outreachResult.replace(/```json\n?|\n?```/g, '').trim());
