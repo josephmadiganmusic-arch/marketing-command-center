@@ -307,7 +307,8 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
-  if (!user.email_verified && user.role !== 'admin') {
+  // Only enforce verification if SMTP is configured
+  if (process.env.SMTP_USER && !user.email_verified && user.role !== 'admin') {
     return res.status(403).json({ error: 'Please verify your email before logging in. Check your inbox for a verification link.', needsVerification: true, email: user.email });
   }
 
@@ -340,13 +341,19 @@ app.post('/api/signup', async (req, res) => {
     'INSERT INTO users (email, password, subscription_status, trial_ends_at, verification_token, verification_expires) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(cleanEmail, hash, 'trialing', trialEnd, token, tokenExpires);
 
-  try {
-    await sendVerificationEmail(cleanEmail, token);
-    res.json({ success: true, needsVerification: true });
-  } catch (err) {
-    console.error('Email send error:', err.message);
-    res.json({ success: true, needsVerification: true, emailError: true });
+  // Only attempt email if SMTP is configured
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      await sendVerificationEmail(cleanEmail, token);
+    } catch (err) {
+      console.error('Email send error:', err.message);
+    }
+  } else {
+    console.log('[SIGNUP] SMTP not configured, skipping verification email for', cleanEmail);
+    // Auto-verify since we can't send emails
+    dbHelpers.prepare('UPDATE users SET email_verified = 1 WHERE email = ?').run(cleanEmail);
   }
+  res.json({ success: true, needsVerification: !!process.env.SMTP_USER });
 });
 
 // --- Email Verification Route ---

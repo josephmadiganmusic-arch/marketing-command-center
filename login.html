@@ -331,7 +331,11 @@ async function handleSignup(e) {
     const data = await res.json();
     if (!res.ok) { showError(data.error); return; }
 
-    showVerifyNotice(email);
+    if (data.needsVerification) {
+      showVerifyNotice(email);
+    } else {
+      window.location.href = '/';
+    }
   } catch (err) {
     showError('Something went wrong. Please try again.');
   } finally {
