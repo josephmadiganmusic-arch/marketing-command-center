@@ -2613,6 +2613,12 @@ function intakeSave() {
     // Save to named releases
     const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
     saved[d.songTitle] = slim;
+    // Bundle campaign data + progress with the release
+    if (campaignGenerated) {
+      saved[d.songTitle]._campaign = getCampaignSnapshot();
+      saved[d.songTitle]._campaignGenerated = true;
+      saved[d.songTitle]._checklistState = getChecklistState();
+    }
     localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
     intakeLoadList();
     saveArtistProfile();
@@ -2638,11 +2644,53 @@ function intakeLoadList() {
 
 function intakeLoad(title) {
   if (!title) return;
+  // Save current release's campaign before switching
+  const currentData = intakeGetData();
+  if (currentData.songTitle && campaignGenerated) {
+    saveCampaignToRelease(currentData.songTitle, getCampaignSnapshot());
+  }
   const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
   const d = saved[title]; if (!d) return;
   intakeFillForm(d);
   localStorage.setItem(ukey('release_data'), JSON.stringify(d));
-  showToast('Release loaded!');
+  // Restore campaign data if this release has one
+  if (d._campaign && d._campaignGenerated) {
+    applyCampaignData(d._campaign);
+    renderAllCampaignTabs();
+    campaignGenerated = true;
+    unlockTabs();
+    localStorage.setItem(ukey('mcc_campaign_data'), JSON.stringify(d._campaign));
+    localStorage.setItem(ukey('mcc_campaign_song'), title);
+    // Restore checklist checked states
+    if (d._checklistState) {
+      setTimeout(() => {
+        document.querySelectorAll('.check').forEach((el, i) => {
+          if (d._checklistState[i]) el.classList.add('done');
+          else el.classList.remove('done');
+        });
+      }, 100);
+    }
+    const btn = document.getElementById('btnGenerateCampaign');
+    btn.textContent = 'CAMPAIGN GENERATED';
+    btn.style.background = 'linear-gradient(135deg, #2a6b2a, #3a8a3a)';
+    btn.style.color = '#fff';
+    btn.disabled = true;
+    showToast('Release + campaign loaded!');
+  } else {
+    // No campaign for this release — reset to empty
+    applyCampaignData({});
+    renderAllCampaignTabs();
+    campaignGenerated = false;
+    lockTabs();
+    localStorage.removeItem(ukey('mcc_campaign_data'));
+    localStorage.removeItem(ukey('mcc_campaign_song'));
+    const btn = document.getElementById('btnGenerateCampaign');
+    btn.textContent = 'GENERATE CAMPAIGN';
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.disabled = false;
+    showToast('Release loaded — generate a campaign for it!');
+  }
 }
 
 function intakeFillForm(d) {
@@ -4356,11 +4404,13 @@ Requirements:
 
     clSetLiveStatus('Campaign complete!', '');
 
-    // Save generated campaign data
+    // Save campaign data with the release
     try {
       const campaignData = { hooks, captions, hashtagSets, ctas, calendarData, curatorMessages, followupMessages, playlists, searchKeywords, checklistToday, checklistWeek, checklistRecurring, checklistMonth };
       localStorage.setItem(ukey('mcc_campaign_data'), JSON.stringify(campaignData));
       localStorage.setItem(ukey('mcc_campaign_song'), d.songTitle);
+      // Persist campaign inside the release record
+      saveCampaignToRelease(d.songTitle, campaignData);
     } catch(e) {}
 
     // Unlock all tabs
@@ -4394,24 +4444,78 @@ Requirements:
   }
 }
 
+function getCampaignSnapshot() {
+  return { hooks, captions, hashtagSets, ctas, calendarData, curatorMessages, followupMessages, playlists, searchKeywords, checklistToday, checklistWeek, checklistRecurring, checklistMonth };
+}
+
+function applyCampaignData(c) {
+  hooks = c.hooks || [];
+  captions = c.captions || [];
+  hashtagSets = c.hashtagSets || [];
+  ctas = c.ctas || [];
+  calendarData = c.calendarData || {};
+  curatorMessages = c.curatorMessages || [];
+  followupMessages = c.followupMessages || [];
+  playlists = c.playlists || [];
+  searchKeywords = c.searchKeywords || [];
+  checklistToday = c.checklistToday || [];
+  checklistWeek = c.checklistWeek || [];
+  checklistRecurring = c.checklistRecurring || [];
+  checklistMonth = c.checklistMonth || [];
+}
+
+function renderAllCampaignTabs() {
+  try { renderHooks(); } catch(e) {}
+  try { renderCaptions(); } catch(e) {}
+  try { renderHashtags(); } catch(e) {}
+  try { renderCTAs(); } catch(e) {}
+  try { if (calendarData['1']) renderCalendar(1); } catch(e) {}
+  try { renderOutreach(); } catch(e) {}
+  try { renderPlaylists(); } catch(e) {}
+  try { renderChecklist('checklist-today', checklistToday); } catch(e) {}
+  try { renderChecklist('checklist-week', checklistWeek); } catch(e) {}
+  try { renderChecklist('checklist-recurring', checklistRecurring); } catch(e) {}
+  try { renderChecklist('checklist-month', checklistMonth); } catch(e) {}
+}
+
+function saveCampaignToRelease(title, campaignData) {
+  if (!title) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+    if (saved[title]) {
+      saved[title]._campaign = campaignData;
+      saved[title]._campaignGenerated = true;
+      // Also save checklist checked states
+      saved[title]._checklistState = getChecklistState();
+      localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
+      serverSave('release_data_all', saved);
+    }
+  } catch(e) { console.error('saveCampaignToRelease:', e); }
+}
+
+function getChecklistState() {
+  const state = {};
+  document.querySelectorAll('.check').forEach((el, i) => {
+    if (el.classList.contains('done')) state[i] = true;
+  });
+  return state;
+}
+
 function loadSavedCampaign() {
   try {
-    const saved = localStorage.getItem(ukey('mcc_campaign_data'));
-    if (saved) {
-      const c = JSON.parse(saved);
-      if (c.hooks) hooks = c.hooks;
-      if (c.captions) captions = c.captions;
-      if (c.hashtagSets) hashtagSets = c.hashtagSets;
-      if (c.ctas) ctas = c.ctas;
-      if (c.calendarData) calendarData = c.calendarData;
-      if (c.curatorMessages) curatorMessages = c.curatorMessages;
-      if (c.followupMessages) followupMessages = c.followupMessages;
-      if (c.playlists) playlists = c.playlists;
-      if (c.searchKeywords) searchKeywords = c.searchKeywords;
-      if (c.checklistToday) checklistToday = c.checklistToday;
-      if (c.checklistWeek) checklistWeek = c.checklistWeek;
-      if (c.checklistRecurring) checklistRecurring = c.checklistRecurring;
-      if (c.checklistMonth) checklistMonth = c.checklistMonth;
+    // First try loading from the current release record
+    const d = intakeGetData();
+    if (d.songTitle) {
+      const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+      if (saved[d.songTitle] && saved[d.songTitle]._campaign) {
+        applyCampaignData(saved[d.songTitle]._campaign);
+        return true;
+      }
+    }
+    // Fallback to legacy global key
+    const globalSaved = localStorage.getItem(ukey('mcc_campaign_data'));
+    if (globalSaved) {
+      applyCampaignData(JSON.parse(globalSaved));
       return true;
     }
   } catch(e) {}
