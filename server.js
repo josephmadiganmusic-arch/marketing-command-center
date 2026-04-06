@@ -307,6 +307,10 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
+  if (!user.email_verified && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Please verify your email before logging in. Check your inbox for a verification link.', needsVerification: true, email: user.email });
+  }
+
   // Remember Me: 30 days if checked, session-only if not
   if (rememberMe) {
     req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
@@ -329,14 +333,20 @@ app.post('/api/signup', async (req, res) => {
 
   const hash = bcrypt.hashSync(password, 10);
   const trialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-  const result = dbHelpers.prepare(
-    'INSERT INTO users (email, password, subscription_status, trial_ends_at, email_verified) VALUES (?, ?, ?, ?, 1)'
-  ).run(cleanEmail, hash, 'trialing', trialEnd);
+  dbHelpers.prepare(
+    'INSERT INTO users (email, password, subscription_status, trial_ends_at, verification_token, verification_expires) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(cleanEmail, hash, 'trialing', trialEnd, token, tokenExpires);
 
-  // Auto-login after signup
-  req.session.userId = result.lastInsertRowid;
-  res.json({ success: true });
+  try {
+    await sendVerificationEmail(cleanEmail, token);
+    res.json({ success: true, needsVerification: true });
+  } catch (err) {
+    console.error('Email send error:', err.message);
+    res.json({ success: true, needsVerification: true, emailError: true });
+  }
 });
 
 // --- Email Verification Route ---

@@ -139,6 +139,14 @@
     <div id="error" class="error-msg"></div>
     <div id="success" class="success-msg"></div>
 
+    <!-- Verification Notice (shown after signup or when unverified user tries to log in) -->
+    <div id="verifyNotice" class="verify-notice">
+      <h3>Check Your Email</h3>
+      <p>We sent a verification link to<br><span id="verifyEmail" class="email-highlight"></span></p>
+      <p>Click the link to verify your email and start your free trial.</p>
+      <button class="btn-secondary" id="resendBtn" onclick="resendVerification()">Resend Email</button>
+    </div>
+
     <!-- Login Form -->
     <form id="loginForm" class="auth-form active" onsubmit="handleLogin(event)">
       <div class="form-group">
@@ -195,6 +203,8 @@
 </div>
 
 <script>
+let pendingVerifyEmail = '';
+
 function togglePw(inputId, btn) {
   const input = document.getElementById(inputId);
   const isHidden = input.type === 'password';
@@ -209,6 +219,8 @@ function showForm(type) {
   document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
   document.getElementById('error').style.display = 'none';
   document.getElementById('success').style.display = 'none';
+  document.getElementById('verifyNotice').style.display = 'none';
+
   if (type === 'login') {
     document.querySelector('.auth-tab:first-child').classList.add('active');
     document.getElementById('loginForm').classList.add('active');
@@ -232,6 +244,33 @@ function showSuccess(msg) {
   document.getElementById('error').style.display = 'none';
 }
 
+function showVerifyNotice(email) {
+  pendingVerifyEmail = email;
+  document.getElementById('verifyEmail').textContent = email;
+  document.getElementById('verifyNotice').style.display = 'block';
+  document.getElementById('error').style.display = 'none';
+  document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+}
+
+async function resendVerification() {
+  const btn = document.getElementById('resendBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  try {
+    await fetch('/api/resend-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: pendingVerifyEmail })
+    });
+    btn.textContent = 'Sent!';
+    setTimeout(() => { btn.textContent = 'Resend Email'; btn.disabled = false; }, 3000);
+  } catch {
+    btn.textContent = 'Resend Email';
+    btn.disabled = false;
+  }
+}
+
 async function handleLogin(e) {
   e.preventDefault();
   const btn = document.getElementById('loginBtn');
@@ -251,7 +290,11 @@ async function handleLogin(e) {
     const data = await res.json();
 
     if (!res.ok) {
-      showError(data.error);
+      if (data.needsVerification) {
+        showVerifyNotice(data.email);
+      } else {
+        showError(data.error);
+      }
       return;
     }
 
@@ -288,7 +331,7 @@ async function handleSignup(e) {
     const data = await res.json();
     if (!res.ok) { showError(data.error); return; }
 
-    window.location.href = '/';
+    showVerifyNotice(email);
   } catch (err) {
     showError('Something went wrong. Please try again.');
   } finally {
