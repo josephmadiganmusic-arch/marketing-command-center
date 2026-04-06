@@ -1129,7 +1129,7 @@ This track is a powerful declaration of faith. I would be honored if you would c
   <!-- CLAUDE AI -->
   <div class="panel" id="panel-claudeai">
     <h2>Music Agent Pro</h2>
-    <p class="subtitle">AI-powered content generation, outreach personalization, and analytics.</p>
+    <p class="subtitle" id="mapSubtitle">Your AI assistant for this campaign. All buttons use your current intake data automatically.</p>
     <div style="display:none;">
       <input type="password" id="claudeApiKey" />
       <select id="claudeModel">
@@ -1137,13 +1137,40 @@ This track is a powerful declaration of faith. I would be honored if you would c
         <option value="claude-opus-4-6">claude-opus-4-6</option>
       </select>
     </div>
-    <div class="ai-actions">
-      <button class="ai-action-btn" onclick="openAiModal('freshContent')"><span class="ai-icon">&#9998;</span>Generate Fresh Content<span class="ai-desc">5 captions + 5 hooks + 3 video concepts</span></button>
-      <button class="ai-action-btn" onclick="openAiModal('outreach')"><span class="ai-icon">&#9993;</span>Personalize Outreach<span class="ai-desc">Custom DM + email for a specific curator</span></button>
-      <button class="ai-action-btn" onclick="openAiModal('repurpose')"><span class="ai-icon">&#8634;</span>Repurpose Content<span class="ai-desc">Adapt one caption for multiple platforms</span></button>
-      <button class="ai-action-btn" onclick="openAiModal('analytics')"><span class="ai-icon">&#9776;</span>Analytics Advisor<span class="ai-desc">Paste your stats for strategic advice</span></button>
-      <button class="ai-action-btn" onclick="openAiModal('captionGen')"><span class="ai-icon">&#9889;</span>Caption Generator<span class="ai-desc">Quick captions from a mood or theme</span></button>
+
+    <div class="section">
+      <div class="section-title">Content Creation</div>
+      <div class="ai-actions">
+        <button class="ai-action-btn" onclick="mapOneClick('freshContent')"><span class="ai-icon">&#9998;</span>Generate Fresh Content<span class="ai-desc">5 captions + 5 hooks + 3 video concepts for your current release</span></button>
+        <button class="ai-action-btn" onclick="mapOneClick('captionGen')"><span class="ai-icon">&#9889;</span>Generate Captions<span class="ai-desc">3 ready-to-post captions tailored to your song and genre</span></button>
+        <button class="ai-action-btn" onclick="openAiModal('repurpose')"><span class="ai-icon">&#8634;</span>Repurpose Content<span class="ai-desc">Paste any caption to adapt for IG, TikTok, FB, YT Shorts</span></button>
+      </div>
     </div>
+
+    <div class="section">
+      <div class="section-title">Outreach & Promotion</div>
+      <div class="ai-actions">
+        <button class="ai-action-btn" onclick="openAiModal('outreach')"><span class="ai-icon">&#9993;</span>Write Outreach Message<span class="ai-desc">Personalized DM or email to a curator, blog, or podcast</span></button>
+        <button class="ai-action-btn" onclick="mapOneClick('weekPlan')"><span class="ai-icon">&#128197;</span>Plan This Week<span class="ai-desc">Day-by-day action plan based on your campaign progress</span></button>
+        <button class="ai-action-btn" onclick="mapOneClick('nextAction')"><span class="ai-icon">&#9654;</span>What Should I Do Next?<span class="ai-desc">Your single highest-impact action right now</span></button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Strategy & Analytics</div>
+      <div class="ai-actions">
+        <button class="ai-action-btn" onclick="openAiModal('analytics')"><span class="ai-icon">&#9776;</span>Analytics Advisor<span class="ai-desc">Paste your Spotify/social stats for strategic advice</span></button>
+        <button class="ai-action-btn" onclick="mapOneClick('pitchRefine')"><span class="ai-icon">&#9733;</span>Refine My Pitch<span class="ai-desc">Improve your artist bio and email intro for submissions</span></button>
+        <button class="ai-action-btn" onclick="mapOneClick('playlistStrategy')"><span class="ai-icon">&#9835;</span>Playlist Strategy<span class="ai-desc">Fresh playlist angles and search terms for your genre</span></button>
+      </div>
+    </div>
+
+    <div class="section" id="mapResultsSection" style="display:none;">
+      <div class="section-title">Results</div>
+      <div class="ai-loading" id="mapLoading" style="display:none;"><div class="ai-spinner"></div><div class="ai-loading-text" id="mapLoadingText">Working...</div></div>
+      <div id="mapResults" style="white-space:pre-wrap;font-size:13px;color:#ccc;line-height:1.7;"></div>
+    </div>
+
     <div id="aiResultsArea"></div>
   </div><!-- end panel-claudeai -->
 
@@ -2963,6 +2990,47 @@ function renderAiResults(containerId, text) {
     else if(lines[0].startsWith('**') && lines[0].endsWith('**')) { title=lines[0].replace(/\*\*/g,''); body=lines.slice(1).join('\n').trim(); }
     return `<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.nextElementSibling.textContent||this.parentElement.querySelector('pre').textContent,this)">Copy</button>${title?`<h5>${title}</h5>`:''}<pre style="margin:0;">${body}</pre></div>`;
   }).join('');
+}
+
+async function mapOneClick(action) {
+  const d = intakeGetData();
+  const feat = d.featArtist ? ` featuring ${d.featArtist}` : '';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
+  const ctx = `SONG: "${d.songTitle || 'Untitled'}"${feat}\nARTIST: ${d.primaryArtist || 'Unknown'}\nGENRE: ${genre}\nRELEASE DATE: ${d.releaseDate || 'TBD'}\nPRODUCER: ${d.producer || 'N/A'}\nLABEL: ${d.label || 'Independent'}\nBIO: ${d.bio || 'N/A'}\nSPOTIFY: ${d.linkSpotify || 'N/A'}\nEMAIL: ${d.email || 'N/A'}\nINSTAGRAM: ${d.instagram || 'N/A'}`;
+
+  const prompts = {
+    freshContent: { loading: 'Generating fresh content...', prompt: `${ctx}\n\nGenerate for this specific release:\n1. Five ready-to-post captions (each with hashtags and CTA)\n2. Five punchy video hooks (camera-ready openers)\n3. Three video concept ideas (format, angle, script outline)\n\nAll content must reference this song by name, be in the artist's authentic voice, and include Spotify save CTAs.` },
+    captionGen: { loading: 'Writing captions...', prompt: `${ctx}\n\nWrite 3 ready-to-post Instagram/Facebook captions for this specific song. Each caption should:\n- Reference the song title and artist by name\n- Be 100-250 words in the artist's authentic voice\n- Include 8-12 relevant hashtags\n- Include a specific CTA focused on Spotify saves\n- Have a different angle (announcement, testimony/story, engagement)` },
+    weekPlan: { loading: 'Planning your week...', prompt: `${ctx}\n\nCreate a prioritized day-by-day action plan (Monday through Sunday) for this release campaign this week. For each day give:\n- THE ONE most important task\n- A quick win (under 10 min)\n- Content to post (specific to this song)\n- Any outreach to send\n\nBe specific, actionable, and reference the song by name.` },
+    nextAction: { loading: 'Finding your highest-impact move...', prompt: `${ctx}\n\nWhat is the single highest-impact action to take RIGHT NOW for this release campaign?\n\n1. THE ONE THING to do next (be extremely specific)\n2. WHY this is the highest priority\n3. How long it should take\n4. Step-by-step instructions to do it\n5. What to do immediately after\n\nBe direct. Reference the song and artist by name.` },
+    pitchRefine: { loading: 'Refining your pitch...', prompt: `${ctx}\nCURRENT BIO: ${d.bio || 'None written yet'}\nCURRENT EMAIL INTRO: ${d.emailIntro || 'None written yet'}\n\nRewrite and improve both:\n\n1. ARTIST BIO (2-3 paragraphs, professional but personal, highlights testimony and credentials)\n2. EMAIL INTRO PARAGRAPH (3-5 sentences, hooks the reader, makes them want to listen)\n\nBoth should reference this specific song and be ready to copy-paste into submissions.` },
+    playlistStrategy: { loading: 'Building playlist strategy...', prompt: `${ctx}\n\nCreate a detailed playlist strategy for this release:\n\n1. Five new playlist concepts the artist should create on Spotify (with names, descriptions, and 5 similar artists to include)\n2. Ten search terms to find curators accepting submissions in this genre\n3. Five creative angles for getting on playlists beyond the obvious genre match\n4. Three DM templates (short, medium, detailed) for pitching this specific song to curators\n\nAll tailored to this song's genre and niche.` }
+  };
+
+  const p = prompts[action];
+  if (!p) return;
+
+  const section = document.getElementById('mapResultsSection');
+  const loading = document.getElementById('mapLoading');
+  const loadingText = document.getElementById('mapLoadingText');
+  const results = document.getElementById('mapResults');
+
+  section.style.display = 'block';
+  loading.style.display = 'block';
+  loadingText.textContent = p.loading;
+  results.innerHTML = '';
+  section.scrollIntoView({ behavior: 'smooth' });
+
+  try {
+    const result = await callClaude(p.prompt);
+    results.innerHTML = result.replace(/## (.*)/g, '<h3 style="color:#c9a84c;margin:16px 0 8px;">$1</h3>').replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fff;">$1</strong>');
+    // Add copy button
+    results.innerHTML = `<button class="copy-btn" style="position:relative;margin-bottom:12px;" onclick="copyText(document.getElementById('mapResults').textContent,this)">Copy All</button>` + results.innerHTML;
+  } catch(err) {
+    results.innerHTML = `<div style="color:#ff6b6b;">Error: ${err.message}</div>`;
+  } finally {
+    loading.style.display = 'none';
+  }
 }
 
 async function runAiAction(action) {
