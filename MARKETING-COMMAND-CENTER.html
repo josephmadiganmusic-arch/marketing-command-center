@@ -818,13 +818,13 @@
         <div class="form-section">
           <div class="form-section-title">Song Information</div>
           <div class="form-grid">
-            <div class="form-group"><label>Song Title</label><input type="text" id="in-songTitle" oninput="intakeUpdate()" placeholder="God In The Room"></div>
-            <div class="form-group"><label>Primary Artist</label><input type="text" id="in-primaryArtist" oninput="intakeUpdate()" placeholder="Madigan"></div>
-            <div class="form-group"><label>Featuring Artist</label><input type="text" id="in-featArtist" oninput="intakeUpdate()" placeholder="Rogue2Redeemed"></div>
-            <div class="form-group"><label>Producer</label><input type="text" id="in-producer" oninput="intakeUpdate()" placeholder="Jay."></div>
-            <div class="form-group"><label>Album / Single Name</label><input type="text" id="in-albumName" oninput="intakeUpdate()" placeholder="God In The Room (Single)"></div>
-            <div class="form-group"><label>Primary Genre</label><input type="text" id="in-genrePrimary" oninput="intakeUpdate()" placeholder="Christian Hip-Hop"></div>
-            <div class="form-group"><label>Secondary Genre</label><input type="text" id="in-genreSecondary" oninput="intakeUpdate()" placeholder="Gospel Rap"></div>
+            <div class="form-group"><label>Song Title</label><input type="text" id="in-songTitle" oninput="intakeUpdate()" placeholder="Enter song title"></div>
+            <div class="form-group"><label>Primary Artist</label><input type="text" id="in-primaryArtist" oninput="intakeUpdate()" placeholder="Artist Name"></div>
+            <div class="form-group"><label>Featuring Artist</label><input type="text" id="in-featArtist" oninput="intakeUpdate()" placeholder="Featured Artist"></div>
+            <div class="form-group"><label>Producer</label><input type="text" id="in-producer" oninput="intakeUpdate()" placeholder="Producer Name"></div>
+            <div class="form-group"><label>Album / Single Name</label><input type="text" id="in-albumName" oninput="intakeUpdate()" placeholder="Album or Single Name"></div>
+            <div class="form-group"><label>Primary Genre</label><input type="text" id="in-genrePrimary" oninput="intakeUpdate()" placeholder="e.g., Hip-Hop, Pop, R&B"></div>
+            <div class="form-group"><label>Secondary Genre</label><input type="text" id="in-genreSecondary" oninput="intakeUpdate()" placeholder="e.g., Gospel, Alternative"></div>
             <div class="form-group"><label>Language</label>
               <select id="in-language" onchange="intakeUpdate()">
                 <option value="English" selected>English</option>
@@ -882,8 +882,8 @@
         <div class="form-section">
           <div class="form-section-title">Identifiers</div>
           <div class="form-grid">
-            <div class="form-group"><label>ISRC</label><input type="text" id="in-isrc" oninput="intakeUpdate()" placeholder="QZTB72635357"></div>
-            <div class="form-group"><label>UPC</label><input type="text" id="in-upc" oninput="intakeUpdate()" placeholder="825626192850"></div>
+            <div class="form-group"><label>ISRC</label><input type="text" id="in-isrc" oninput="intakeUpdate()" placeholder="e.g., USXX12345678"></div>
+            <div class="form-group"><label>UPC</label><input type="text" id="in-upc" oninput="intakeUpdate()" placeholder="e.g., 012345678901"></div>
             <div class="form-group full-width"><label>ISWC</label><input type="text" id="in-iswc" oninput="intakeUpdate()" placeholder="T-123456789-0"></div>
           </div>
         </div>
@@ -892,11 +892,11 @@
         <div class="form-section">
           <div class="form-section-title">Artist Information</div>
           <div class="form-grid">
-            <div class="form-group"><label>Legal Name</label><input type="text" id="in-legalName" oninput="intakeUpdate()" placeholder="Joseph Enrique Madigan"></div>
-            <div class="form-group"><label>Stage Name</label><input type="text" id="in-stageName" oninput="intakeUpdate()" placeholder="Madigan"></div>
-            <div class="form-group"><label>Email</label><input type="email" id="in-email" oninput="intakeUpdate()" placeholder="josephmadiganmusic@gmail.com"></div>
+            <div class="form-group"><label>Legal Name</label><input type="text" id="in-legalName" oninput="intakeUpdate()" placeholder="Your Full Legal Name"></div>
+            <div class="form-group"><label>Stage Name</label><input type="text" id="in-stageName" oninput="intakeUpdate()" placeholder="Your Stage Name"></div>
+            <div class="form-group"><label>Email</label><input type="email" id="in-email" oninput="intakeUpdate()" placeholder="artist@example.com"></div>
             <div class="form-group"><label>Phone</label><input type="tel" id="in-phone" oninput="intakeUpdate()" placeholder="(555) 000-0000"></div>
-            <div class="form-group"><label>Label Name</label><input type="text" id="in-label" oninput="intakeUpdate()" placeholder="Born Again Bold Inc."></div>
+            <div class="form-group"><label>Label Name</label><input type="text" id="in-label" oninput="intakeUpdate()" placeholder="Your Label Name"></div>
             <div class="form-group"><label>PRO Affiliation</label>
               <select id="in-pro" onchange="intakeUpdate()">
                 <option value="">Select PRO</option>
@@ -906,8 +906,8 @@
                 <option value="Other">Other</option>
               </select>
             </div>
-            <div class="form-group"><label>PRO Account / CAE #</label><input type="text" id="in-proAccount" oninput="intakeUpdate()" placeholder="550426835"></div>
-            <div class="form-group full-width"><label>Publisher Entity Name</label><input type="text" id="in-publisherEntity" oninput="intakeUpdate()" placeholder="Born Again Bold Publishing"></div>
+            <div class="form-group"><label>PRO Account / CAE #</label><input type="text" id="in-proAccount" oninput="intakeUpdate()" placeholder="e.g., 123456789"></div>
+            <div class="form-group full-width"><label>Publisher Entity Name</label><input type="text" id="in-publisherEntity" oninput="intakeUpdate()" placeholder="Your Publishing Company"></div>
             <div class="form-group"><label>Created for Film/TV/Theater?</label>
               <select id="in-filmTV" onchange="intakeUpdate()">
                 <option value="No" selected>No</option>
@@ -976,9 +976,9 @@
             <div class="form-group full-width platform-field"><label><span style="color:#FC3C44;">&#9679;</span> Apple Music</label><input type="text" id="in-linkApple" oninput="intakeUpdate()" placeholder="https://music.apple.com/..."></div>
             <div class="form-group full-width platform-field"><label><span style="color:#FF0000;">&#9679;</span> YouTube Music</label><input type="text" id="in-linkYTMusic" oninput="intakeUpdate()" placeholder="https://music.youtube.com/..."></div>
             <div class="form-group full-width platform-field"><label><span style="color:#FF0000;">&#9654;</span> YouTube Video</label><input type="text" id="in-linkYTVideo" oninput="intakeUpdate()" placeholder="https://youtube.com/watch?v=..."></div>
-            <div class="form-group"><label>EPK URL</label><input type="text" id="in-epk" oninput="intakeUpdate()" placeholder="https://epk.madigansmusic.com"></div>
-            <div class="form-group"><label>Website</label><input type="text" id="in-website" oninput="intakeUpdate()" placeholder="https://..."></div>
-            <div class="form-group"><label>Instagram</label><input type="text" id="in-instagram" oninput="intakeUpdate()" placeholder="https://instagram.com/madigansmusic"></div>
+            <div class="form-group"><label>EPK URL</label><input type="text" id="in-epk" oninput="intakeUpdate()" placeholder="https://yoursite.com/epk"></div>
+            <div class="form-group"><label>Website</label><input type="text" id="in-website" oninput="intakeUpdate()" placeholder="https://yoursite.com"></div>
+            <div class="form-group"><label>Instagram</label><input type="text" id="in-instagram" oninput="intakeUpdate()" placeholder="https://instagram.com/yourhandle"></div>
             <div class="form-group"><label>Facebook</label><input type="text" id="in-facebook" oninput="intakeUpdate()" placeholder="https://facebook.com/..."></div>
             <div class="form-group"><label>TikTok</label><input type="text" id="in-tiktok" oninput="intakeUpdate()" placeholder="https://tiktok.com/@..."></div>
             <div class="form-group"><label>Twitter / X</label><input type="text" id="in-twitter" oninput="intakeUpdate()" placeholder="https://x.com/..."></div>
@@ -1041,7 +1041,7 @@
           </div>
           <div class="form-group full-width">
             <label>Collab Partners / Friends / Network (comma-separated)</label>
-            <input type="text" id="gen-collabs" placeholder="e.g., Datin, Rogue2Redeemed, Pastor Mike" oninput="intakeUpdate()">
+            <input type="text" id="gen-collabs" placeholder="e.g., Artist A, Artist B, Producer C" oninput="intakeUpdate()">
           </div>
           <div class="full-width" style="text-align:center;margin-top:8px;">
             <button type="button" id="btnGenTargets" onclick="generateTargets(this)" style="padding:12px 24px;background:linear-gradient(135deg,#0f1332,#151a40);border:1px solid #7b2ff7;border-radius:8px;color:#00d4ff;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;letter-spacing:0.5px;" onmouseover="this.style.background='linear-gradient(135deg,#7b2ff7,#00d4ff)';this.style.color='#000'" onmouseout="this.style.background='linear-gradient(135deg,#1a1a1a,#222)';this.style.color='#00d4ff'">Generate Targets</button>
@@ -1146,29 +1146,27 @@
           <div class="form-section">
             <div class="form-section-title">Track Information</div>
             <div class="form-grid">
-              <div class="form-group"><label>Song Title *</label><input type="text" id="egSongTitle" placeholder="God In The Room" required></div>
-              <div class="form-group"><label>Artists *</label><input type="text" id="egArtists" placeholder="Madigan x Rogue2Redeemed"></div>
-              <div class="form-group"><label>Producer</label><input type="text" id="egProducer" placeholder="Jay Beats"></div>
-              <div class="form-group"><label>Label</label><input type="text" id="egLabel" value="Born Again Bold Inc."></div>
+              <div class="form-group"><label>Song Title *</label><input type="text" id="egSongTitle" placeholder="Enter song title" required></div>
+              <div class="form-group"><label>Artists *</label><input type="text" id="egArtists" placeholder="Artist x Featured Artist"></div>
+              <div class="form-group"><label>Producer</label><input type="text" id="egProducer" placeholder="Producer Name"></div>
+              <div class="form-group"><label>Label</label><input type="text" id="egLabel" placeholder="Your Label Name"></div>
               <div class="form-group"><label>Release Date</label><input type="date" id="egReleaseDate"></div>
-              <div class="form-group"><label>Genre</label><input type="text" id="egGenre" value="Christian Hip-Hop (CHH)"></div>
-              <div class="form-group"><label>UPC</label><input type="text" id="egUpc" placeholder="825626192850"></div>
-              <div class="form-group"><label>ISRC</label><input type="text" id="egIsrc" placeholder="US-XXX-26-12345"></div>
-              <div class="form-group full-width"><label>Songwriters</label><input type="text" id="egSongwriters" placeholder="Joseph Enrique Madigan & Jacob Johnston"></div>
+              <div class="form-group"><label>Genre</label><input type="text" id="egGenre" placeholder="e.g., Hip-Hop, Pop, R&B"></div>
+              <div class="form-group"><label>UPC</label><input type="text" id="egUpc" placeholder="e.g., 012345678901"></div>
+              <div class="form-group"><label>ISRC</label><input type="text" id="egIsrc" placeholder="e.g., US-XXX-26-12345"></div>
+              <div class="form-group full-width"><label>Songwriters</label><input type="text" id="egSongwriters" placeholder="Writer Name & Writer Name"></div>
             </div>
           </div>
           <div class="form-section">
             <div class="form-section-title">Artist Information</div>
             <div class="form-grid">
-              <div class="form-group"><label>Artist Name *</label><input type="text" id="egArtistName" value="Madigan"></div>
-              <div class="form-group"><label>Email</label><input type="email" id="egEmail" value="josephmadiganmusic@gmail.com"></div>
+              <div class="form-group"><label>Artist Name *</label><input type="text" id="egArtistName" placeholder="Your Artist Name"></div>
+              <div class="form-group"><label>Email</label><input type="email" id="egEmail" placeholder="artist@example.com"></div>
               <div class="form-group full-width"><label>Intro Paragraph</label>
-                <textarea id="egIntroParagraph">My name is Madigan, and I'm a Christian Hip-Hop artist from Connecticut, now based in Marion, Indiana. I'm reaching out to share my brand new single featuring Rogue2Redeemed, released under Born Again Bold Inc.
-
-This track is a powerful declaration of faith. I would be honored if you would consider spinning it on your station or featuring it on your podcast/show. I believe the message of this song -- faith, redemption, and God's presence -- will resonate deeply with your listeners.</textarea>
+                <textarea id="egIntroParagraph" placeholder="Write a short intro about yourself and your new release. Include your name, genre, location, and what makes this track special..."></textarea>
               </div>
               <div class="form-group full-width"><label>About / Bio</label>
-                <textarea id="egBio">My story is one of redemption. At 16, I was homeless and battling addiction on the streets of Connecticut. Through a series of life-changing encounters, I found my way to an assisted living program in Indiana, where I discovered my faith and a new purpose. I went on to earn my Bachelor's degree from Indiana Wesleyan University and have spent over a decade pouring my pain, hope, and joy into my music. Today, as a husband and father, I use my platform to share a message of perseverance, faith, and the transformative power of God's love.</textarea>
+                <textarea id="egBio" placeholder="Share your artist bio here — your background, journey, and what drives your music..."></textarea>
               </div>
             </div>
           </div>
@@ -1230,10 +1228,10 @@ This track is a powerful declaration of faith. I would be honored if you would c
           <div class="form-section">
             <div class="form-section-title">Social &amp; EPK Links</div>
             <div class="form-grid">
-              <div class="form-group full-width"><label>EPK URL</label><input type="text" id="egEpk" value="https://epk.madigansmusic.com"></div>
+              <div class="form-group full-width"><label>EPK URL</label><input type="text" id="egEpk" placeholder="https://yoursite.com/epk"></div>
               <div class="form-group full-width"><label>Download Page URL (if hosted)</label><input type="text" id="egDownloadPageUrl" placeholder="https://yoursite.com/download-page.html"></div>
-              <div class="form-group"><label>Facebook</label><input type="text" id="egFacebook" value="https://facebook.com/Josephemadigan"></div>
-              <div class="form-group"><label>Instagram</label><input type="text" id="egInstagram" value="https://instagram.com/madigansmusic"></div>
+              <div class="form-group"><label>Facebook</label><input type="text" id="egFacebook" placeholder="https://facebook.com/yourpage"></div>
+              <div class="form-group"><label>Instagram</label><input type="text" id="egInstagram" placeholder="https://instagram.com/yourhandle"></div>
               <div class="form-group"><label>Twitter / X</label><input type="text" id="egTwitter" placeholder="https://x.com/..."></div>
               <div class="form-group"><label>TikTok</label><input type="text" id="egTiktok" placeholder="https://tiktok.com/@..."></div>
             </div>
@@ -1350,7 +1348,7 @@ This track is a powerful declaration of faith. I would be honored if you would c
             <div><label>Who are you following up with?</label><input type="text" id="inlineAiInput-outFollowup-who" placeholder="e.g., DJ Holy Fire, Rapzilla editor"></div>
           </div>
           <label>Context (what did you send, when, any response?)</label>
-          <textarea id="inlineAiInput-outFollowup" rows="2" placeholder="e.g., sent DM about God In The Room last week, no response yet..."></textarea>
+          <textarea id="inlineAiInput-outFollowup" rows="2" placeholder="e.g., sent DM about my new single last week, no response yet..."></textarea>
           <button class="inline-ai-go" onclick="runInlineAi('outFollowup')">Generate Follow-Up</button>
           <div class="inline-ai-loading" id="inlineAiLoading-outFollowup"><div class="ai-spinner"></div><div class="ai-loading-text">Writing follow-up...</div></div>
           <div class="inline-ai-results" id="inlineAiResults-outFollowup"></div>
@@ -1815,7 +1813,7 @@ This track is a powerful declaration of faith. I would be honored if you would c
     <button class="ai-close" onclick="closeAiModal('analytics')">&times;</button>
     <h3>Analytics Advisor</h3>
     <label>Paste your Spotify / social media stats *</label>
-    <textarea id="aiAnalyticsStats" rows="6" placeholder="e.g., Spotify: 450 monthly listeners, 120 saves on God In The Room..."></textarea>
+    <textarea id="aiAnalyticsStats" rows="6" placeholder="e.g., Spotify: 450 monthly listeners, 120 saves on latest single..."></textarea>
     <button class="ai-submit-btn" id="aiAnalyticsBtn" onclick="runAiAction('analytics')">Get Strategic Advice</button>
     <div class="ai-loading" id="aiLoading-analytics"><div class="ai-spinner"></div><div class="ai-loading-text">Music Agent Pro is analyzing your data...</div></div>
     <div class="ai-results" id="aiResults-analytics"></div>
