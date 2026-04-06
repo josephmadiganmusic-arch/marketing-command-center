@@ -175,8 +175,8 @@
   .preview-tabs { display: flex; gap: 4px; background: var(--bg-card); border-radius: 8px; padding: 3px; border: 1px solid var(--border); }
   .preview-tab { padding: 6px 16px; border: none; background: none; color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px; font-family: 'Inter', sans-serif; transition: all 0.3s; }
   .preview-tab.active { background: var(--gradient-primary); color: #fff; }
-  .preview-frame-wrap { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; min-height: 300px; }
-  .preview-frame { width: 100%; min-height: 300px; border: none; background: var(--bg-input); }
+  .preview-frame-wrap { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; position: relative; }
+  .preview-frame { border: none; background: var(--bg-input); transform-origin: top left; }
   .code-view { display: none; padding: 20px; background: var(--bg-deep); min-height: 600px; overflow: auto; }
   .code-view pre { font-size: 12px; color: var(--text-dim); white-space: pre-wrap; word-break: break-all; font-family: 'Courier New', monospace; line-height: 1.6; }
   .template-bar { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
@@ -486,8 +486,8 @@
     /* Email gen layout */
     .eg-layout { grid-template-columns: 1fr; gap: 20px; }
     .eg-form-panel { position: static !important; }
-    .preview-frame-wrap { min-height: 400px; }
-    .preview-frame { min-height: 400px; }
+    .preview-frame-wrap { min-height: 250px; }
+    .preview-frame { min-height: 250px; }
     .preview-header { flex-direction: column; gap: 10px; align-items: flex-start; }
 
     /* Fullscreen overlay */
@@ -3457,19 +3457,26 @@ function egGenerateEmail() {
   doc.open(); doc.write(egGeneratedHTML); doc.close();
   document.getElementById('egCodeContent').textContent = egGeneratedHTML;
 
-  // Auto-resize iframe to fit full email content
-  function resizeFrame() {
+  // Zoom-to-fit: scale iframe down so full email is visible
+  function zoomToFit() {
     try {
+      const wrap = frame.parentElement;
+      const wrapWidth = wrap.clientWidth;
       const body = frame.contentDocument.body;
       const html = frame.contentDocument.documentElement;
-      const h = Math.max(body.scrollHeight, body.offsetHeight, html.scrollHeight, html.offsetHeight);
-      frame.style.height = h + 'px';
-      frame.parentElement.style.minHeight = h + 'px';
+      const contentH = Math.max(body.scrollHeight, body.offsetHeight, html.scrollHeight, html.offsetHeight);
+      const contentW = Math.max(body.scrollWidth, 640);
+      // Scale to fit width, then set iframe to full size and use CSS transform to shrink
+      const scale = Math.min(wrapWidth / contentW, 1);
+      frame.style.width = contentW + 'px';
+      frame.style.height = contentH + 'px';
+      frame.style.transform = 'scale(' + scale + ')';
+      wrap.style.height = (contentH * scale) + 'px';
     } catch(e) {}
   }
-  frame.onload = resizeFrame;
-  setTimeout(resizeFrame, 200);
-  setTimeout(resizeFrame, 600);
+  frame.onload = zoomToFit;
+  setTimeout(zoomToFit, 200);
+  setTimeout(zoomToFit, 800);
 
   // Show the Copy for Gmail bar and scroll user to it
   document.getElementById('egGmailCopyBar').style.display = 'block';
