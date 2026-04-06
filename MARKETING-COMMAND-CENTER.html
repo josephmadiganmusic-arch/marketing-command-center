@@ -349,6 +349,12 @@
   .site-sidebar .intake-summary { margin-bottom: 16px; }
   .sidebar-collapse-btn { display: none; background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin-bottom: 12px; transition: all 0.3s; }
   .sidebar-collapse-btn:hover { border-color: var(--accent-1); color: var(--accent-2); }
+  .sidebar-minimize-btn { background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); padding: 8px 12px; font-size: 18px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; line-height: 1; }
+  .sidebar-minimize-btn:hover { border-color: var(--accent-1); color: var(--accent-2); }
+  .sidebar-min-pill { background: var(--bg-card); border: 1px solid var(--accent-1); border-radius: 10px; padding: 14px 20px; cursor: pointer; font-size: 13px; font-weight: 700; color: var(--accent-2); text-align: center; font-family: 'Inter', sans-serif; transition: all 0.3s; animation: pillPulse 2s ease-in-out infinite; letter-spacing: 0.5px; }
+  .sidebar-min-pill:hover { border-color: var(--accent-2); box-shadow: var(--glow-cyan); animation: none; }
+  .sidebar-min-icon { margin-right: 8px; }
+  @keyframes pillPulse { 0%, 100% { box-shadow: 0 0 5px rgba(123,47,247,0.2); } 50% { box-shadow: 0 0 18px rgba(123,47,247,0.5), 0 0 30px rgba(0,212,255,0.15); } }
   /* ═══ GAMIFICATION ═══ */
   .ach-badge { background: var(--bg-input); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; transition: all 0.3s ease; position: relative; overflow: hidden; }
   .ach-badge:hover { border-color: var(--accent-1); transform: translateY(-3px); box-shadow: var(--glow-purple); }
@@ -1718,7 +1724,16 @@ This track is a powerful declaration of faith. I would be honored if you would c
 
   <!-- GLOBAL METADATA SIDEBAR — visible on every tab -->
   <div class="site-sidebar">
-    <button class="sidebar-collapse-btn" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show Metadata Summary':'Hide Metadata Summary'">Hide Metadata Summary</button>
+    <!-- Minimized pulsing pill -->
+    <div id="sidebarMinPill" class="sidebar-min-pill" style="display:none;" onclick="toggleSidebarMinimize(false)">
+      <span class="sidebar-min-icon">&#9776;</span> Metadata Summary
+    </div>
+    <!-- Full sidebar content -->
+    <div id="sidebarFull">
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="sidebar-collapse-btn" style="display:block;flex:1;margin-bottom:0;" onclick="document.querySelector('.sidebar-collapsible').classList.toggle('collapsed');this.textContent=document.querySelector('.sidebar-collapsible').classList.contains('collapsed')?'Show Metadata Summary':'Hide Metadata Summary'">Hide Metadata Summary</button>
+      <button class="sidebar-minimize-btn" onclick="toggleSidebarMinimize(true)" title="Minimize to pill">&#8722;</button>
+    </div>
     <div class="sidebar-collapsible">
       <div class="intake-summary">
         <div class="intake-summary-title">Metadata Summary</div>
@@ -1741,6 +1756,7 @@ This track is a powerful declaration of faith. I would be honored if you would c
         </div>
       </div>
     </div>
+    </div><!-- end sidebarFull -->
   </div><!-- end site-sidebar -->
 
   </div><!-- end site-layout -->
@@ -2228,6 +2244,18 @@ function unlockTabs() {
   try { localStorage.setItem(ukey('mcc_campaign_generated'), 'true'); } catch(e) {}
   // Award XP for campaign generation
   awardXP('campaign_generate');
+}
+
+function toggleSidebarMinimize(minimize) {
+  const pill = document.getElementById('sidebarMinPill');
+  const full = document.getElementById('sidebarFull');
+  if (minimize) {
+    full.style.display = 'none';
+    pill.style.display = 'block';
+  } else {
+    pill.style.display = 'none';
+    full.style.display = '';
+  }
 }
 
 function showPanel(id) {
