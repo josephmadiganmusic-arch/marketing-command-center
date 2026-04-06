@@ -1818,7 +1818,7 @@ async function generateTargets(btn) {
   const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
 
   try {
-    const result = await callClaude(`You are a music industry researcher. Based on the following release info, find REAL, SPECIFIC targets for outreach.
+    const result = await callClaude(`You are a music industry researcher. Based on the release info below, suggest real outreach targets.
 
 SONG: "${d.songTitle}"${feat}
 ARTIST: ${d.primaryArtist}
@@ -1829,26 +1829,16 @@ SPOTIFY: ${d.linkSpotify || 'N/A'}
 INSTAGRAM: ${d.instagram || 'N/A'}
 TIKTOK: ${d.tiktok || 'N/A'}
 
-Research and return ONLY valid JSON (no markdown, no code fences) with REAL names that exist on these platforms:
+YOUR RESPONSE MUST START WITH { AND END WITH } — pure JSON, nothing else. No explanation, no preamble, no markdown.
 
-{
-  "curators": ["name1", "name2", ...],
-  "playlists": ["playlist1", "playlist2", ...],
-  "blogs": ["blog1", "blog2", ...],
-  "podcasts": ["podcast1", "podcast2", ...],
-  "collabs": ["artist1", "artist2", ...]
-}
+{"curators":["8-10 real playlist curators/IG music pages for this genre"],"playlists":["10-12 real Spotify playlists matching this genre/mood"],"blogs":["6-8 real music blogs/media that cover this genre"],"podcasts":["5-6 real podcasts about this genre/culture"],"collabs":["5-8 real artists in same niche at similar level"]}
 
-Requirements:
-- CURATORS: 8-10 real Spotify playlist curators and Instagram music pages that actively curate for this genre. Include their platform handle or account name. Focus on curators who feature independent artists in this genre. Search for curators on Spotify who run playlists matching this genre, and Instagram accounts that promote this type of music.
-- PLAYLISTS: 10-12 real Spotify playlists (both editorial and user-generated) that fit this song's genre, mood, and style. Include the actual playlist name as it appears on Spotify. Mix large playlists with smaller niche ones that are more likely to accept submissions.
-- BLOGS: 6-8 real music blogs, online magazines, and media outlets that cover this genre. Include ones that review independent releases and accept submissions.
-- PODCASTS: 5-6 real podcasts that discuss this genre, interview independent artists, or cover faith/music/culture topics relevant to this artist.
-- COLLABS: 5-8 real artists in the same genre/niche who are at a similar or slightly higher level, who the artist could realistically collaborate with or cross-promote. Consider artists who have featured on similar playlists or share the same audience.
+Only include names you are confident actually exist. These will be used for real outreach.`);
 
-CRITICAL: Only suggest REAL accounts, playlists, blogs, podcasts, and artists that actually exist. Do not make up names. If you are not confident a target exists, do not include it. These will be used for actual outreach.`);
-
-    const parsed = JSON.parse(result.replace(/```json\n?|\n?```/g, '').trim());
+    // Extract JSON from response - find first { to last }
+    const jsonMatch = result.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No valid response received. Try again.');
+    const parsed = JSON.parse(jsonMatch[0]);
 
     // Fill fields, appending to existing values
     function fillField(id, values) {
@@ -3104,7 +3094,7 @@ Requirements:
 - Voice: direct, authentic, never preachy or generic`);
 
     try {
-      const c = JSON.parse(contentResult.replace(/```json\n?|\n?```/g, '').trim());
+      const c = JSON.parse((contentResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
       if (c.hooks) hooks = c.hooks;
       if (c.captions) captions = c.captions;
       if (c.hashtagSets) hashtagSets = c.hashtagSets;
@@ -3137,7 +3127,7 @@ Requirements:
 - All CTAs should be specific and actionable`);
 
     try {
-      const cal = JSON.parse(calResult.replace(/```json\n?|\n?```/g, '').trim());
+      const cal = JSON.parse((calResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
       if (cal['1']) calendarData = cal;
       renderCalendar(1);
     } catch(e) { console.error('Calendar parse error:', e); }
@@ -3187,7 +3177,7 @@ Requirements:
 - NO bracket placeholders like [Name] or [Playlist Name] when you have real names. Only use brackets if no target was provided for that category.`);
 
     try {
-      const o = JSON.parse(outreachResult.replace(/```json\n?|\n?```/g, '').trim());
+      const o = JSON.parse((outreachResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
       if (o.curatorMessages) curatorMessages = o.curatorMessages;
       if (o.followupMessages) followupMessages = o.followupMessages;
       renderOutreach();
@@ -3211,7 +3201,7 @@ Requirements:
 - Think beyond obvious genre playlists — include mood, activity, lifestyle, and themed playlists`);
 
     try {
-      const p = JSON.parse(playlistResult.replace(/```json\n?|\n?```/g, '').trim());
+      const p = JSON.parse((playlistResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
       if (p.playlists) playlists = p.playlists;
       if (p.searchKeywords) searchKeywords = p.searchKeywords;
       renderPlaylists();
@@ -3239,7 +3229,7 @@ Requirements:
 - All tasks specific to this song, artist, and genre — not generic`);
 
     try {
-      const cl = JSON.parse(checklistResult.replace(/```json\n?|\n?```/g, '').trim());
+      const cl = JSON.parse((checklistResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
       if (cl.today) checklistToday = cl.today;
       if (cl.week) checklistWeek = cl.week;
       if (cl.recurring) checklistRecurring = cl.recurring;
