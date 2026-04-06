@@ -1878,6 +1878,42 @@ function intakeGetData() {
 let _autosaveTimer = null;
 let _namedSaveTimer = null;
 
+// ============================
+// ARTIST PROFILE — sticky fields that carry over between releases
+// ============================
+const PROFILE_FIELDS = [
+  'primaryArtist','genrePrimary','genreSecondary','language',
+  'legalName','stageName','email','phone','label','pro','proAccount',
+  'publisherEntity','filmTV',
+  'epk','website','instagram','facebook','tiktok','twitter',
+  'bio','emailIntro'
+];
+// These complex fields (arrays) are also sticky
+const PROFILE_ARRAY_FIELDS = ['songwriters','publishers'];
+
+function saveArtistProfile() {
+  const d = intakeGetData();
+  const profile = {};
+  for (const k of PROFILE_FIELDS) { if (d[k]) profile[k] = d[k]; }
+  for (const k of PROFILE_ARRAY_FIELDS) {
+    if (d[k] && d[k].length) profile[k] = d[k];
+  }
+  if (Object.keys(profile).length > 0) {
+    localStorage.setItem(ukey('artist_profile'), JSON.stringify(profile));
+  }
+}
+
+function loadArtistProfile() {
+  try { return JSON.parse(localStorage.getItem(ukey('artist_profile')) || '{}'); }
+  catch(e) { return {}; }
+}
+
+function prefillFromProfile() {
+  const p = loadArtistProfile();
+  if (!Object.keys(p).length) return;
+  intakeFillForm(p);
+}
+
 async function generateEmailIntro(btn) {
   const d = intakeGetData();
   if (!d.songTitle || !d.primaryArtist) {
@@ -2036,6 +2072,8 @@ function intakeUpdate() {
       const slim = Object.assign({}, d, { coverArt: null });
       try { localStorage.setItem(ukey('release_data'), JSON.stringify(slim)); } catch(e2) {}
     }
+    // Also update artist profile with sticky fields
+    saveArtistProfile();
   }, 500);
 
   // Save to named releases list — debounce 5 seconds so partial titles don't create junk entries
@@ -2226,19 +2264,22 @@ function intakeCleanupSaves() {
 }
 
 function intakeClear() {
-  const fields = ['in-songTitle','in-primaryArtist','in-featArtist','in-producer','in-albumName',
-    'in-genrePrimary','in-genreSecondary','in-releaseDate','in-durationMin','in-durationSec',
+  // Clear release-specific fields only
+  const releaseFields = ['in-songTitle','in-featArtist','in-producer','in-albumName',
+    'in-releaseDate','in-durationMin','in-durationSec',
     'in-isrc','in-upc','in-iswc',
-    'in-legalName','in-stageName','in-email','in-phone','in-label','in-proAccount','in-publisherEntity',
-    'in-linkSpotify','in-linkApple','in-linkYTMusic','in-linkYTVideo','in-epk','in-website',
-    'in-instagram','in-facebook','in-tiktok','in-twitter','in-dlWav','in-dlMp3','in-dlPressKit',
-    'in-bio','in-emailIntro'];
-  fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  document.getElementById('in-songwriterRows').innerHTML = '';
-  document.getElementById('in-publisherRows').innerHTML = '';
+    'in-linkSpotify','in-linkApple','in-linkYTMusic','in-linkYTVideo',
+    'in-dlWav','in-dlMp3','in-dlPressKit'];
+  releaseFields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Clear checkboxes that are release-specific
+  ['in-instrumental','in-matRadioEdit','in-matPressPhotos','in-matBio',
+   'in-matInstrumental','in-matAcapella','in-matMusicVideo','in-matLyrics','in-matInterview'
+  ].forEach(id => { const el = document.getElementById(id); if (el) el.checked = false; });
   inClearCover({ stopPropagation: () => {} });
+  // Pre-fill sticky fields from saved artist profile
+  prefillFromProfile();
   intakeUpdate();
-  showToast('Form cleared');
+  showToast('Cleared — artist defaults loaded');
 }
 
 // ============================
@@ -3759,14 +3800,17 @@ function init() {
       if (cleaned) localStorage.setItem(ukey('release_data_all'), JSON.stringify(all));
     }
   } catch(e) {}
-  // Load last saved intake data if present
+  // Load last saved intake data, or pre-fill from artist profile
   const lastData = localStorage.getItem(ukey('release_data'));
   if(lastData) {
     try { intakeFillForm(JSON.parse(lastData)); } catch(e) {}
+  } else {
+    // No active release — load artist defaults for sticky fields
+    prefillFromProfile();
   }
-  // init default songwriter row
-  intakeAddSongwriter();
-  intakeAddPublisher();
+  // init default songwriter row if none exist
+  if (!document.querySelectorAll('#in-songwriterRows .dynamic-row').length) intakeAddSongwriter();
+  if (!document.querySelectorAll('#in-publisherRows .dynamic-row').length) intakeAddPublisher();
   intakeUpdate();
 }
 
