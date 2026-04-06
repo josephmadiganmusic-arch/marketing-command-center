@@ -101,6 +101,17 @@
   .checkbox-item input[type="checkbox"]:checked { background: #c9a84c; border-color: #c9a84c; }
   .checkbox-item input[type="checkbox"]:checked::after { content: '\2713'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #000; font-size: 12px; font-weight: 700; }
   .checkbox-item span { font-size: 13px; color: #ccc; }
+  .tab.locked { opacity: 0.35; cursor: not-allowed; position: relative; }
+  .tab.locked:hover:not(.active) { color: #666; }
+  .btn-generate-campaign { width: 100%; padding: 18px 24px; background: linear-gradient(135deg, #c9a84c, #d4b65e); color: #000; border: none; border-radius: 10px; font-size: 16px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; margin-top: 24px; }
+  .btn-generate-campaign:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(201,168,76,0.4); }
+  .btn-generate-campaign:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .generate-status { text-align: center; margin-top: 16px; font-size: 13px; color: #888; }
+  .generate-status .step { padding: 6px 0; display: flex; align-items: center; gap: 8px; justify-content: center; }
+  .generate-status .step.done { color: #c9a84c; }
+  .generate-status .step.active { color: #fff; }
+  .generate-status .step .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #333; border-top-color: #c9a84c; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .eg-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding: 20px 0 40px; align-items: start; }
   .eg-form-panel { position: sticky; top: 20px; }
   .eg-actions { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
@@ -551,6 +562,14 @@
         </div>
 
       </div><!-- end intake-form-area -->
+
+      <div class="form-section" id="generateSection" style="text-align:center;">
+        <div class="form-section-title">Launch Campaign</div>
+        <p style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.6;">Fill in your release details above, then generate your complete marketing campaign. Claude AI will analyze your song, genre, and artist niche to create personalized content across all tabs — including pre-release strategy for up to 1 month before your release date.</p>
+        <button class="btn-generate-campaign" id="btnGenerateCampaign" onclick="generateCampaign()">Generate Campaign</button>
+        <div class="generate-status" id="generateStatus"></div>
+      </div>
+
   </div><!-- end panel-intake -->
 
   <!-- REGISTRATION TAB -->
@@ -997,10 +1016,10 @@ This track is a powerful declaration of faith. I would be honored if you would c
       </div>
     </div>
     <div class="tabs" style="margin:16px 0;">
-      <button class="tab active" onclick="showWeek(1,this)">Week 1: Release</button>
-      <button class="tab" onclick="showWeek(2,this)">Week 2: Deepen</button>
-      <button class="tab" onclick="showWeek(3,this)">Week 3: Expand</button>
-      <button class="tab" onclick="showWeek(4,this)">Week 4: Compound</button>
+      <button class="tab active" id="calWeekTab1" onclick="showWeek(1,this)">Week 1: Pre-Release</button>
+      <button class="tab" id="calWeekTab2" onclick="showWeek(2,this)">Week 2: Release</button>
+      <button class="tab" id="calWeekTab3" onclick="showWeek(3,this)">Week 3: Growth</button>
+      <button class="tab" id="calWeekTab4" onclick="showWeek(4,this)">Week 4: Momentum</button>
     </div>
     <div id="calendar-content"></div>
   </div><!-- end panel-calendar -->
@@ -1171,7 +1190,7 @@ This track is a powerful declaration of faith. I would be honored if you would c
 // ============================
 // DATA
 // ============================
-const hooks = [
+let hooks = [
   "This is what it sounds like when God walks into the room.",
   "I was homeless at 16. Addicted. No direction. Now God has me making music that's changing lives.",
   "A stranger opened their door for me when I had nothing. That moment changed everything.",
@@ -1189,7 +1208,7 @@ const hooks = [
   "Why I wear Grace Wins -- it's not just a hoodie. It's a testimony."
 ];
 
-const captions = [
+let captions = [
   { title: "Release Announcement", platform: "IG + FB", type: "Photo/Reel",
     text: `It's here. "God In The Room" with my brother @Rogue2Redeemed is OUT NOW.\n\nThis song came from a real place. A season of silence. A season of doubt. But God never left. He was in the room the whole time.\n\nGo stream it. Save it. Share it with someone who needs to feel His presence today.\n\nLink in bio.\n\n#GodInTheRoom #Madigan #Rogue2Redeemed #ChristianHipHop #CHH #NewMusic #OutNow #FaithMusic #GraceWins #SpotifyMusic #ChristianRap`,
     cta: "Save it on Spotify -- link in bio" },
@@ -1222,7 +1241,7 @@ const captions = [
     cta: "Follow on Spotify for what's next" }
 ];
 
-const hashtagSets = [
+let hashtagSets = [
   { name: "Release", tags: "#GodInTheRoom #Madigan #Rogue2Redeemed #ChristianHipHop #CHH #NewMusic #OutNow #FaithMusic #GraceWins #SpotifyMusic #ChristianRap #NewChristianMusic" },
   { name: "Testimony", tags: "#Testimony #Faith #Recovery #Hope #Transformation #ChristianHipHop #GodInTheRoom #Madigan #GraceWins #Redemption #Sobriety #MentalHealth" },
   { name: "Engagement", tags: "#ChristianCommunity #FaithStories #GodsPower #HolySpirit #ChurchMusic #WorshipMusic #CHH #Madigan #GodInTheRoom #FaithOverFear" },
@@ -1230,7 +1249,7 @@ const hashtagSets = [
   { name: "TikTok / Viral", tags: "#ChristianTikTok #FaithTok #CHHTikTok #NewMusicFriday #GodInTheRoom #Madigan #MusicTikTok #FYP #ForYouPage #ChristianRapper" }
 ];
 
-const ctas = [
+let ctas = [
   "Save it on Spotify -- link in bio",
   "Share this with someone who needs to hear it",
   "Tag someone who needs this song today",
@@ -1246,7 +1265,7 @@ const ctas = [
   "Drop a prayer request in the comments -- I'm reading every one"
 ];
 
-const calendarData = {
+let calendarData = {
   1: [
     { day: "Thu Apr 3", platform: "IG Reel + TikTok + FB + YT Short + Stories", type: "RELEASE DAY", content: "Announcement + beat drop + cover art + 5-part Story sequence", cta: "Save on Spotify -- link in bio" },
     { day: "Fri Apr 4", platform: "IG Reel + TikTok", type: "Testimony Hook", content: "Hook: 'I was homeless at 16...' + song plays", cta: "Link in bio -- save on Spotify" },
@@ -1279,7 +1298,7 @@ const calendarData = {
   ]
 };
 
-const curatorMessages = [
+let curatorMessages = [
   { title: "Standard DM (Instagram)", type: "Playlist Curator",
     body: `Hey [Name]! I just dropped a new single "God In The Room" featuring Rogue2Redeemed. It's Christian hip hop -- bold, worship-forward, hits hard. Produced by Jay Beats.\n\nI've been following your playlist [Playlist Name] and I think this track fits the vibe you're building. Would love if you'd check it out.\n\nSpotify link: [INSERT LINK]\n\nAppreciate your time either way. Keep curating. -- Madigan` },
   { title: "Short Cold DM", type: "Playlist Curator",
@@ -1288,7 +1307,7 @@ const curatorMessages = [
     body: `Subject: New CHH Single -- "God In The Room" (Madigan x Rogue2Redeemed)\n\nHey [Name],\n\nMy name is Madigan -- I'm an independent Christian hip hop artist from Connecticut, now based in Marion, Indiana. I just released a new single called "God In The Room" featuring Rogue2Redeemed, produced by Jay Beats.\n\nThe song is about experiencing God's presence in your lowest moments -- when everything feels silent but He's still there.\n\nI think it would be a great fit for your playlist [Playlist Name] / your blog / your audience.\n\nHere are the links:\n- Spotify: [INSERT LINK]\n- Press Kit / EPK: epk.madigansmusic.com\n\nQuick facts:\n- Genre: Christian Hip Hop\n- Label: Born Again Bold Inc.\n- UPC: 825626192850 | ISRC: QZTB72635357\n- Credits: Lyrics by Joseph Enrique Madigan & Jacob Johnston\n- Vocals by Madigan & Rogue2Redeemed, Beat by Jay.\n\nThanks for your time and for supporting independent Christian music.\n\nGod bless,\nMadigan\njosephmadiganmusic@gmail.com\nepk.madigansmusic.com` }
 ];
 
-const followupMessages = [
+let followupMessages = [
   { title: "7-Day Follow-Up (DM)", type: "Follow-Up",
     body: `Hey [Name]! Just following up on the track I sent last week -- "God In The Room" (Madigan x Rogue2Redeemed). Wanted to make sure it didn't get buried in your DMs. No pressure at all -- just appreciate you taking a look when you get a chance. Spotify link: [INSERT LINK]. Thanks!` },
   { title: "Follow-Up Email", type: "Email Follow-Up",
@@ -1299,14 +1318,14 @@ const followupMessages = [
     body: `Hey! I just dropped a new song called "God In The Room" with my brother Rogue2Redeemed. It would mean the world if you could:\n\n1. Go to Spotify and save the song (tap the heart)\n2. Add it to one of your playlists\n3. Share it on your story or send it to one person\n\nThat's it. Those three things help more than you know. Here's the link: [INSERT LINK]\n\nThank you for always supporting. God bless.` }
 ];
 
-const playlists = [
+let playlists = [
   { name: "God In The Room", desc: "Press play when you need to feel His presence. Bold faith. Real worship. No holding back. Madigan x Rogue2Redeemed.", purpose: "Anchor playlist for the single. Your track goes first. Add 15-20 similar CHH/worship tracks.", artists: "Lecrae, Andy Mineo, KB, Trip Lee, Hulvey, 1K Phew, Wande, WHATUPRG" },
   { name: "Grace Wins", desc: "For everyone who's been counted out. Faith over fear. God's grace hits harder than anything the world throws at you.", purpose: "Evergreen brand playlist. Your full catalog + features + similar artists." },
   { name: "Sunday Morning Shift", desc: "Start your week locked in. Worship, hip hop, and truth for believers who go hard for God.", purpose: "Weekly listen playlist. Drives repeat streams." },
   { name: "Hope Dealers", desc: "Music for the ones who've been through it and came out praising. Recovery. Redemption. Real talk.", purpose: "Targets your recovery/testimony audience directly." }
 ];
 
-const submissionPlatforms = [
+let submissionPlatforms = [
   { name: "SubmitHub", cost: "$1-3/submission (premium)", speed: "Fast responses", quality: "High", priority: "HIGH" },
   { name: "Groover", cost: "~$2/submission", speed: "7-day guaranteed", quality: "High", priority: "HIGH" },
   { name: "Daily Playlists", cost: "Free", speed: "Slow", quality: "Medium", priority: "MEDIUM" },
@@ -1314,13 +1333,13 @@ const submissionPlatforms = [
   { name: "Playlist Push", cost: "$150+/campaign", speed: "Fast", quality: "High", priority: "LOW (expensive)" }
 ];
 
-const searchKeywords = [
+let searchKeywords = [
   "Christian hip hop","CHH playlist","New Christian music","Faith rap",
   "Worship hip hop","Gospel rap","Christian motivation","Holy hip hop",
   "Christian workout","Faith and flow","Jesus music hip hop"
 ];
 
-const checklistToday = [
+let checklistToday = [
   "Set Artist Pick on Spotify for Artists -- pin 'God In The Room'",
   "Update link in bio (Linktree) -- Spotify link first",
   "Post release announcement on IG, TikTok, FB, YouTube",
@@ -1333,7 +1352,7 @@ const checklistToday = [
   "Claim mechanical rights at The MLC"
 ];
 
-const checklistWeek = [
+let checklistWeek = [
   "Film first 3 videos (Hooks #1, #6, testimony story)",
   "Send 10 playlist curator DMs (templates in Outreach tab)",
   "Submit to SubmitHub (5-10 premium submissions)",
@@ -1346,14 +1365,14 @@ const checklistWeek = [
   "Complete all 5 registration steps in Registration tab (PRO, SoundExchange, MLC, Songtrust, Distribution)"
 ];
 
-const checklistRecurring = [
+let checklistRecurring = [
   "MONDAY: Post first content of the week + send 5 curator DMs + check Spotify stats",
   "WEDNESDAY: Post Stories + reply to all comments (15 min) + review top content",
   "FRIDAY: Post engagement content + update playlists + send 3 follow-up messages",
   "SUNDAY: Screenshot stats + note top performer + plan next week + batch-film 2-3 videos"
 ];
 
-const checklistMonth = [
+let checklistMonth = [
   "Complete all 4 weeks of the content calendar (20+ pieces)",
   "Send all outreach emails + follow-ups (35+ contacts)",
   "Track all submissions and follow up on responses",
@@ -1509,8 +1528,26 @@ const regPlatforms = [
 // CORE UI
 // ============================
 const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai'];
+let campaignGenerated = false;
+
+function lockTabs() {
+  document.querySelectorAll('#mainTabs .tab').forEach((t, i) => {
+    if (panelNames[i] !== 'intake') t.classList.add('locked');
+  });
+}
+function unlockTabs() {
+  campaignGenerated = true;
+  document.querySelectorAll('#mainTabs .tab').forEach(t => t.classList.remove('locked'));
+  // Save generated state
+  try { localStorage.setItem('mcc_campaign_generated', 'true'); } catch(e) {}
+}
 
 function showPanel(id) {
+  // Block locked tabs (except intake)
+  if (id !== 'intake' && !campaignGenerated) {
+    showToast('Generate your campaign first to unlock all tabs');
+    return;
+  }
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + id).classList.add('active');
   document.querySelectorAll('#mainTabs .tab').forEach((t, i) => {
@@ -2787,9 +2824,281 @@ function renderInlineAiResults(container, text) {
 }
 
 // ============================
+// CAMPAIGN GENERATOR
+// ============================
+async function generateCampaign() {
+  const d = intakeGetData();
+  if (!d.songTitle || !d.primaryArtist) {
+    showToast('Fill in at least Song Title and Primary Artist');
+    return;
+  }
+
+  const btn = document.getElementById('btnGenerateCampaign');
+  const statusEl = document.getElementById('generateStatus');
+  btn.disabled = true;
+  btn.textContent = 'GENERATING...';
+
+  const steps = [
+    { id: 'content', label: 'Content Bank (hooks, captions, hashtags, CTAs)' },
+    { id: 'calendar', label: 'Marketing Calendar (pre-release + post-release)' },
+    { id: 'outreach', label: 'Outreach Templates' },
+    { id: 'playlists', label: 'Playlist Strategy' },
+    { id: 'checklist', label: 'Action Items' }
+  ];
+
+  statusEl.innerHTML = steps.map(s =>
+    `<div class="step" id="genStep-${s.id}">${s.label}</div>`
+  ).join('');
+
+  // Build context from intake
+  const releaseDate = d.releaseDate || 'TBD';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
+  const feat = d.featArtist ? ` featuring ${d.featArtist}` : '';
+  const writers = d.songwriters.map(w => w.name).filter(Boolean).join(', ');
+  const bio = d.bio || '';
+  const socials = [d.instagram, d.tiktok, d.facebook, d.twitter].filter(Boolean).join(', ');
+  const materials = [];
+  if (d.matMusicVideo) materials.push('music video');
+  if (d.matRadioEdit) materials.push('clean radio edit');
+  if (d.matPressPhotos) materials.push('press photos');
+  if (d.matLyrics) materials.push('lyrics sheet');
+  if (d.matInstrumental) materials.push('instrumental');
+  if (d.matAcapella) materials.push('acapella');
+
+  const ctx = `SONG: "${d.songTitle}"${feat}
+ARTIST: ${d.primaryArtist}
+ALBUM/SINGLE: ${d.albumName || d.songTitle}
+GENRE: ${genre}
+RELEASE DATE: ${releaseDate}
+PRODUCER: ${d.producer || 'N/A'}
+SONGWRITERS: ${writers || 'N/A'}
+LABEL: ${d.label || 'Independent'}
+BIO: ${bio || 'N/A'}
+SOCIALS: ${socials || 'N/A'}
+AVAILABLE MATERIALS: ${materials.join(', ') || 'None specified'}
+SPOTIFY: ${d.linkSpotify || 'N/A'}
+EPK: ${d.epk || 'N/A'}
+EMAIL: ${d.email || 'N/A'}`;
+
+  function markStep(id, state) {
+    const el = document.getElementById('genStep-' + id);
+    if (state === 'active') {
+      el.className = 'step active';
+      el.innerHTML = `<span class="spinner"></span> ${el.textContent.replace(/^[\u2713\s]*/,'')}`;
+    } else if (state === 'done') {
+      el.className = 'step done';
+      el.innerHTML = `\u2713 ${el.textContent.replace(/^[\u2713\s]*/,'')}`;
+    }
+  }
+
+  try {
+    // --- 1. Content Bank ---
+    markStep('content', 'active');
+    const contentResult = await callClaude(`${ctx}
+
+Generate a complete content bank for this release. Return ONLY valid JSON (no markdown, no code fences) in this exact format:
+{
+  "hooks": ["hook1", "hook2", ...],
+  "captions": [{"title":"Caption Title","platform":"IG + FB","type":"Photo/Reel","text":"caption text","cta":"call to action"}, ...],
+  "hashtagSets": [{"name":"Set Name","tags":"#tag1 #tag2 ..."}, ...],
+  "ctas": ["cta1", "cta2", ...]
+}
+
+Requirements:
+- 12 video hooks (short, punchy, camera-ready openers specific to this song and artist story)
+- 10 captions (mix of: release announcement, testimony/story, engagement, Spotify save push, behind the scenes, collab shoutout, fan engagement, milestone, pre-release teaser, one-month-out hype)
+- 5 hashtag sets (Release, Genre/Niche, Engagement, Streaming Growth, Viral/TikTok) with 12-15 tags each relevant to this artist's genre and niche
+- 10 calls-to-action focused on Spotify saves, shares, playlist adds
+- Include PRE-RELEASE content (teasers, countdown, snippet hooks) for content to post 2-4 weeks before release
+- Voice: direct, authentic, never preachy or generic`);
+
+    try {
+      const c = JSON.parse(contentResult.replace(/```json\n?|\n?```/g, '').trim());
+      if (c.hooks) hooks = c.hooks;
+      if (c.captions) captions = c.captions;
+      if (c.hashtagSets) hashtagSets = c.hashtagSets;
+      if (c.ctas) ctas = c.ctas;
+      renderHooks(); renderCaptions(); renderHashtags(); renderCTAs();
+    } catch(e) { console.error('Content parse error:', e); }
+    markStep('content', 'done');
+
+    // --- 2. Calendar ---
+    markStep('calendar', 'active');
+    const calResult = await callClaude(`${ctx}
+
+Generate a 30-day marketing calendar. The calendar has 4 weeks. If the release date is in the future, the first 1-2 weeks should be PRE-RELEASE strategy (teasers, countdowns, snippet drops, hype building, pre-save campaigns). Post-release weeks focus on streaming growth, engagement, and outreach.
+
+Return ONLY valid JSON (no markdown, no code fences) in this format:
+{
+  "1": [{"day":"Day Label","platform":"Platform","type":"Content Type","content":"What to post","cta":"Call to action"}, ...],
+  "2": [...],
+  "3": [...],
+  "4": [...]
+}
+
+Requirements:
+- 5-7 entries per week
+- Week labels should reflect the phase (e.g., "Pre-Release Week" or "Release Week" or "Growth Week")
+- Platforms: mix of Instagram, TikTok, Facebook, YouTube, Stories, Twitter/X
+- Content types: Reel, Story, Carousel, Live, TikTok, Post, Collab
+- PRE-RELEASE ideas: snippet previews, studio BTS, countdown posts, pre-save links, artist story teasers, collab announcements
+- POST-RELEASE ideas: release announcement, testimonials, engagement posts, playlist pushes, live sessions, fan reposts
+- All CTAs should be specific and actionable`);
+
+    try {
+      const cal = JSON.parse(calResult.replace(/```json\n?|\n?```/g, '').trim());
+      if (cal['1']) calendarData = cal;
+      renderCalendar(1);
+    } catch(e) { console.error('Calendar parse error:', e); }
+    markStep('calendar', 'done');
+
+    // --- 3. Outreach ---
+    markStep('outreach', 'active');
+    const outreachResult = await callClaude(`${ctx}
+
+Generate outreach message templates for this release. Return ONLY valid JSON (no markdown, no code fences):
+{
+  "curatorMessages": [{"title":"Template Title","type":"Type Badge","body":"Full message text"}, ...],
+  "followupMessages": [{"title":"Template Title","type":"Type Badge","body":"Full message text"}, ...]
+}
+
+Requirements:
+- 5 curator messages: Standard DM, Short Cold DM, Email to Curators/Blogs, Radio Station Pitch, Podcast Guest Pitch
+- 5 follow-up messages: 7-Day Follow-Up DM, Follow-Up Email, Collab Partner Promo Push, Friends/Family/Church Network, Pre-Release Influencer Outreach
+- All messages should reference this specific song, artist, and genre
+- Include [Playlist Name] and [Name] placeholders where appropriate
+- Include pre-release outreach templates (reaching out BEFORE release to build buzz)
+- Professional but personal tone`);
+
+    try {
+      const o = JSON.parse(outreachResult.replace(/```json\n?|\n?```/g, '').trim());
+      if (o.curatorMessages) curatorMessages = o.curatorMessages;
+      if (o.followupMessages) followupMessages = o.followupMessages;
+      renderOutreach();
+    } catch(e) { console.error('Outreach parse error:', e); }
+    markStep('outreach', 'done');
+
+    // --- 4. Playlists ---
+    markStep('playlists', 'active');
+    const playlistResult = await callClaude(`${ctx}
+
+Generate a playlist strategy for this release. Return ONLY valid JSON (no markdown, no code fences):
+{
+  "playlists": [{"name":"Playlist Name","desc":"Short description for playlist bio","purpose":"Strategic purpose","artists":"Similar artists to include"}, ...],
+  "searchKeywords": ["keyword1", "keyword2", ...]
+}
+
+Requirements:
+- 5 playlist concepts the artist should create on Spotify (tailored to their genre/niche, one anchored by this song)
+- 12 search keywords for finding curators in this genre/niche on Spotify, Instagram, and SubmitHub
+- Playlists should target the specific audience for this genre
+- Think beyond obvious genre playlists — include mood, activity, lifestyle, and themed playlists`);
+
+    try {
+      const p = JSON.parse(playlistResult.replace(/```json\n?|\n?```/g, '').trim());
+      if (p.playlists) playlists = p.playlists;
+      if (p.searchKeywords) searchKeywords = p.searchKeywords;
+      renderPlaylists();
+    } catch(e) { console.error('Playlist parse error:', e); }
+    markStep('playlists', 'done');
+
+    // --- 5. Action Items ---
+    markStep('checklist', 'active');
+    const checklistResult = await callClaude(`${ctx}
+
+Generate action item checklists for this release campaign. Return ONLY valid JSON (no markdown, no code fences):
+{
+  "today": ["task1", "task2", ...],
+  "week": ["task1", "task2", ...],
+  "recurring": ["MONDAY: task", "WEDNESDAY: task", "FRIDAY: task", "SUNDAY: task"],
+  "month": ["goal1", "goal2", ...]
+}
+
+Requirements:
+- "today": 8-10 release day / pre-release day tasks specific to this song and platforms
+- "week": 8-10 first week priorities (submissions, outreach, content creation)
+- "recurring": 4 weekly recurring tasks (one per key day)
+- "month": 6-8 monthly campaign goals
+- If release date is in the future, "today" should be pre-release prep tasks (set up pre-save, prepare content, reach out to collaborators, etc.)
+- All tasks specific to this song, artist, and genre — not generic`);
+
+    try {
+      const cl = JSON.parse(checklistResult.replace(/```json\n?|\n?```/g, '').trim());
+      if (cl.today) checklistToday = cl.today;
+      if (cl.week) checklistWeek = cl.week;
+      if (cl.recurring) checklistRecurring = cl.recurring;
+      if (cl.month) checklistMonth = cl.month;
+      renderChecklist('checklist-today', checklistToday);
+      renderChecklist('checklist-week', checklistWeek);
+      renderChecklist('checklist-recurring', checklistRecurring);
+      renderChecklist('checklist-month', checklistMonth);
+    } catch(e) { console.error('Checklist parse error:', e); }
+    markStep('checklist', 'done');
+
+    // Save generated campaign data
+    try {
+      const campaignData = { hooks, captions, hashtagSets, ctas, calendarData, curatorMessages, followupMessages, playlists, searchKeywords, checklistToday, checklistWeek, checklistRecurring, checklistMonth };
+      localStorage.setItem('mcc_campaign_data', JSON.stringify(campaignData));
+      localStorage.setItem('mcc_campaign_song', d.songTitle);
+    } catch(e) {}
+
+    // Unlock all tabs
+    unlockTabs();
+    btn.textContent = 'CAMPAIGN GENERATED';
+    btn.style.background = 'linear-gradient(135deg, #2a6b2a, #3a8a3a)';
+    btn.style.color = '#fff';
+    showToast('Campaign generated! All tabs are now unlocked.');
+
+  } catch(err) {
+    console.error('Generation error:', err);
+    statusEl.innerHTML += `<div class="step" style="color:#ff6b6b;">Error: ${err.message}. Check your API key and try again.</div>`;
+    btn.disabled = false;
+    btn.textContent = 'RETRY GENERATE CAMPAIGN';
+  }
+}
+
+function loadSavedCampaign() {
+  try {
+    const saved = localStorage.getItem('mcc_campaign_data');
+    if (saved) {
+      const c = JSON.parse(saved);
+      if (c.hooks) hooks = c.hooks;
+      if (c.captions) captions = c.captions;
+      if (c.hashtagSets) hashtagSets = c.hashtagSets;
+      if (c.ctas) ctas = c.ctas;
+      if (c.calendarData) calendarData = c.calendarData;
+      if (c.curatorMessages) curatorMessages = c.curatorMessages;
+      if (c.followupMessages) followupMessages = c.followupMessages;
+      if (c.playlists) playlists = c.playlists;
+      if (c.searchKeywords) searchKeywords = c.searchKeywords;
+      if (c.checklistToday) checklistToday = c.checklistToday;
+      if (c.checklistWeek) checklistWeek = c.checklistWeek;
+      if (c.checklistRecurring) checklistRecurring = c.checklistRecurring;
+      if (c.checklistMonth) checklistMonth = c.checklistMonth;
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
+// ============================
 // INIT
 // ============================
 function init() {
+  // Check for saved campaign and restore or lock tabs
+  const hasSavedCampaign = loadSavedCampaign();
+  if (hasSavedCampaign && localStorage.getItem('mcc_campaign_generated') === 'true') {
+    campaignGenerated = true;
+    const btn = document.getElementById('btnGenerateCampaign');
+    btn.textContent = 'RE-GENERATE CAMPAIGN';
+    btn.style.background = 'linear-gradient(135deg, #2a6b2a, #3a8a3a)';
+    btn.style.color = '#fff';
+    const song = localStorage.getItem('mcc_campaign_song') || '';
+    document.getElementById('generateStatus').innerHTML = `<div class="step done">\u2713 Campaign generated for "${song}"</div>`;
+  } else {
+    lockTabs();
+  }
+
   renderHooks(); renderCaptions(); renderHashtags(); renderCTAs();
   renderCalendar(1); renderOutreach(); renderPlaylists();
   renderChecklist('checklist-today', checklistToday);
