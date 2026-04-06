@@ -616,6 +616,7 @@ app.get('/', requireAuth, (req, res) => {
   const subStatus = req.user.subscription_status || 'none';
   html = html.replace('%%TRIAL_DAYS%%', String(trialDays));
   html = html.replace('%%SUB_STATUS%%', subStatus);
+  html = html.replace('%%USER_EMAIL%%', req.user.email || '');
   res.type('html').send(html);
 });
 

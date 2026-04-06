@@ -1384,6 +1384,7 @@ const USER_ID = '%%USER_ID%%';
 const USER_ROLE = '%%USER_ROLE%%';
 const TRIAL_DAYS = parseInt('%%TRIAL_DAYS%%', 10);
 const SUB_STATUS = '%%SUB_STATUS%%';
+const USER_EMAIL = '%%USER_EMAIL%%';
 
 // Scope localStorage per user — prefixes all keys with user ID
 function ukey(key) { return 'u' + USER_ID + '_' + key; }
@@ -4365,7 +4366,7 @@ if (aiScanZone) {
 let _adminTicketsCache = [];
 
 function adminInit() {
-  if (USER_ROLE !== 'admin') return;
+  if (USER_EMAIL !== 'josephmadiganmusic@gmail.com') return;
   document.getElementById('adminTab').style.display = '';
   // Auto-load data when admin tab is shown
 }
