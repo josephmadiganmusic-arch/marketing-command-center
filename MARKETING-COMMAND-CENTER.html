@@ -289,7 +289,7 @@
 <body>
 <header class="header">
   <div class="container">
-    <div class="logo">MARKETING <span>COMMAND CENTER</span></div>
+    <div class="logo" style="display:flex;align-items:center;gap:12px;"><img src="/logo.png" alt="MCC" style="height:38px;width:auto;">MARKETING <span>COMMAND CENTER</span></div>
     <div style="display:flex;align-items:center;gap:16px;">
       <div class="badge">Madigan Music</div>
       <button onclick="fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login')" style="background:none;border:1px solid #333;border-radius:6px;color:#666;padding:6px 14px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">Logout</button>
