@@ -23,13 +23,13 @@
   body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 20%, rgba(123,47,247,0.08) 0%, transparent 50%), radial-gradient(circle at 70% 80%, rgba(0,212,255,0.05) 0%, transparent 50%); pointer-events: none; }
   .auth-container { width: 100%; max-width: 420px; padding: 24px; position: relative; z-index: 1; }
   .auth-logo { text-align: center; margin-bottom: 40px; position: relative; overflow: visible; }
-  .auth-logo .logo-wrap { position: relative; display: inline-block; width: 280px; height: 280px; display: flex; align-items: center; justify-content: center; }
-  .auth-logo img { width: 180px; height: auto; filter: drop-shadow(0 0 30px rgba(123,47,247,0.6)) drop-shadow(0 0 60px rgba(0,212,255,0.3)); animation: clFlySpinFloat 4s cubic-bezier(0.22,1,0.36,1) infinite; position: relative; z-index: 2; }
+  .auth-logo .logo-wrap { position: relative; width: 340px; height: 340px; margin: 0 auto; display: flex; align-items: center; justify-content: center; }
+  .auth-logo img { width: 260px; height: auto; filter: drop-shadow(0 0 30px rgba(123,47,247,0.6)) drop-shadow(0 0 60px rgba(0,212,255,0.3)); animation: clFlySpinFloat 4s cubic-bezier(0.22,1,0.36,1) infinite; position: relative; z-index: 2; }
 
   /* Orbiting rings */
   .cl-orbit { position: absolute; border: 2px solid transparent; border-radius: 50%; pointer-events: none; }
-  .cl-orbit:nth-child(1) { width: 260px; height: 260px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(123,47,247,0.6); border-right-color: rgba(0,212,255,0.4); animation: clOrbitSpin 2s linear infinite; }
-  .cl-orbit:nth-child(2) { width: 300px; height: 300px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(0,212,255,0.3); border-right-color: rgba(123,47,247,0.2); animation: clOrbitSpin 3s linear infinite reverse; }
+  .cl-orbit:nth-child(1) { width: 320px; height: 320px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(123,47,247,0.6); border-right-color: rgba(0,212,255,0.4); animation: clOrbitSpin 2s linear infinite; }
+  .cl-orbit:nth-child(2) { width: 360px; height: 360px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(0,212,255,0.3); border-right-color: rgba(123,47,247,0.2); animation: clOrbitSpin 3s linear infinite reverse; }
 
   /* Sparkle particles */
   .cl-sparkles { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -100,10 +100,10 @@
   /* ═══ MOBILE ═══ */
   @media (max-width: 480px) {
     .auth-container { padding: 16px; }
-    .auth-logo img { width: 140px; }
-    .auth-logo .logo-wrap { width: 220px; height: 220px; }
-    .cl-orbit:nth-child(1) { width: 200px; height: 200px; }
-    .cl-orbit:nth-child(2) { width: 240px; height: 240px; }
+    .auth-logo img { width: 200px; }
+    .auth-logo .logo-wrap { width: 280px; height: 280px; }
+    .cl-orbit:nth-child(1) { width: 260px; height: 260px; }
+    .cl-orbit:nth-child(2) { width: 300px; height: 300px; }
     .auth-logo p { font-size: 11px; letter-spacing: 1.5px; }
     .auth-card { padding: 24px 20px; border-radius: 10px; }
     .auth-tab { padding: 12px 8px; font-size: 12px; min-height: 44px; }
