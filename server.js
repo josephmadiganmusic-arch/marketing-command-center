@@ -474,10 +474,20 @@ app.get('/api/research/status', requireAccess, (req, res) => {
   });
 });
 
-// --- Main App (protected) ---
-app.get('/', requireAccess, (req, res) => {
+// --- Main App (protected — allows expired trial to see upgrade prompt) ---
+app.get('/', requireAuth, (req, res) => {
   let html = fs.readFileSync(path.join(__dirname, 'MARKETING-COMMAND-CENTER.html'), 'utf8');
   html = html.replace('%%CLAUDE_API_KEY%%', process.env.CLAUDE_API_KEY || '');
+  html = html.replace('%%USER_ID%%', String(req.user.id));
+  html = html.replace('%%USER_ROLE%%', req.user.role || 'user');
+  // Calculate trial days left
+  let trialDays = -1;
+  if (req.user.role !== 'admin' && req.user.subscription_status === 'trialing' && req.user.trial_ends_at) {
+    trialDays = Math.max(0, Math.ceil((new Date(req.user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)));
+  }
+  const subStatus = req.user.subscription_status || 'none';
+  html = html.replace('%%TRIAL_DAYS%%', String(trialDays));
+  html = html.replace('%%SUB_STATUS%%', subStatus);
   res.type('html').send(html);
 });
 

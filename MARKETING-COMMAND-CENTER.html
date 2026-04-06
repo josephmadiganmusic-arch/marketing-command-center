@@ -358,6 +358,7 @@
   <div class="container">
     <div class="logo" style="display:flex;align-items:center;gap:12px;"><img src="/logo.png" alt="Rollout Heaven" style="height:44px;width:auto;filter:drop-shadow(0 0 8px rgba(123,47,247,0.3));">ROLLOUT <span>HEAVEN</span></div>
     <div style="display:flex;align-items:center;gap:16px;">
+      <div id="trialBanner" style="display:none;"></div>
       <div class="badge">Release Management</div>
       <button onclick="fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);padding:6px 14px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--accent-1)';this.style.color='var(--accent-2)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">Logout</button>
     </div>
@@ -1336,6 +1337,17 @@ This track is a powerful declaration of faith. I would be honored if you would c
 <div class="toast" id="toast"></div>
 <script>
 // ============================
+// USER CONTEXT (injected by server)
+// ============================
+const USER_ID = '%%USER_ID%%';
+const USER_ROLE = '%%USER_ROLE%%';
+const TRIAL_DAYS = parseInt('%%TRIAL_DAYS%%', 10);
+const SUB_STATUS = '%%SUB_STATUS%%';
+
+// Scope localStorage per user — prefixes all keys with user ID
+function ukey(key) { return 'u' + USER_ID + '_' + key; }
+
+// ============================
 // DATA
 // ============================
 let hooks = [
@@ -1687,7 +1699,7 @@ function unlockTabs() {
   campaignGenerated = true;
   document.querySelectorAll('#mainTabs .tab').forEach(t => t.classList.remove('locked'));
   // Save generated state
-  try { localStorage.setItem('mcc_campaign_generated', 'true'); } catch(e) {}
+  try { localStorage.setItem(ukey('mcc_campaign_generated'), 'true'); } catch(e) {}
 }
 
 function showPanel(id) {
@@ -1729,11 +1741,11 @@ function toggleCheck(el) {
 function saveChecklistState() {
   const state = {};
   document.querySelectorAll('.check').forEach((el, i) => { state[i] = el.classList.contains('done'); });
-  localStorage.setItem('mcc-checklist', JSON.stringify(state));
+  localStorage.setItem(ukey('mcc-checklist'), JSON.stringify(state));
 }
 
 function loadChecklistState() {
-  const state = JSON.parse(localStorage.getItem('mcc-checklist') || '{}');
+  const state = JSON.parse(localStorage.getItem(ukey('mcc-checklist')) || '{}');
   document.querySelectorAll('.check').forEach((el, i) => { if (state[i]) el.classList.add('done'); });
 }
 
@@ -2019,10 +2031,10 @@ function intakeUpdate() {
   _autosaveTimer = setTimeout(() => {
     if (!d) d = intakeGetData();
     try {
-      localStorage.setItem('release_data', JSON.stringify(d));
+      localStorage.setItem(ukey('release_data'), JSON.stringify(d));
     } catch(e) {
       const slim = Object.assign({}, d, { coverArt: null });
-      try { localStorage.setItem('release_data', JSON.stringify(slim)); } catch(e2) {}
+      try { localStorage.setItem(ukey('release_data'), JSON.stringify(slim)); } catch(e2) {}
     }
   }, 500);
 
@@ -2031,16 +2043,16 @@ function intakeUpdate() {
   _namedSaveTimer = setTimeout(() => {
     const data = intakeGetData();
     if (!data.songTitle || data.songTitle.length < 3) return;
-    const saved = JSON.parse(localStorage.getItem('release_data_all') || '{}');
+    const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
     const toSave = Object.assign({}, data, { coverArt: null });
     saved[data.songTitle] = toSave;
     try {
-      localStorage.setItem('release_data_all', JSON.stringify(saved));
+      localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
     } catch(e) {
       const keys = Object.keys(saved);
       if (keys.length > 5) {
         keys.slice(0, keys.length - 5).forEach(k => delete saved[k]);
-        try { localStorage.setItem('release_data_all', JSON.stringify(saved)); } catch(e2) {}
+        try { localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved)); } catch(e2) {}
       }
     }
     intakeLoadList();
@@ -2096,7 +2108,7 @@ function intakeSave() {
 }
 
 function intakeLoadList() {
-  const saved = JSON.parse(localStorage.getItem('release_data_all') || '{}');
+  const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
   const sel = document.getElementById('intakeReleaseSelect');
   sel.innerHTML = '<option value="">-- Load Saved Release --</option>';
   Object.keys(saved).forEach(k => {
@@ -2107,10 +2119,10 @@ function intakeLoadList() {
 
 function intakeLoad(title) {
   if (!title) return;
-  const saved = JSON.parse(localStorage.getItem('release_data_all') || '{}');
+  const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
   const d = saved[title]; if (!d) return;
   intakeFillForm(d);
-  localStorage.setItem('release_data', JSON.stringify(d));
+  localStorage.setItem(ukey('release_data'), JSON.stringify(d));
   showToast('Release loaded!');
 }
 
@@ -2184,15 +2196,15 @@ function intakeDelete() {
   const sel = document.getElementById('intakeReleaseSelect');
   const title = sel.value;
   if (!title) { showToast('Select a release to delete'); return; }
-  const saved = JSON.parse(localStorage.getItem('release_data_all') || '{}');
+  const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
   delete saved[title];
-  localStorage.setItem('release_data_all', JSON.stringify(saved));
+  localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
   intakeLoadList();
   showToast('Release deleted');
 }
 
 function intakeCleanupSaves() {
-  const saved = JSON.parse(localStorage.getItem('release_data_all') || '{}');
+  const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
   const keys = Object.keys(saved);
   if (!keys.length) { showToast('No saved releases'); return; }
   // Remove entries with titles under 3 chars or that look like partial typing
@@ -2208,7 +2220,7 @@ function intakeCleanupSaves() {
       removed++;
     }
   }
-  localStorage.setItem('release_data_all', JSON.stringify(saved));
+  localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
   intakeLoadList();
   showToast(removed > 0 ? `Cleaned up ${removed} junk entries` : 'No junk entries found');
 }
@@ -2233,7 +2245,7 @@ function intakeClear() {
 // REGISTRATION TAB
 // ============================
 function getIntakeFieldValue(key) {
-  const d = JSON.parse(localStorage.getItem('release_data') || '{}');
+  const d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
   if (!d) return '';
   switch(key) {
     case 'songTitle': return d.songTitle || '';
@@ -2267,13 +2279,13 @@ function getIntakeFieldValue(key) {
 }
 
 function regGetProgress() {
-  return JSON.parse(localStorage.getItem('registration_progress') || '{}');
+  return JSON.parse(localStorage.getItem(ukey('registration_progress')) || '{}');
 }
 
 function regSaveProgress(id, val) {
   const p = regGetProgress();
   p[id] = val;
-  localStorage.setItem('registration_progress', JSON.stringify(p));
+  localStorage.setItem(ukey('registration_progress'), JSON.stringify(p));
   renderRegProgressBar();
 }
 
@@ -2724,7 +2736,7 @@ function egGatherFormData() {
 }
 
 function egLoadFromIntake(silent) {
-  const d = JSON.parse(localStorage.getItem('release_data') || '{}');
+  const d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
   if (!d.songTitle) { if (!silent) showToast('No intake data found. Fill in the Intake tab first.'); return; }
   const artists = [d.primaryArtist, d.featArtist ? 'ft. ' + d.featArtist : ''].filter(Boolean).join(' ');
   const writerNames = (d.songwriters||[]).map(w=>w.name).filter(Boolean).join(', ');
@@ -2907,13 +2919,13 @@ function egSaveRelease() {
   release.customStreamingLinks = customLinks;
   release.materials = { radioEdit:document.getElementById('egMatRadioEdit').checked, pressPhotos:document.getElementById('egMatPressPhotos').checked, bio:document.getElementById('egMatBio').checked, instrumental:document.getElementById('egMatInstrumental').checked, acapella:document.getElementById('egMatAcapella').checked, musicVideo:document.getElementById('egMatMusicVideo').checked, lyrics:document.getElementById('egMatLyrics').checked, interview:document.getElementById('egMatInterviewReady').checked };
   if(egCoverArtData && !egCoverArtData.startsWith('data:')) release.coverArtSaved = egCoverArtData;
-  const saved = JSON.parse(localStorage.getItem('bab_releases')||'{}');
-  saved[title] = release; localStorage.setItem('bab_releases',JSON.stringify(saved));
+  const saved = JSON.parse(localStorage.getItem(ukey('bab_releases'))||'{}');
+  saved[title] = release; localStorage.setItem(ukey('bab_releases'),JSON.stringify(saved));
   egLoadSavedList(); showToast('Release saved!');
 }
 
 function egLoadSavedList() {
-  const saved = JSON.parse(localStorage.getItem('bab_releases')||'{}');
+  const saved = JSON.parse(localStorage.getItem(ukey('bab_releases'))||'{}');
   const select = document.getElementById('egSavedReleases');
   select.innerHTML = '<option value="">-- Load Saved Release --</option>';
   Object.keys(saved).forEach(title => { const opt=document.createElement('option'); opt.value=title; opt.textContent=title; select.appendChild(opt); });
@@ -2921,7 +2933,7 @@ function egLoadSavedList() {
 
 function egLoadRelease(title) {
   if(!title) return;
-  const saved = JSON.parse(localStorage.getItem('bab_releases')||'{}');
+  const saved = JSON.parse(localStorage.getItem(ukey('bab_releases'))||'{}');
   const r = saved[title]; if(!r) return;
   ['egSongTitle','egArtists','egProducer','egLabel','egGenre','egUpc','egIsrc','egSongwriters','egArtistName','egEmail','egEpk','egDownloadPageUrl','egFacebook','egInstagram','egTwitter','egTiktok','egDlWav','egDlMp3','egDlPressKit','egLinkSpotify','egLinkAppleMusic','egLinkYouTubeMusic','egLinkMusicVideo'].forEach(id => { if(document.getElementById(id)) document.getElementById(id).value = r[id]||''; });
   document.getElementById('egReleaseDate').value = r.egReleaseDate||'';
@@ -2940,8 +2952,8 @@ function egLoadRelease(title) {
 function egDeleteSavedRelease() {
   const select = document.getElementById('egSavedReleases'); const title = select.value;
   if(!title) { showToast('Select a release to delete'); return; }
-  const saved = JSON.parse(localStorage.getItem('bab_releases')||'{}');
-  delete saved[title]; localStorage.setItem('bab_releases',JSON.stringify(saved));
+  const saved = JSON.parse(localStorage.getItem(ukey('bab_releases'))||'{}');
+  delete saved[title]; localStorage.setItem(ukey('bab_releases'),JSON.stringify(saved));
   egLoadSavedList(); showToast('Release deleted');
 }
 
@@ -2995,20 +3007,20 @@ const CLAUDE_API_KEY = '%%CLAUDE_API_KEY%%';
 
 function saveClaudeKey() {
   const key = document.getElementById('claudeApiKey').value.trim();
-  if(key) { localStorage.setItem('claude_api_key',key); showToast('API key saved!'); }
+  if(key) { localStorage.setItem(ukey('claude_api_key'),key); showToast('API key saved!'); }
   else showToast('Enter a valid API key');
 }
 function loadClaudeKey() {
   // Load from localStorage override, or use embedded key
-  const key = localStorage.getItem('claude_api_key') || CLAUDE_API_KEY;
+  const key = localStorage.getItem(ukey('claude_api_key')) || CLAUDE_API_KEY;
   if(key) document.getElementById('claudeApiKey').value = key;
   // Ensure it's always in localStorage for other functions
-  if(!localStorage.getItem('claude_api_key') && CLAUDE_API_KEY) {
-    localStorage.setItem('claude_api_key', CLAUDE_API_KEY);
+  if(!localStorage.getItem(ukey('claude_api_key')) && CLAUDE_API_KEY) {
+    localStorage.setItem(ukey('claude_api_key'), CLAUDE_API_KEY);
   }
 }
 function getClaudeKey() {
-  return localStorage.getItem('claude_api_key') || CLAUDE_API_KEY;
+  return localStorage.getItem(ukey('claude_api_key')) || CLAUDE_API_KEY;
 }
 // ============================
 // TREND DATA — auto-fetched & cached 1hr
@@ -3668,8 +3680,8 @@ Requirements:
     // Save generated campaign data
     try {
       const campaignData = { hooks, captions, hashtagSets, ctas, calendarData, curatorMessages, followupMessages, playlists, searchKeywords, checklistToday, checklistWeek, checklistRecurring, checklistMonth };
-      localStorage.setItem('mcc_campaign_data', JSON.stringify(campaignData));
-      localStorage.setItem('mcc_campaign_song', d.songTitle);
+      localStorage.setItem(ukey('mcc_campaign_data'), JSON.stringify(campaignData));
+      localStorage.setItem(ukey('mcc_campaign_song'), d.songTitle);
     } catch(e) {}
 
     // Unlock all tabs
@@ -3689,7 +3701,7 @@ Requirements:
 
 function loadSavedCampaign() {
   try {
-    const saved = localStorage.getItem('mcc_campaign_data');
+    const saved = localStorage.getItem(ukey('mcc_campaign_data'));
     if (saved) {
       const c = JSON.parse(saved);
       if (c.hooks) hooks = c.hooks;
@@ -3717,13 +3729,13 @@ function loadSavedCampaign() {
 function init() {
   // Check for saved campaign and restore or lock tabs
   const hasSavedCampaign = loadSavedCampaign();
-  if (hasSavedCampaign && localStorage.getItem('mcc_campaign_generated') === 'true') {
+  if (hasSavedCampaign && localStorage.getItem(ukey('mcc_campaign_generated')) === 'true') {
     campaignGenerated = true;
     const btn = document.getElementById('btnGenerateCampaign');
     btn.textContent = 'RE-GENERATE CAMPAIGN';
     btn.style.background = 'linear-gradient(135deg, #2a6b2a, #3a8a3a)';
     btn.style.color = '#fff';
-    const song = localStorage.getItem('mcc_campaign_song') || '';
+    const song = localStorage.getItem(ukey('mcc_campaign_song')) || '';
     document.getElementById('generateStatus').innerHTML = `<div class="step done">\u2713 Campaign generated for "${song}"</div>`;
   } else {
     lockTabs();
@@ -3739,16 +3751,16 @@ function init() {
   intakeLoadList();
   // One-time cleanup: strip cover art from release_data_all to free quota
   try {
-    const allRaw = localStorage.getItem('release_data_all');
+    const allRaw = localStorage.getItem(ukey('release_data_all'));
     if (allRaw && allRaw.length > 500000) {
       const all = JSON.parse(allRaw);
       let cleaned = false;
       Object.keys(all).forEach(k => { if (all[k].coverArt) { all[k].coverArt = null; cleaned = true; } });
-      if (cleaned) localStorage.setItem('release_data_all', JSON.stringify(all));
+      if (cleaned) localStorage.setItem(ukey('release_data_all'), JSON.stringify(all));
     }
   } catch(e) {}
   // Load last saved intake data if present
-  const lastData = localStorage.getItem('release_data');
+  const lastData = localStorage.getItem(ukey('release_data'));
   if(lastData) {
     try { intakeFillForm(JSON.parse(lastData)); } catch(e) {}
   }
@@ -4261,7 +4273,54 @@ if (aiScanZone) {
   });
 }
 
+// ============================
+// TRIAL BANNER & SUBSCRIPTION GATE
+// ============================
+function setupTrialBanner() {
+  if (USER_ROLE === 'admin') return; // admins never see trial UI
+
+  const banner = document.getElementById('trialBanner');
+
+  if (SUB_STATUS === 'active') {
+    // Paid subscriber — no banner
+    return;
+  }
+
+  if (SUB_STATUS === 'trialing' && TRIAL_DAYS > 0) {
+    // Active trial — show countdown
+    const color = TRIAL_DAYS <= 2 ? '#ff4444' : '#ffd700';
+    banner.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;color:' + color + ';border:1px solid ' + color + '40;background:' + color + '15;white-space:nowrap;';
+    banner.innerHTML = '<span style="font-size:14px;">\u23F3</span> ' + TRIAL_DAYS + ' day' + (TRIAL_DAYS !== 1 ? 's' : '') + ' left in trial';
+    return;
+  }
+
+  // Trial expired or no subscription — show gate
+  showSubscriptionGate();
+}
+
+function showSubscriptionGate() {
+  const banner = document.getElementById('trialBanner');
+  banner.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;color:#ff4444;border:1px solid #ff444440;background:#ff444415;white-space:nowrap;';
+  banner.innerHTML = 'Trial expired';
+
+  // Create full-screen overlay blocking all tools
+  const overlay = document.createElement('div');
+  overlay.id = 'subscriptionGate';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(8,11,30,0.95);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="text-align:center;max-width:480px;padding:48px;background:#0f1332;border:1px solid #1a1f4a;border-radius:20px;box-shadow:0 0 60px rgba(123,47,247,0.2);">
+      <img src="/logo.png" alt="Rollout Heaven" style="height:64px;margin-bottom:24px;filter:drop-shadow(0 0 12px rgba(123,47,247,0.4));">
+      <h2 style="font-size:26px;font-weight:800;color:#fff;margin-bottom:12px;">Your Trial Has Ended</h2>
+      <p style="color:#6b7094;font-size:15px;line-height:1.6;margin-bottom:32px;">Subscribe to Rollout Heaven to continue using all release management tools, AI features, and research capabilities.</p>
+      <a href="/subscribe" style="display:inline-block;padding:14px 40px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-size:16px;font-weight:700;border-radius:10px;text-decoration:none;transition:all 0.3s;box-shadow:0 0 20px rgba(123,47,247,0.3);">Upgrade Now</a>
+      <p style="margin-top:16px;"><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login');return false;" style="color:#6b7094;font-size:13px;text-decoration:underline;">Log out</a></p>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
 init();
+setupTrialBanner();
 </script>
 </body>
 </html>
