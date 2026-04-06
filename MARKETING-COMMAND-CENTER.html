@@ -588,6 +588,10 @@
             <label>Collab Partners / Friends / Network (comma-separated)</label>
             <input type="text" id="gen-collabs" placeholder="e.g., Datin, Rogue2Redeemed, Pastor Mike" oninput="intakeUpdate()">
           </div>
+          <div class="full-width" style="text-align:center;margin-top:8px;">
+            <button type="button" id="btnGenTargets" onclick="generateTargets(this)" style="padding:12px 24px;background:linear-gradient(135deg,#1a1a1a,#222);border:1px solid #c9a84c;border-radius:8px;color:#c9a84c;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;letter-spacing:0.5px;" onmouseover="this.style.background='linear-gradient(135deg,#c9a84c,#d4b65e)';this.style.color='#000'" onmouseout="this.style.background='linear-gradient(135deg,#1a1a1a,#222)';this.style.color='#c9a84c'">Generate Targets</button>
+            <p id="genTargetsStatus" style="font-size:12px;color:#666;margin-top:8px;"></p>
+          </div>
         </div>
 
         <div style="text-align:center;margin-top:24px;">
@@ -1788,6 +1792,81 @@ Return ONLY the paragraph text, nothing else. No quotes, no labels, no formattin
     showToast('Email intro generated!');
   } catch(err) {
     showToast('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+    btn.style.opacity = '1';
+  }
+}
+
+async function generateTargets(btn) {
+  const d = intakeGetData();
+  if (!d.songTitle || !d.primaryArtist) {
+    showToast('Fill in Song Title and Artist first');
+    return;
+  }
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Researching...';
+  btn.style.opacity = '0.5';
+  const statusEl = document.getElementById('genTargetsStatus');
+  statusEl.innerHTML = '<span style="color:#c9a84c;">Searching Spotify playlists, Instagram curators, blogs, podcasts...</span>';
+
+  const feat = d.featArtist ? ` featuring ${d.featArtist}` : '';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
+
+  try {
+    const result = await callClaude(`You are a music industry researcher. Based on the following release info, find REAL, SPECIFIC targets for outreach.
+
+SONG: "${d.songTitle}"${feat}
+ARTIST: ${d.primaryArtist}
+GENRE: ${genre}
+LABEL: ${d.label || 'Independent'}
+BIO: ${d.bio || 'N/A'}
+SPOTIFY: ${d.linkSpotify || 'N/A'}
+INSTAGRAM: ${d.instagram || 'N/A'}
+TIKTOK: ${d.tiktok || 'N/A'}
+
+Research and return ONLY valid JSON (no markdown, no code fences) with REAL names that exist on these platforms:
+
+{
+  "curators": ["name1", "name2", ...],
+  "playlists": ["playlist1", "playlist2", ...],
+  "blogs": ["blog1", "blog2", ...],
+  "podcasts": ["podcast1", "podcast2", ...],
+  "collabs": ["artist1", "artist2", ...]
+}
+
+Requirements:
+- CURATORS: 8-10 real Spotify playlist curators and Instagram music pages that actively curate for this genre. Include their platform handle or account name. Focus on curators who feature independent artists in this genre. Search for curators on Spotify who run playlists matching this genre, and Instagram accounts that promote this type of music.
+- PLAYLISTS: 10-12 real Spotify playlists (both editorial and user-generated) that fit this song's genre, mood, and style. Include the actual playlist name as it appears on Spotify. Mix large playlists with smaller niche ones that are more likely to accept submissions.
+- BLOGS: 6-8 real music blogs, online magazines, and media outlets that cover this genre. Include ones that review independent releases and accept submissions.
+- PODCASTS: 5-6 real podcasts that discuss this genre, interview independent artists, or cover faith/music/culture topics relevant to this artist.
+- COLLABS: 5-8 real artists in the same genre/niche who are at a similar or slightly higher level, who the artist could realistically collaborate with or cross-promote. Consider artists who have featured on similar playlists or share the same audience.
+
+CRITICAL: Only suggest REAL accounts, playlists, blogs, podcasts, and artists that actually exist. Do not make up names. If you are not confident a target exists, do not include it. These will be used for actual outreach.`);
+
+    const parsed = JSON.parse(result.replace(/```json\n?|\n?```/g, '').trim());
+
+    // Fill fields, appending to existing values
+    function fillField(id, values) {
+      const el = document.getElementById(id);
+      const existing = el.value.split(',').map(s => s.trim()).filter(Boolean);
+      const merged = [...new Set([...existing, ...values])];
+      el.value = merged.join(', ');
+    }
+
+    if (parsed.curators) fillField('gen-curators', parsed.curators);
+    if (parsed.playlists) fillField('gen-playlists', parsed.playlists);
+    if (parsed.blogs) fillField('gen-blogs', parsed.blogs);
+    if (parsed.podcasts) fillField('gen-podcasts', parsed.podcasts);
+    if (parsed.collabs) fillField('gen-collabs', parsed.collabs);
+
+    intakeUpdate();
+    statusEl.innerHTML = '<span style="color:#4caf50;">Targets found and filled in. Review and edit before generating campaign.</span>';
+    showToast('Outreach targets generated!');
+  } catch(err) {
+    statusEl.innerHTML = '<span style="color:#ff6b6b;">Error: ' + err.message + '</span>';
   } finally {
     btn.disabled = false;
     btn.textContent = origText;
