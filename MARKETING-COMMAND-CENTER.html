@@ -4810,10 +4810,14 @@ function init() {
 
   // Now check if the CURRENT release has a saved campaign
   const hasSavedCampaign = loadSavedCampaign();
-  const campaignSong = localStorage.getItem(ukey('mcc_campaign_song')) || '';
   const currentSong = intakeGetData().songTitle || '';
-  // Only restore campaign if it matches the currently loaded release
-  if (hasSavedCampaign && localStorage.getItem(ukey('mcc_campaign_generated')) === 'true' && campaignSong === currentSong) {
+  // Verify the release actually has real campaign content (not stale/empty data)
+  const hasRealContent = hooks.length > 0 || captions.length > 0 || Object.keys(calendarData).length > 0;
+  // Also check the per-release flag
+  const allReleases = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+  const releaseRecord = allReleases[currentSong];
+  const releaseHasCampaign = releaseRecord && releaseRecord._campaignGenerated === true;
+  if (hasSavedCampaign && hasRealContent && releaseHasCampaign) {
     campaignGenerated = true;
     const btn = document.getElementById('btnGenerateCampaign');
     btn.textContent = 'RE-GENERATE CAMPAIGN';
