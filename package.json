@@ -1,0 +1,11 @@
+{
+  "name": "marketing-command-center",
+  "version": "1.0.0",
+  "description": "Madigan Music - Marketing Command Center",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
