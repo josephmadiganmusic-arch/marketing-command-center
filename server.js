@@ -229,6 +229,270 @@ app.get('/subscribe', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'subscribe.html'));
 });
 
+// --- Research API (Spotify + Serper) ---
+const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
+const SERPER_API_KEY = process.env.SERPER_API_KEY || '';
+
+let spotifyToken = null;
+let spotifyTokenExpires = 0;
+
+async function getSpotifyToken() {
+  if (spotifyToken && Date.now() < spotifyTokenExpires) return spotifyToken;
+  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) return null;
+
+  const resp = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64'),
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: 'grant_type=client_credentials'
+  });
+  if (!resp.ok) throw new Error('Spotify auth failed');
+  const data = await resp.json();
+  spotifyToken = data.access_token;
+  spotifyTokenExpires = Date.now() + (data.expires_in - 60) * 1000;
+  return spotifyToken;
+}
+
+async function spotifySearch(query, type, limit = 20) {
+  const token = await getSpotifyToken();
+  if (!token) throw new Error('Spotify not configured');
+  const resp = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=${type}&limit=${limit}`, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (!resp.ok) throw new Error('Spotify search failed');
+  return resp.json();
+}
+
+async function spotifyGet(endpoint) {
+  const token = await getSpotifyToken();
+  if (!token) throw new Error('Spotify not configured');
+  const resp = await fetch(`https://api.spotify.com/v1${endpoint}`, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (!resp.ok) throw new Error('Spotify request failed');
+  return resp.json();
+}
+
+async function serperSearch(query, num = 10) {
+  if (!SERPER_API_KEY) throw new Error('Search API not configured');
+  const resp = await fetch('https://google.serper.dev/search', {
+    method: 'POST',
+    headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ q: query, num })
+  });
+  if (!resp.ok) throw new Error('Search API failed');
+  return resp.json();
+}
+
+// Simple in-memory cache (key -> { data, expires })
+const researchCache = new Map();
+function cacheGet(key) {
+  const entry = researchCache.get(key);
+  if (entry && Date.now() < entry.expires) return entry.data;
+  researchCache.delete(key);
+  return null;
+}
+function cacheSet(key, data, ttlMs = 3600000) {
+  researchCache.set(key, { data, expires: Date.now() + ttlMs });
+  // Evict old entries if cache grows too large
+  if (researchCache.size > 200) {
+    const now = Date.now();
+    for (const [k, v] of researchCache) { if (now > v.expires) researchCache.delete(k); }
+  }
+}
+
+app.post('/api/research', requireAccess, async (req, res) => {
+  const { action, genre, artistName, query, similarArtists } = req.body;
+  if (!action) return res.status(400).json({ error: 'Missing action' });
+
+  const cacheKey = JSON.stringify({ action, genre, artistName, query, similarArtists });
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    let result;
+
+    switch (action) {
+      case 'findPlaylists': {
+        if (!genre) return res.status(400).json({ error: 'Genre required' });
+        const queries = [genre, `${genre} independent`, `${genre} new music`];
+        const allPlaylists = [];
+        for (const q of queries) {
+          const data = await spotifySearch(q, 'playlist', 15);
+          if (data.playlists?.items) {
+            for (const pl of data.playlists.items) {
+              if (!pl || !pl.name) continue;
+              allPlaylists.push({
+                name: pl.name,
+                description: (pl.description || '').substring(0, 200),
+                followers: pl.tracks?.total || 0,
+                trackCount: pl.tracks?.total || 0,
+                owner: pl.owner?.display_name || 'Unknown',
+                url: pl.external_urls?.spotify || '',
+                image: pl.images?.[0]?.url || ''
+              });
+            }
+          }
+        }
+        // Dedupe by URL
+        const seen = new Set();
+        result = { playlists: allPlaylists.filter(p => { if (seen.has(p.url)) return false; seen.add(p.url); return true; }) };
+        break;
+      }
+
+      case 'findContacts': {
+        if (!query) return res.status(400).json({ error: 'Search query required' });
+        const searches = await Promise.all([
+          serperSearch(`${query} email contact music submission`),
+          serperSearch(`${query} instagram linktree music`)
+        ]);
+        const contacts = [];
+        for (const s of searches) {
+          if (s.organic) {
+            for (const r of s.organic) {
+              contacts.push({
+                title: r.title,
+                link: r.link,
+                snippet: r.snippet || ''
+              });
+            }
+          }
+        }
+        result = { contacts };
+        break;
+      }
+
+      case 'findBlogs': {
+        if (!genre) return res.status(400).json({ error: 'Genre required' });
+        const searches = await Promise.all([
+          serperSearch(`${genre} music blog submit song`),
+          serperSearch(`${genre} music blog submission form 2026`),
+          serperSearch(`indie ${genre} music review blog accepting submissions`)
+        ]);
+        const blogs = [];
+        for (const s of searches) {
+          if (s.organic) {
+            for (const r of s.organic) {
+              blogs.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
+            }
+          }
+        }
+        // Dedupe by domain
+        const seenDomains = new Set();
+        result = { blogs: blogs.filter(b => {
+          try { const domain = new URL(b.link).hostname; if (seenDomains.has(domain)) return false; seenDomains.add(domain); return true; }
+          catch { return true; }
+        })};
+        break;
+      }
+
+      case 'findPodcasts': {
+        if (!genre) return res.status(400).json({ error: 'Genre required' });
+        const searches = await Promise.all([
+          serperSearch(`${genre} music podcast guest interview`),
+          serperSearch(`${genre} artist interview podcast submit`)
+        ]);
+        const podcasts = [];
+        for (const s of searches) {
+          if (s.organic) {
+            for (const r of s.organic) {
+              podcasts.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
+            }
+          }
+        }
+        const seenDomains = new Set();
+        result = { podcasts: podcasts.filter(p => {
+          try { const domain = new URL(p.link).hostname; if (seenDomains.has(domain)) return false; seenDomains.add(domain); return true; }
+          catch { return true; }
+        })};
+        break;
+      }
+
+      case 'analyzeCompetition': {
+        if (!similarArtists || !similarArtists.length) return res.status(400).json({ error: 'Similar artists required' });
+        const competitorData = [];
+        for (const artist of similarArtists.slice(0, 5)) {
+          const searchResult = await spotifySearch(artist, 'artist', 1);
+          const found = searchResult.artists?.items?.[0];
+          if (!found) continue;
+          // Get their top tracks
+          const topTracks = await spotifyGet(`/artists/${found.id}/top-tracks?market=US`);
+          competitorData.push({
+            name: found.name,
+            followers: found.followers?.total || 0,
+            popularity: found.popularity || 0,
+            genres: found.genres || [],
+            image: found.images?.[0]?.url || '',
+            url: found.external_urls?.spotify || '',
+            topTracks: (topTracks.tracks || []).slice(0, 5).map(t => ({
+              name: t.name,
+              popularity: t.popularity,
+              album: t.album?.name || ''
+            }))
+          });
+        }
+        // Search for playlists featuring these artists
+        const playlistHits = [];
+        for (const artist of similarArtists.slice(0, 3)) {
+          const plData = await spotifySearch(artist, 'playlist', 10);
+          if (plData.playlists?.items) {
+            for (const pl of plData.playlists.items) {
+              if (!pl || !pl.name) continue;
+              playlistHits.push({
+                name: pl.name,
+                owner: pl.owner?.display_name || 'Unknown',
+                url: pl.external_urls?.spotify || '',
+                trackCount: pl.tracks?.total || 0
+              });
+            }
+          }
+        }
+        result = { competitors: competitorData, playlistsFeaturingCompetitors: playlistHits };
+        break;
+      }
+
+      case 'socialScout': {
+        if (!genre) return res.status(400).json({ error: 'Genre required' });
+        const searches = await Promise.all([
+          serperSearch(`${genre} music promotion instagram page`),
+          serperSearch(`${genre} music tiktok influencer promoting artists`),
+          serperSearch(`${genre} music repost page instagram`)
+        ]);
+        const accounts = [];
+        for (const s of searches) {
+          if (s.organic) {
+            for (const r of s.organic) {
+              accounts.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
+            }
+          }
+        }
+        result = { accounts };
+        break;
+      }
+
+      default:
+        return res.status(400).json({ error: 'Unknown action: ' + action });
+    }
+
+    cacheSet(cacheKey, result);
+    res.json(result);
+  } catch (err) {
+    console.error('Research API error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API config check endpoint
+app.get('/api/research/status', requireAccess, (req, res) => {
+  res.json({
+    spotify: !!(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET),
+    search: !!SERPER_API_KEY
+  });
+});
+
 // --- Main App (protected) ---
 app.get('/', requireAccess, (req, res) => {
   let html = fs.readFileSync(path.join(__dirname, 'MARKETING-COMMAND-CENTER.html'), 'utf8');
@@ -242,5 +506,5 @@ app.use(express.static(__dirname, {
 }));
 
 app.listen(PORT, () => {
-  console.log(`Marketing Command Center running on port ${PORT}`);
+  console.log(`Rollout Heaven running on port ${PORT}`);
 });

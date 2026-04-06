@@ -3,48 +3,123 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login - Marketing Command Center</title>
+<title>Login - Rollout Heaven</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+  :root {
+    --bg-deep: #080b1e;
+    --bg-card: #0f1332;
+    --bg-input: #0a0d24;
+    --border: #1a1f4a;
+    --accent-1: #7b2ff7;
+    --accent-2: #00d4ff;
+    --gold: #ffd700;
+    --text-dim: #6b7094;
+    --gradient-primary: linear-gradient(135deg, #7b2ff7, #00d4ff);
+    --glow-purple: 0 0 20px rgba(123,47,247,0.3);
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Inter', sans-serif; background: #060606; color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-  .auth-container { width: 100%; max-width: 420px; padding: 24px; }
-  .auth-logo { text-align: center; margin-bottom: 40px; }
-  .auth-logo img { width: 280px; height: auto; margin-bottom: 16px; }
-  .auth-logo h1 { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: 1px; }
-  .auth-logo h1 span { color: #c9a84c; }
-  .auth-logo p { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 2px; margin-top: 6px; }
-  .auth-card { background: #111; border: 1px solid #1f1f1f; border-radius: 12px; padding: 32px; }
-  .auth-tabs { display: flex; gap: 4px; background: #0a0a0a; border-radius: 8px; padding: 4px; margin-bottom: 28px; }
-  .auth-tab { flex: 1; padding: 10px; border: none; background: none; color: #666; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 6px; font-family: 'Inter', sans-serif; transition: all 0.2s; }
-  .auth-tab.active { background: #c9a84c; color: #000; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg-deep); color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 20%, rgba(123,47,247,0.08) 0%, transparent 50%), radial-gradient(circle at 70% 80%, rgba(0,212,255,0.05) 0%, transparent 50%); pointer-events: none; }
+  .auth-container { width: 100%; max-width: 420px; padding: 24px; position: relative; z-index: 1; }
+  .auth-logo { text-align: center; margin-bottom: 40px; position: relative; overflow: visible; }
+  .auth-logo .logo-wrap { position: relative; display: inline-block; animation: flyUp 1.8s cubic-bezier(0.22, 1, 0.36, 1) forwards, hover 3s ease-in-out 2.2s infinite; }
+  .auth-logo img { width: 280px; height: auto; margin-bottom: 16px; filter: drop-shadow(0 0 16px rgba(123,47,247,0.4)) drop-shadow(0 0 40px rgba(0,212,255,0.15)); }
+  /* Wind lines */
+  .wind-lines { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .wind-line { position: absolute; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, rgba(0,212,255,0.6), transparent); opacity: 0; }
+  .wind-line:nth-child(1) { width: 60px; top: 30%; left: -30px; animation: windSweep 1.8s 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  .wind-line:nth-child(2) { width: 80px; top: 50%; left: -50px; animation: windSweep 1.8s 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  .wind-line:nth-child(3) { width: 45px; top: 70%; left: -20px; animation: windSweep 1.8s 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  .wind-line:nth-child(4) { width: 55px; top: 40%; right: -40px; left: auto; animation: windSweepR 1.8s 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  .wind-line:nth-child(5) { width: 70px; top: 65%; right: -30px; left: auto; animation: windSweepR 1.8s 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  /* Sparkle particles */
+  .sparkle { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #fff; opacity: 0; box-shadow: 0 0 6px rgba(255,255,255,0.8); }
+  .sparkle:nth-child(6) { top: 20%; left: 15%; animation: sparkleFloat 2s 0.8s ease-out forwards; }
+  .sparkle:nth-child(7) { top: 35%; right: 10%; animation: sparkleFloat 2.2s 1s ease-out forwards; }
+  .sparkle:nth-child(8) { top: 55%; left: 25%; animation: sparkleFloat 1.8s 1.2s ease-out forwards; }
+  .sparkle:nth-child(9) { top: 15%; right: 20%; animation: sparkleFloat 2.4s 0.6s ease-out forwards; }
+  .sparkle:nth-child(10) { top: 45%; left: 8%; animation: sparkleFloat 2s 1.4s ease-out forwards; }
+
+  @keyframes flyUp {
+    0% { transform: translateY(80px) scale(0.7) rotate(-8deg); opacity: 0; filter: blur(4px); }
+    40% { transform: translateY(-20px) scale(1.05) rotate(3deg); opacity: 1; filter: blur(0); }
+    60% { transform: translateY(5px) scale(0.98) rotate(-1deg); opacity: 1; }
+    80% { transform: translateY(-8px) scale(1.02) rotate(1deg); opacity: 1; }
+    100% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+  }
+  @keyframes hover {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(-8px) rotate(1deg); }
+    75% { transform: translateY(-4px) rotate(-0.5deg); }
+  }
+  @keyframes windSweep {
+    0% { opacity: 0; transform: translateX(0) translateY(0) scaleX(0.3); }
+    20% { opacity: 0.8; transform: translateX(30px) translateY(-15px) scaleX(1); }
+    60% { opacity: 0.5; transform: translateX(120px) translateY(-40px) scaleX(1.5); }
+    100% { opacity: 0; transform: translateX(200px) translateY(-60px) scaleX(0.5); }
+  }
+  @keyframes windSweepR {
+    0% { opacity: 0; transform: translateX(0) translateY(0) scaleX(0.3); }
+    20% { opacity: 0.8; transform: translateX(-30px) translateY(-15px) scaleX(1); }
+    60% { opacity: 0.5; transform: translateX(-120px) translateY(-40px) scaleX(1.5); }
+    100% { opacity: 0; transform: translateX(-200px) translateY(-60px) scaleX(0.5); }
+  }
+  @keyframes sparkleFloat {
+    0% { opacity: 0; transform: translateY(0) scale(0); }
+    30% { opacity: 1; transform: translateY(-10px) scale(1); }
+    70% { opacity: 0.6; transform: translateY(-30px) scale(0.8); }
+    100% { opacity: 0; transform: translateY(-50px) scale(0); }
+  }
+  .auth-logo p { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-top: 6px; animation: fadeIn 1s 1.5s both; }
+  .auth-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 40px rgba(123,47,247,0.05); }
+  .auth-tabs { display: flex; gap: 4px; background: var(--bg-input); border-radius: 8px; padding: 4px; margin-bottom: 28px; }
+  .auth-tab { flex: 1; padding: 10px; border: none; background: none; color: var(--text-dim); font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 6px; font-family: 'Inter', sans-serif; transition: all 0.3s; }
+  .auth-tab.active { background: var(--gradient-primary); color: #fff; box-shadow: var(--glow-purple); }
   .auth-form { display: none; }
-  .auth-form.active { display: block; }
+  .auth-form.active { display: block; animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   .form-group { margin-bottom: 18px; }
-  .form-group label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; font-weight: 500; }
-  .form-group input { width: 100%; background: #0a0a0a; border: 1px solid #222; border-radius: 8px; padding: 12px 14px; color: #fff; font-size: 14px; font-family: 'Inter', sans-serif; transition: border-color 0.2s; }
-  .form-group input:focus { outline: none; border-color: #c9a84c; }
+  .form-group label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+  .form-group input { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; color: #fff; font-size: 14px; font-family: 'Inter', sans-serif; transition: all 0.3s; }
+  .form-group input:focus { outline: none; border-color: var(--accent-1); box-shadow: 0 0 12px rgba(123,47,247,0.2); }
   .pw-wrapper { position: relative; }
   .pw-wrapper input { padding-right: 44px; }
-  .pw-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #555; padding: 4px; font-size: 16px; line-height: 1; transition: color 0.2s; }
-  .pw-toggle:hover { color: #c9a84c; }
-  .btn-primary { width: 100%; padding: 14px; background: #c9a84c; color: #000; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.2s; }
-  .btn-primary:hover { background: #d4b45c; }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pw-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-dim); padding: 4px; font-size: 16px; line-height: 1; transition: color 0.2s; }
+  .pw-toggle:hover { color: var(--accent-2); }
+  .btn-primary { width: 100%; padding: 14px; background: var(--gradient-primary); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; position: relative; overflow: hidden; }
+  .btn-primary::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent); transform: rotate(45deg); transition: all 0.6s; }
+  .btn-primary:hover::before { left: 100%; }
+  .btn-primary:hover { box-shadow: 0 4px 20px rgba(123,47,247,0.4); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .error-msg { background: rgba(255,68,68,0.1); border: 1px solid rgba(255,68,68,0.2); border-radius: 8px; padding: 12px; font-size: 13px; color: #ff6b6b; margin-bottom: 16px; display: none; }
-  .success-msg { background: rgba(76,175,80,0.1); border: 1px solid rgba(76,175,80,0.2); border-radius: 8px; padding: 12px; font-size: 13px; color: #66bb6a; margin-bottom: 16px; display: none; }
-  .trial-badge { text-align: center; margin-top: 20px; padding: 12px; background: rgba(201,168,76,0.08); border: 1px solid rgba(201,168,76,0.15); border-radius: 8px; }
-  .trial-badge .highlight { color: #c9a84c; font-weight: 700; font-size: 14px; }
-  .trial-badge .detail { color: #888; font-size: 12px; margin-top: 4px; }
-  .divider { border: none; border-top: 1px solid #1f1f1f; margin: 20px 0; }
-  .alt-text { text-align: center; font-size: 12px; color: #666; }
+  .success-msg { background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.2); border-radius: 8px; padding: 12px; font-size: 13px; color: var(--accent-2); margin-bottom: 16px; display: none; }
+  .trial-badge { text-align: center; margin-top: 20px; padding: 12px; background: rgba(123,47,247,0.08); border: 1px solid rgba(123,47,247,0.2); border-radius: 8px; }
+  .trial-badge .highlight { background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700; font-size: 14px; }
+  .trial-badge .detail { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .alt-text { text-align: center; font-size: 12px; color: var(--text-dim); }
 </style>
 </head>
 <body>
 <div class="auth-container">
   <div class="auth-logo">
-    <img src="/logo.png" alt="Marketing Command Center">
-    <p>Music Marketing Workflow</p>
+    <div class="logo-wrap">
+      <img src="/logo.png" alt="Rollout Heaven">
+      <div class="wind-lines">
+        <div class="wind-line"></div>
+        <div class="wind-line"></div>
+        <div class="wind-line"></div>
+        <div class="wind-line"></div>
+        <div class="wind-line"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+      </div>
+    </div>
+    <p>Release Management Platform</p>
   </div>
 
   <div class="auth-card">
