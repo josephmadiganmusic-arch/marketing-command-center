@@ -48,6 +48,21 @@
   .status-msg.success { background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.2); color: var(--accent-2); display: block; }
   .logout-link { display: inline-block; margin-top: 16px; color: var(--text-dim); font-size: 12px; cursor: pointer; text-decoration: underline; transition: color 0.2s; }
   .logout-link:hover { color: var(--accent-2); }
+
+  /* ═══ MOBILE ═══ */
+  @media (max-width: 480px) {
+    .sub-container { padding: 16px; }
+    .sub-logo img { width: 140px; }
+    .sub-logo p { font-size: 11px; letter-spacing: 1.5px; }
+    .sub-card { padding: 24px 20px; border-radius: 10px; }
+    .sub-card h2 { font-size: 18px; }
+    .sub-card .desc { font-size: 13px; }
+    .price-box { padding: 20px; }
+    .price-box .amount { font-size: 30px; }
+    .features li { font-size: 12px; padding: 6px 0; }
+    .btn-subscribe { padding: 16px; min-height: 48px; font-size: 14px; }
+    .logout-link { min-height: 44px; display: inline-flex; align-items: center; }
+  }
 </style>
 </head>
 <body>

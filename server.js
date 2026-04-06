@@ -3,72 +3,128 @@ const fs = require('fs');
 const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const Stripe = require('stripe');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- Database Setup ---
+// --- Database Setup (sql.js — pure JS, no native build needed) ---
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new Database(path.join(DATA_DIR, 'users.db'));
-db.pragma('journal_mode = WAL');
+const DB_PATH = path.join(DATA_DIR, 'users.db');
+let db; // initialized in startServer()
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT DEFAULT 'user',
-    stripe_customer_id TEXT,
-    stripe_subscription_id TEXT,
-    subscription_status TEXT DEFAULT 'none',
-    trial_ends_at TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  )
-`);
+// sql.js helper: wraps db methods to match better-sqlite3-style API
+const dbHelpers = {
+  exec(sql) { db.run(sql); },
+  prepare(sql) {
+    return {
+      get(...params) {
+        const stmt = db.prepare(sql);
+        stmt.bind(params);
+        if (stmt.step()) {
+          const row = stmt.getAsObject();
+          stmt.free();
+          return row;
+        }
+        stmt.free();
+        return undefined;
+      },
+      all(...params) {
+        const results = [];
+        const stmt = db.prepare(sql);
+        stmt.bind(params);
+        while (stmt.step()) results.push(stmt.getAsObject());
+        stmt.free();
+        return results;
+      },
+      run(...params) {
+        db.run(sql, params);
+        const lastId = db.exec("SELECT last_insert_rowid() as id")[0]?.values[0]?.[0];
+        const changes = db.getRowsModified();
+        saveDb();
+        return { lastInsertRowid: lastId, changes };
+      }
+    };
+  },
+  transaction(fn) {
+    return (...args) => {
+      db.run("BEGIN");
+      try { fn(...args); db.run("COMMIT"); saveDb(); }
+      catch(e) { db.run("ROLLBACK"); throw e; }
+    };
+  }
+};
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS support_tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    user_email TEXT NOT NULL,
-    subject TEXT NOT NULL,
-    message TEXT NOT NULL,
-    status TEXT DEFAULT 'open',
-    ai_response TEXT,
-    admin_notes TEXT,
-    escalated INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  )
-`);
+let _saveTimer = null;
+function saveDb() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    try {
+      const data = db.export();
+      fs.writeFileSync(DB_PATH, Buffer.from(data));
+    } catch(e) { console.error('DB save error:', e.message); }
+  }, 100);
+}
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS user_data (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    key TEXT NOT NULL,
-    value TEXT,
-    updated_at TEXT DEFAULT (datetime('now')),
-    UNIQUE(user_id, key)
-  )
-`);
+function initDb() {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      role TEXT DEFAULT 'user',
+      stripe_customer_id TEXT,
+      stripe_subscription_id TEXT,
+      subscription_status TEXT DEFAULT 'none',
+      trial_ends_at TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
 
-// --- Seed Admin Accounts ---
-const ADMINS = [
-  { email: 'josephmadiganmusic@gmail.com', password: 'Bornagainbold123!' },
-  { email: 'official.stevenperez@gmail.com', password: 'Bornagainbold123!' }
-];
+  db.run(`
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      user_email TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT DEFAULT 'open',
+      ai_response TEXT,
+      admin_notes TEXT,
+      escalated INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
 
-for (const admin of ADMINS) {
-  const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(admin.email);
-  if (!exists) {
-    const hash = bcrypt.hashSync(admin.password, 10);
-    db.prepare('INSERT INTO users (email, password, role, subscription_status) VALUES (?, ?, ?, ?)').run(admin.email, hash, 'admin', 'admin');
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_data (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT,
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, key)
+    )
+  `);
+
+  // --- Seed Admin Accounts (passwords from env vars, with fallback) ---
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Bornagainbold123!';
+  const ADMINS = [
+    { email: 'josephmadiganmusic@gmail.com' },
+    { email: 'official.stevenperez@gmail.com' }
+  ];
+
+  for (const admin of ADMINS) {
+    const exists = dbHelpers.prepare('SELECT id FROM users WHERE email = ?').get(admin.email);
+    if (!exists) {
+      const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+      dbHelpers.prepare('INSERT INTO users (email, password, role, subscription_status) VALUES (?, ?, ?, ?)').run(admin.email, hash, 'admin', 'admin');
+    }
   }
 }
 
@@ -113,7 +169,7 @@ function hasAccess(user) {
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
   if (!user) { req.session.destroy(); return res.redirect('/login'); }
   req.user = user;
   next();
@@ -121,7 +177,7 @@ function requireAuth(req, res, next) {
 
 function requireAccess(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
   if (!user) { req.session.destroy(); return res.redirect('/login'); }
   req.user = user;
   if (!hasAccess(user)) return res.redirect('/subscribe');
@@ -138,7 +194,7 @@ app.post('/api/login', (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
@@ -153,13 +209,13 @@ app.post('/api/signup', (req, res) => {
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
   const cleanEmail = email.toLowerCase().trim();
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
+  const existing = dbHelpers.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
   if (existing) return res.status(409).json({ error: 'Account already exists. Please log in.' });
 
   const hash = bcrypt.hashSync(password, 10);
   const trialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const result = db.prepare(
+  const result = dbHelpers.prepare(
     'INSERT INTO users (email, password, subscription_status, trial_ends_at) VALUES (?, ?, ?, ?)'
   ).run(cleanEmail, hash, 'trialing', trialEnd);
 
@@ -174,7 +230,7 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   if (!req.session.userId) return res.json({ loggedIn: false });
-  const user = db.prepare('SELECT id, email, role, subscription_status, trial_ends_at FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT id, email, role, subscription_status, trial_ends_at FROM users WHERE id = ?').get(req.session.userId);
   if (!user) return res.json({ loggedIn: false });
 
   let daysLeft = null;
@@ -189,7 +245,7 @@ app.get('/api/me', (req, res) => {
 app.post('/api/data/save', requireAuth, (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'Key required' });
-  db.prepare(`
+  dbHelpers.prepare(`
     INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
     ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
   `).run(req.user.id, key, typeof value === 'string' ? value : JSON.stringify(value));
@@ -199,21 +255,22 @@ app.post('/api/data/save', requireAuth, (req, res) => {
 app.post('/api/data/save-batch', requireAuth, (req, res) => {
   const { items } = req.body;
   if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'Items array required' });
-  const stmt = db.prepare(`
-    INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
-    ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
-  `);
-  const batch = db.transaction(() => {
+  const saveBatch = dbHelpers.transaction(() => {
     for (const { key, value } of items) {
-      if (key) stmt.run(req.user.id, key, typeof value === 'string' ? value : JSON.stringify(value));
+      if (key) {
+        dbHelpers.prepare(`
+          INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+          ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+        `).run(req.user.id, key, typeof value === 'string' ? value : JSON.stringify(value));
+      }
     }
   });
-  batch();
+  saveBatch();
   res.json({ success: true });
 });
 
 app.get('/api/data/load', requireAuth, (req, res) => {
-  const rows = db.prepare('SELECT key, value FROM user_data WHERE user_id = ?').all(req.user.id);
+  const rows = dbHelpers.prepare('SELECT key, value FROM user_data WHERE user_id = ?').all(req.user.id);
   const data = {};
   for (const row of rows) {
     try { data[row.key] = JSON.parse(row.value); } catch(e) { data[row.key] = row.value; }
@@ -232,7 +289,7 @@ app.post('/api/create-checkout', requireAuth, async (req, res) => {
     if (!customerId) {
       const customer = await stripe.customers.create({ email: req.user.email });
       customerId = customer.id;
-      db.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?').run(customerId, req.user.id);
+      dbHelpers.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?').run(customerId, req.user.id);
     }
 
     const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -274,12 +331,12 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
     case 'customer.subscription.updated': {
       const status = sub.status === 'trialing' ? 'trialing' : (sub.status === 'active' ? 'active' : sub.status);
       const trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
-      db.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ? WHERE stripe_customer_id = ?')
+      dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ? WHERE stripe_customer_id = ?')
         .run(status, sub.id, trialEnd, sub.customer);
       break;
     }
     case 'customer.subscription.deleted': {
-      db.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = NULL WHERE stripe_customer_id = ?')
+      dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = NULL WHERE stripe_customer_id = ?')
         .run('canceled', sub.customer);
       break;
     }
@@ -541,7 +598,7 @@ app.get('/api/research/status', requireAccess, (req, res) => {
 // --- Admin Middleware ---
 function requireAdmin(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
   if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   req.user = user;
   next();
@@ -551,7 +608,7 @@ function requireAdmin(req, res, next) {
 
 // Analytics & user list
 app.get('/api/admin/users', requireAdmin, (req, res) => {
-  const users = db.prepare(`
+  const users = dbHelpers.prepare(`
     SELECT id, email, role, subscription_status, trial_ends_at, created_at
     FROM users ORDER BY created_at DESC
   `).all();
@@ -571,7 +628,7 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
 
 // Support tickets — list all
 app.get('/api/admin/tickets', requireAdmin, (req, res) => {
-  const tickets = db.prepare(`
+  const tickets = dbHelpers.prepare(`
     SELECT * FROM support_tickets ORDER BY
       CASE WHEN status = 'open' AND escalated = 1 THEN 0
            WHEN status = 'open' THEN 1
@@ -584,10 +641,10 @@ app.get('/api/admin/tickets', requireAdmin, (req, res) => {
 // Support tickets — update (admin notes, status, etc.)
 app.post('/api/admin/tickets/:id', requireAdmin, (req, res) => {
   const { status, admin_notes } = req.body;
-  const ticket = db.prepare('SELECT * FROM support_tickets WHERE id = ?').get(req.params.id);
+  const ticket = dbHelpers.prepare('SELECT * FROM support_tickets WHERE id = ?').get(req.params.id);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-  if (status) db.prepare('UPDATE support_tickets SET status = ?, updated_at = datetime("now") WHERE id = ?').run(status, req.params.id);
-  if (admin_notes !== undefined) db.prepare('UPDATE support_tickets SET admin_notes = ?, updated_at = datetime("now") WHERE id = ?').run(admin_notes, req.params.id);
+  if (status) dbHelpers.prepare('UPDATE support_tickets SET status = ?, updated_at = datetime("now") WHERE id = ?').run(status, req.params.id);
+  if (admin_notes !== undefined) dbHelpers.prepare('UPDATE support_tickets SET admin_notes = ?, updated_at = datetime("now") WHERE id = ?').run(admin_notes, req.params.id);
   res.json({ success: true });
 });
 
@@ -635,7 +692,7 @@ app.post('/api/support/submit', requireAuth, async (req, res) => {
     escalated = 1;
   }
 
-  db.prepare(`
+  dbHelpers.prepare(`
     INSERT INTO support_tickets (user_id, user_email, subject, message, ai_response, escalated)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(req.user.id, req.user.email, subject, message, aiResponse, escalated);
@@ -645,7 +702,7 @@ app.post('/api/support/submit', requireAuth, async (req, res) => {
 
 // User's own tickets
 app.get('/api/support/my-tickets', requireAuth, (req, res) => {
-  const tickets = db.prepare('SELECT * FROM support_tickets WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
+  const tickets = dbHelpers.prepare('SELECT * FROM support_tickets WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
   res.json({ tickets });
 });
 

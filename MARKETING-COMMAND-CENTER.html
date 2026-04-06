@@ -348,9 +348,198 @@
   .site-sidebar .intake-summary { margin-bottom: 16px; }
   .sidebar-collapse-btn { display: none; background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin-bottom: 12px; transition: all 0.3s; }
   .sidebar-collapse-btn:hover { border-color: var(--accent-1); color: var(--accent-2); }
-  @media (max-width: 1100px) { .site-layout { grid-template-columns: 1fr; } .site-sidebar { position: static; } .sidebar-collapse-btn { display: block; } .sidebar-collapsible.collapsed { display: none; } }
-  @media (max-width: 900px) { .eg-layout { grid-template-columns: 1fr; } .eg-form-panel, .eg-preview-panel { position: static !important; } }
-  @media (max-width: 768px) { .stat-grid { grid-template-columns: 1fr 1fr; } .form-grid { grid-template-columns: 1fr; } .checkbox-grid { grid-template-columns: 1fr; } .eg-actions { flex-direction: column; } .ai-actions { grid-template-columns: 1fr; } .inline-ai-btn-row { flex-direction: column; } .songwriter-row { grid-template-columns: 1fr 1fr; } .publisher-row { grid-template-columns: 1fr 1fr; } .reg-progress-bar { flex-wrap: wrap; } .reg-card-actions { padding-left: 24px; } .reg-fields-toggle { padding-left: 24px; } .reg-fields-panel { padding-left: 24px; } }
+  /* ═══ RESPONSIVE: TABLET (≤1100px) ═══ */
+  @media (max-width: 1100px) {
+    .site-layout { grid-template-columns: 1fr; }
+    .site-sidebar { position: static; }
+    .sidebar-collapse-btn { display: block; }
+    .sidebar-collapsible.collapsed { display: none; }
+  }
+
+  /* ═══ RESPONSIVE: SMALL TABLET (≤900px) ═══ */
+  @media (max-width: 900px) {
+    .eg-layout { grid-template-columns: 1fr; }
+    .eg-form-panel, .eg-preview-panel { position: static !important; }
+  }
+
+  /* ═══ RESPONSIVE: MOBILE (≤768px) ═══ */
+  @media (max-width: 768px) {
+    /* Container */
+    .container { padding: 0 16px; }
+
+    /* Header */
+    .header .container { flex-wrap: wrap; gap: 12px; justify-content: center; }
+    .header .container .logo { font-size: 16px; }
+    .header .container .logo img { height: 36px !important; }
+    .badge { display: none; }
+
+    /* Tabs — scroll indicator gradient */
+    .tabs { margin: 20px 0; position: relative; }
+    .tabs::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 40px; background: linear-gradient(90deg, transparent, var(--bg-card)); pointer-events: none; border-radius: 0 10px 10px 0; }
+    .tab { padding: 10px 16px; font-size: 12px; min-height: 44px; display: flex; align-items: center; }
+
+    /* Typography */
+    h2 { font-size: 20px; }
+    .subtitle { font-size: 12px; margin-bottom: 16px; }
+
+    /* Sections */
+    .section { padding: 16px; margin-bottom: 12px; border-radius: 10px; }
+    .content-card { padding: 16px; }
+
+    /* Grids → stack */
+    .stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .form-grid { grid-template-columns: 1fr; gap: 12px; }
+    .checkbox-grid { grid-template-columns: 1fr; }
+    .eg-actions { flex-direction: column; }
+    .ai-actions { grid-template-columns: 1fr; }
+    .inline-ai-btn-row { flex-direction: column; }
+
+    /* Songwriter / Publisher rows */
+    .songwriter-row { grid-template-columns: 1fr 1fr; }
+    .publisher-row { grid-template-columns: 1fr 1fr; }
+    .dynamic-row-header { display: none; }
+
+    /* Registration */
+    .reg-progress-bar { flex-wrap: wrap; }
+    .reg-progress-step { flex: 0 0 calc(50% - 1px); min-width: 0; padding: 10px 6px; font-size: 10px; }
+    .reg-step-num { font-size: 15px; }
+    .reg-card-header { padding: 16px; gap: 12px; }
+    .reg-card-actions { padding: 0 16px 12px 16px; }
+    .reg-fields-toggle { padding-left: 16px; }
+    .reg-fields-panel { padding: 12px 16px 16px 16px; }
+    .reg-step-badge { width: 32px; height: 32px; font-size: 14px; }
+    .reg-card-info h3 { font-size: 14px; }
+    .reg-links-row { flex-direction: column; }
+
+    /* Link entries */
+    .link-entry { grid-template-columns: 1fr; gap: 6px; }
+
+    /* Calendar table — horizontal scroll */
+    .calendar-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .calendar-table th, .calendar-table td { white-space: nowrap; padding: 10px 8px; font-size: 12px; }
+
+    /* AI key bar */
+    .ai-key-bar { flex-direction: column; }
+    .ai-key-bar input { min-width: 0; width: 100%; }
+    .ai-key-bar select { width: 100%; }
+    .ai-key-bar button { width: 100%; }
+
+    /* AI modals */
+    .ai-modal-overlay { padding: 16px 12px; align-items: flex-start; }
+    .ai-modal { padding: 20px; border-radius: 10px; max-height: 90vh; overflow-y: auto; }
+    .ai-modal h3 { font-size: 16px; padding-right: 32px; }
+
+    /* AI action buttons — touch-friendly */
+    .ai-action-btn { padding: 16px; min-height: 44px; }
+    .ai-submit-btn { width: 100%; min-height: 48px; }
+
+    /* Inline AI */
+    .inline-ai-section { padding: 16px; }
+    .inline-ai-btn { min-height: 44px; width: 100%; text-align: center; justify-content: center; }
+    .inline-ai-row { flex-direction: column; }
+    .inline-ai-go { width: 100%; min-height: 48px; }
+
+    /* Toast — full width on mobile */
+    .toast { left: 16px; right: 16px; bottom: 20px; text-align: center; border-radius: 8px; font-size: 13px; padding: 12px 16px; }
+
+    /* Copy buttons — larger touch targets */
+    .copy-btn { padding: 8px 14px; font-size: 12px; min-height: 36px; }
+    .copy-field-btn { padding: 7px 12px; min-height: 36px; }
+
+    /* Buttons — touch-friendly minimums */
+    .btn-generate { min-width: 0; width: 100%; min-height: 48px; }
+    .btn-generate-campaign { min-height: 52px; font-size: 14px; }
+    .btn-save { min-height: 44px; }
+    .btn-add-link { min-height: 44px; }
+    .btn-remove { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+    .btn-reg-open { min-height: 44px; width: 100%; }
+    .btn-reg-newtab { min-height: 44px; }
+
+    /* Email gen layout */
+    .eg-layout { grid-template-columns: 1fr; gap: 20px; }
+    .eg-form-panel { position: static !important; }
+    .preview-frame-wrap { min-height: 400px; }
+    .preview-frame { min-height: 400px; }
+    .preview-header { flex-direction: column; gap: 10px; align-items: flex-start; }
+
+    /* Fullscreen overlay */
+    .eg-fullscreen-bar { padding: 10px 12px; gap: 6px; }
+    .eg-fullscreen-bar .theme-pill { padding: 6px 12px; font-size: 11px; }
+    .eg-fullscreen-actions { margin-left: 0; width: 100%; justify-content: center; }
+    .eg-fullscreen-frame { max-width: 100%; }
+
+    /* Stat cards */
+    .stat-card { padding: 14px; }
+    .stat-card .num { font-size: 22px; }
+    .stat-card .label { font-size: 10px; }
+
+    /* Intake */
+    .intake-save-bar { flex-direction: column; }
+    .intake-save-bar > * { width: 100%; }
+    select.intake-releases { min-width: 0; }
+    .btn-intake-action { width: 100%; min-height: 44px; text-align: center; }
+    .summary-field { flex-wrap: wrap; gap: 4px; }
+    .summary-label { min-width: 60px; }
+
+    /* Upload zones */
+    .upload-zone { padding: 20px 16px; min-height: 100px !important; }
+
+    /* Save bar */
+    .save-bar { flex-direction: column; }
+    .save-bar > * { width: 100%; }
+    select.saved-releases { min-width: 0; }
+
+    /* Template bar — wrap */
+    .template-bar { gap: 6px; }
+    .template-btn { flex: 1 1 calc(50% - 6px); min-width: 0; text-align: center; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+
+    /* Checklist */
+    .checklist li { padding: 14px 0; font-size: 13px; }
+    .check { width: 28px; height: 28px; border-radius: 8px; }
+
+    /* Outreach cards */
+    .outreach-card { padding: 16px; }
+
+    /* Form inputs — slightly larger on mobile */
+    .form-group input, .form-group textarea, .form-group select { padding: 14px; font-size: 16px; }
+
+    /* Platform field */
+    .ai-platform-checks { gap: 10px; }
+    .ai-platform-checks label { min-height: 44px; }
+  }
+
+  /* ═══ RESPONSIVE: SMALL PHONE (≤480px) ═══ */
+  @media (max-width: 480px) {
+    .container { padding: 0 12px; }
+    .header { padding: 12px 0; }
+    .header .container .logo { font-size: 14px; }
+    .header .container .logo img { height: 30px !important; }
+
+    .tabs { margin: 14px 0; padding: 3px; }
+    .tab { padding: 8px 12px; font-size: 11px; }
+
+    h2 { font-size: 18px; }
+    .section { padding: 12px; }
+    .content-card { padding: 12px; }
+
+    .stat-grid { grid-template-columns: 1fr; }
+    .stat-card .num { font-size: 20px; }
+
+    .songwriter-row { grid-template-columns: 1fr; }
+    .publisher-row { grid-template-columns: 1fr; }
+
+    .reg-progress-step { flex: 0 0 100%; }
+
+    .eg-fullscreen-bar .theme-pill { padding: 5px 10px; font-size: 10px; }
+
+    .ai-modal { padding: 16px; }
+    .ai-modal h3 { font-size: 15px; }
+
+    .inline-ai-section { padding: 12px; }
+
+    /* Prevent iOS zoom on input focus */
+    input, textarea, select { font-size: 16px !important; }
+  }
 </style>
 </head>
 <body>
