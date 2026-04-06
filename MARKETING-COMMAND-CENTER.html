@@ -44,6 +44,11 @@
   .day-label { color: #c9a84c; font-weight: 700; white-space: nowrap; }
   .outreach-card { background: #0a0a0a; border: 1px solid #1f1f1f; border-radius: 10px; padding: 20px; margin-bottom: 12px; position: relative; }
   .outreach-card h4 { color: #fff; font-size: 14px; margin-bottom: 4px; }
+  .outreach-fields { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; padding-bottom: 12px; border-bottom: 1px solid #1a1a1a; }
+  .outreach-fields label { font-size: 11px; color: #666; display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 140px; }
+  .outreach-fields input { background: #0a0a0a; border: 1px solid #222; border-radius: 6px; padding: 8px 10px; color: #c9a84c; font-size: 13px; font-family: 'Inter', sans-serif; transition: border-color 0.2s; }
+  .outreach-fields input:focus { outline: none; border-color: #c9a84c; }
+  .outreach-fields input::placeholder { color: #444; }
   .outreach-card .type-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #1a2a1a; color: #4a8; }
   .outreach-card .body { font-size: 13px; color: #bbb; line-height: 1.7; margin-top: 12px; white-space: pre-wrap; }
   .checklist { list-style: none; padding: 0; }
@@ -2188,19 +2193,58 @@ function renderCalendar(week) {
   </table>`;
 }
 
+let _outreachCounter = 0;
+
+function buildOutreachCard(m) {
+  const id = _outreachCounter++;
+  // Detect placeholders in the body
+  const placeholderMap = {
+    '[Name]': 'Recipient Name',
+    '[Name / Music Director]': 'Name / Music Director',
+    '[Playlist Name]': 'Playlist Name',
+    '[Blog/Platform Name]': 'Blog / Platform Name',
+    '[Podcast Name]': 'Podcast Name'
+  };
+  const found = [];
+  for (const [ph, label] of Object.entries(placeholderMap)) {
+    if (m.body.includes(ph)) found.push({ ph, label });
+  }
+
+  const fieldsHTML = found.length > 0 ? `
+    <div class="outreach-fields">
+      ${found.map(f => `<label>${f.label}<input type="text" placeholder="${f.label}" data-ph="${f.ph}" data-card="${id}" oninput="updateOutreachBody(${id})"></label>`).join('')}
+    </div>` : '';
+
+  return `<div class="outreach-card" id="outreach-card-${id}">
+    <button class="copy-btn" onclick="copyOutreach(${id},this)">Copy</button>
+    <h4>${m.title}</h4><span class="type-badge">${m.type}</span>
+    ${fieldsHTML}
+    <div class="body" data-original="${m.body.replace(/"/g, '&quot;')}">${m.body}</div>
+  </div>`;
+}
+
+function updateOutreachBody(cardId) {
+  const card = document.getElementById('outreach-card-' + cardId);
+  const bodyEl = card.querySelector('.body');
+  let text = bodyEl.getAttribute('data-original');
+  card.querySelectorAll('.outreach-fields input').forEach(inp => {
+    const ph = inp.getAttribute('data-ph');
+    const val = inp.value.trim();
+    if (val) text = text.split(ph).join(val);
+  });
+  bodyEl.textContent = text;
+}
+
+function copyOutreach(cardId, btn) {
+  const card = document.getElementById('outreach-card-' + cardId);
+  const text = card.querySelector('.body').textContent;
+  copyText(text, btn);
+}
+
 function renderOutreach() {
-  document.getElementById('curator-messages').innerHTML = curatorMessages.map(m => `
-    <div class="outreach-card">
-      <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.body').textContent,this)">Copy</button>
-      <h4>${m.title}</h4><span class="type-badge">${m.type}</span>
-      <div class="body">${m.body}</div>
-    </div>`).join('');
-  document.getElementById('followup-messages').innerHTML = followupMessages.map(m => `
-    <div class="outreach-card">
-      <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.body').textContent,this)">Copy</button>
-      <h4>${m.title}</h4><span class="type-badge">${m.type}</span>
-      <div class="body">${m.body}</div>
-    </div>`).join('');
+  _outreachCounter = 0;
+  document.getElementById('curator-messages').innerHTML = curatorMessages.map(m => buildOutreachCard(m)).join('');
+  document.getElementById('followup-messages').innerHTML = followupMessages.map(m => buildOutreachCard(m)).join('');
   document.getElementById('media-messages').innerHTML = '<p style="font-size:13px;color:#555;">Use the Email Generator tab for the full HTML press email.</p>';
 }
 
