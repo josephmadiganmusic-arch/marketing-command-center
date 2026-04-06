@@ -543,6 +543,7 @@
           <div class="form-group">
             <label>Email Intro Paragraph</label>
             <textarea id="in-emailIntro" rows="4" oninput="intakeUpdate()" placeholder="Opening paragraph for submission emails..."></textarea>
+            <button type="button" style="margin-top:8px;padding:8px 16px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#c9a84c;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#c9a84c'" onmouseout="this.style.borderColor='#333'" onclick="generateEmailIntro(this)">Generate Intro</button>
           </div>
         </div>
 
@@ -1743,6 +1744,56 @@ function intakeGetData() {
 }
 
 let _autosaveTimer = null;
+
+async function generateEmailIntro(btn) {
+  const d = intakeGetData();
+  if (!d.songTitle || !d.primaryArtist) {
+    showToast('Fill in Song Title and Artist first');
+    return;
+  }
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  btn.style.opacity = '0.5';
+
+  const feat = d.featArtist ? ` featuring ${d.featArtist}` : '';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
+  const writers = d.songwriters.map(w => w.name).filter(Boolean).join(', ');
+
+  try {
+    const result = await callClaude(`Write a compelling email intro paragraph for a music submission email. This will be the opening paragraph that hooks the recipient.
+
+SONG: "${d.songTitle}"${feat}
+ARTIST: ${d.primaryArtist}
+ALBUM/SINGLE: ${d.albumName || d.songTitle}
+GENRE: ${genre}
+RELEASE DATE: ${d.releaseDate || 'TBD'}
+PRODUCER: ${d.producer || 'N/A'}
+SONGWRITERS: ${writers || 'N/A'}
+LABEL: ${d.label || 'Independent'}
+BIO: ${d.bio || 'N/A'}
+SPOTIFY: ${d.linkSpotify || 'N/A'}
+
+Write ONE paragraph (3-5 sentences). It should:
+- Introduce the artist and the song naturally
+- Mention the genre and what makes this release stand out
+- Reference the artist's story/testimony if bio is provided
+- Be professional but personal — not generic or templated
+- End with a hook that makes the reader want to listen
+
+Return ONLY the paragraph text, nothing else. No quotes, no labels, no formatting.`);
+
+    document.getElementById('in-emailIntro').value = result.trim();
+    intakeUpdate();
+    showToast('Email intro generated!');
+  } catch(err) {
+    showToast('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+    btn.style.opacity = '1';
+  }
+}
 
 function intakeUpdate() {
   let d;
