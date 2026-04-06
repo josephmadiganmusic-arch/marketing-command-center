@@ -1210,23 +1210,35 @@ app.use('/public', express.static(publicDir, { index: false }));
 
 // --- Start Server ---
 async function startServer() {
+  console.log(`[BOOT] Starting Rollout Heaven...`);
+  console.log(`[BOOT] PORT=${PORT}, NODE_ENV=${process.env.NODE_ENV}, RAILWAY=${!!process.env.RAILWAY_ENVIRONMENT}`);
+  console.log(`[BOOT] DB_PATH=${DB_PATH}, DATA_DIR=${DATA_DIR}`);
+
+  console.log('[BOOT] Loading sql.js...');
   const SQL = await initSqlJs();
+  console.log('[BOOT] sql.js loaded');
+
   if (fs.existsSync(DB_PATH)) {
+    console.log('[BOOT] Loading existing database...');
     const fileBuffer = fs.readFileSync(DB_PATH);
     db = new SQL.Database(fileBuffer);
   } else {
+    console.log('[BOOT] Creating new database...');
     db = new SQL.Database();
   }
-  initDb();
+  console.log('[BOOT] Database ready');
 
-  const server = app.listen(PORT, () => {
-    console.log(`Rollout Heaven running on port ${PORT}`);
+  initDb();
+  console.log('[BOOT] Database initialized');
+
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[BOOT] Rollout Heaven running on 0.0.0.0:${PORT}`);
   });
   server.timeout = 120000;
   server.keepAliveTimeout = 120000;
 }
 
 startServer().catch(err => {
-  console.error('Failed to start server:', err);
+  console.error('[BOOT] Failed to start server:', err);
   process.exit(1);
 });
