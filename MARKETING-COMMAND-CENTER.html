@@ -891,7 +891,7 @@
           <div class="form-section-title">Files</div>
           <p style="font-size:12px;color:#555;margin-bottom:12px;">Cover Art</p>
           <div class="upload-zone" id="inCoverZone" onclick="document.getElementById('inCoverInput').click()">
-            <input type="file" id="inCoverInput" accept="image/*" onchange="inHandleCover(this)">
+            <input type="file" id="inCoverInput" accept="image/*" onchange="inHandleCover(this)" onclick="event.stopPropagation()">
             <div class="upload-icon">&#9733;</div>
             <div class="upload-label">Drop cover art here or click to upload</div>
             <div class="upload-hint">JPG, PNG, WEBP — recommended 3000x3000</div>
@@ -902,7 +902,7 @@
           <div style="margin-top:20px;">
             <p style="font-size:12px;color:#555;margin-bottom:12px;">WAV File</p>
             <div class="upload-zone" id="inWavZone" onclick="document.getElementById('inWavInput').click()">
-              <input type="file" id="inWavInput" accept=".wav,audio/wav" onchange="inHandleAudio(this,'wav')">
+              <input type="file" id="inWavInput" accept=".wav,audio/wav" onchange="inHandleAudio(this,'wav')" onclick="event.stopPropagation()">
               <div class="upload-icon">&#9835;</div>
               <div class="upload-label" id="inWavLabel">Click to upload WAV</div>
               <div class="upload-hint">WAV, uncompressed</div>
@@ -914,7 +914,7 @@
           <div style="margin-top:16px;">
             <p style="font-size:12px;color:#555;margin-bottom:12px;">MP3 File</p>
             <div class="upload-zone" id="inMp3Zone" onclick="document.getElementById('inMp3Input').click()">
-              <input type="file" id="inMp3Input" accept=".mp3,audio/mpeg" onchange="inHandleAudio(this,'mp3')">
+              <input type="file" id="inMp3Input" accept=".mp3,audio/mpeg" onchange="inHandleAudio(this,'mp3')" onclick="event.stopPropagation()">
               <div class="upload-icon">&#9835;</div>
               <div class="upload-label" id="inMp3Label">Click to upload MP3</div>
               <div class="upload-hint">MP3, 320kbps recommended</div>
@@ -1096,7 +1096,7 @@
           <div class="form-section">
             <div class="form-section-title">Cover Art</div>
             <div class="upload-zone" id="egCoverArtZone" onclick="document.getElementById('egCoverArtInput').click()">
-              <input type="file" id="egCoverArtInput" accept="image/*" onchange="egHandleCoverArt(this)">
+              <input type="file" id="egCoverArtInput" accept="image/*" onchange="egHandleCoverArt(this)" onclick="event.stopPropagation()">
               <div class="upload-icon">&#9733;</div>
               <div class="upload-label">Drop cover art here or click to upload</div>
               <div class="upload-hint">JPG, PNG, or WEBP (recommended 1500x1500)</div>
@@ -1147,7 +1147,7 @@ This track is a powerful declaration of faith. I would be honored if you would c
             <div style="margin-bottom:16px;">
               <label style="font-size:12px;color:#888;font-weight:500;display:block;margin-bottom:6px;">MP3 File</label>
               <div class="upload-zone" id="egMp3Zone" onclick="document.getElementById('egMp3Input').click()">
-                <input type="file" id="egMp3Input" accept=".mp3,audio/mpeg" onchange="egHandleAudioFile(this,'mp3')">
+                <input type="file" id="egMp3Input" accept=".mp3,audio/mpeg" onchange="egHandleAudioFile(this,'mp3')" onclick="event.stopPropagation()">
                 <div class="upload-icon">&#9835;</div>
                 <div class="upload-label" id="egMp3Label">Click to upload MP3</div>
                 <div class="upload-hint">MP3 format, recommended 320kbps</div>
@@ -1161,7 +1161,7 @@ This track is a powerful declaration of faith. I would be honored if you would c
             <div>
               <label style="font-size:12px;color:#888;font-weight:500;display:block;margin-bottom:6px;">WAV File</label>
               <div class="upload-zone" id="egWavZone" onclick="document.getElementById('egWavInput').click()">
-                <input type="file" id="egWavInput" accept=".wav,audio/wav,audio/wave" onchange="egHandleAudioFile(this,'wav')">
+                <input type="file" id="egWavInput" accept=".wav,audio/wav,audio/wave" onchange="egHandleAudioFile(this,'wav')" onclick="event.stopPropagation()">
                 <div class="upload-icon">&#9835;</div>
                 <div class="upload-label" id="egWavLabel">Click to upload WAV</div>
                 <div class="upload-hint">WAV format, uncompressed audio</div>
@@ -2690,13 +2690,14 @@ function intakeFillForm(d) {
     if (inputs[1]) inputs[1].value = pub.ipi || '';
     if (inputs[2]) inputs[2].value = pub.split || '';
   });
-  if (d.coverArt) {
-    inCoverData = d.coverArt;
-    document.getElementById('inCoverImg').src = d.coverArt;
-    document.getElementById('inCoverPreview').style.display = 'block';
-    document.getElementById('inCoverZone').classList.add('has-file');
-    document.getElementById('inCoverClear').style.display = 'inline-block';
-  }
+  // Always clear cover art when loading a release — forces fresh upload
+  inCoverData = null;
+  document.getElementById('inCoverInput').value = '';
+  document.getElementById('inCoverName').textContent = '';
+  document.getElementById('inCoverImg').src = '';
+  document.getElementById('inCoverPreview').style.display = 'none';
+  document.getElementById('inCoverZone').classList.remove('has-file');
+  document.getElementById('inCoverClear').style.display = 'none';
   intakeUpdate();
 }
 
