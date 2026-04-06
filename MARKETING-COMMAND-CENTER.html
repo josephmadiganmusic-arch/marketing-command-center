@@ -4797,18 +4797,35 @@ async function awardXP(action) {
 // INIT
 // ============================
 function init() {
-  // Check for saved campaign and restore or lock tabs
+  // Load intake data FIRST so campaign check knows which release is active
+  intakeLoadList();
+  const lastData = localStorage.getItem(ukey('release_data'));
+  if(lastData) {
+    try { intakeFillForm(JSON.parse(lastData)); } catch(e) {}
+  } else {
+    prefillFromProfile();
+  }
+
+  // Now check if the CURRENT release has a saved campaign
   const hasSavedCampaign = loadSavedCampaign();
-  if (hasSavedCampaign && localStorage.getItem(ukey('mcc_campaign_generated')) === 'true') {
+  const campaignSong = localStorage.getItem(ukey('mcc_campaign_song')) || '';
+  const currentSong = intakeGetData().songTitle || '';
+  // Only restore campaign if it matches the currently loaded release
+  if (hasSavedCampaign && localStorage.getItem(ukey('mcc_campaign_generated')) === 'true' && campaignSong === currentSong) {
     campaignGenerated = true;
     const btn = document.getElementById('btnGenerateCampaign');
     btn.textContent = 'RE-GENERATE CAMPAIGN';
     btn.style.background = 'linear-gradient(135deg, #2a6b2a, #3a8a3a)';
     btn.style.color = '#fff';
-    const song = localStorage.getItem(ukey('mcc_campaign_song')) || '';
-    document.getElementById('generateStatus').innerHTML = `<div class="step done">\u2713 Campaign generated for "${song}"</div>`;
+    document.getElementById('generateStatus').innerHTML = `<div class="step done">\u2713 Campaign generated for "${esc(campaignSong)}"</div>`;
   } else {
+    // No campaign for this release — clear stale data and lock
+    campaignGenerated = false;
     lockTabs();
+    if (campaignSong && campaignSong !== currentSong) {
+      // Clear the global campaign data so it doesn't bleed into wrong release
+      applyCampaignData({});
+    }
   }
 
   renderHooks(); renderCaptions(); renderHashtags(); renderCTAs();
@@ -4818,7 +4835,6 @@ function init() {
   renderChecklist('checklist-recurring', checklistRecurring);
   renderChecklist('checklist-month', checklistMonth);
   loadChecklistState(); egLoadSavedList(); egInitDragDrop(); loadClaudeKey();
-  intakeLoadList();
   // One-time cleanup: strip cover art from release_data_all to free quota
   try {
     const allRaw = localStorage.getItem(ukey('release_data_all'));
@@ -4829,14 +4845,6 @@ function init() {
       if (cleaned) localStorage.setItem(ukey('release_data_all'), JSON.stringify(all));
     }
   } catch(e) {}
-  // Load last saved intake data, or pre-fill from artist profile
-  const lastData = localStorage.getItem(ukey('release_data'));
-  if(lastData) {
-    try { intakeFillForm(JSON.parse(lastData)); } catch(e) {}
-  } else {
-    // No active release — load artist defaults for sticky fields
-    prefillFromProfile();
-  }
   // init default songwriter row if none exist
   if (!document.querySelectorAll('#in-songwriterRows .dynamic-row').length) intakeAddSongwriter();
   if (!document.querySelectorAll('#in-publisherRows .dynamic-row').length) intakeAddPublisher();
