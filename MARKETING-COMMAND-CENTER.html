@@ -979,29 +979,11 @@
             <div class="cover-preview" id="inCoverPreview"><img id="inCoverImg" alt="Cover Art"></div>
           </div>
           <button class="upload-clear" id="inCoverClear" style="display:none;" onclick="inClearCover(event)">Remove</button>
-          <div style="margin-top:20px;">
-            <p style="font-size:12px;color:#555;margin-bottom:12px;">WAV File</p>
-            <div class="upload-zone" id="inWavZone">
-              <input type="file" id="inWavInput" accept=".wav,audio/wav" onchange="inHandleAudio(this,'wav')">
-              <div class="upload-icon">&#9835;</div>
-              <div class="upload-label" id="inWavLabel">Click to upload WAV</div>
-              <div class="upload-hint">WAV, uncompressed</div>
-              <div class="upload-filename" id="inWavName"></div>
-              <div class="audio-preview" id="inWavPreview"><audio controls id="inWavAudio"></audio></div>
-            </div>
-            <button class="upload-clear" id="inWavClear" style="display:none;" onclick="inClearAudio(event,'wav')">Remove WAV</button>
-          </div>
-          <div style="margin-top:16px;">
-            <p style="font-size:12px;color:#555;margin-bottom:12px;">MP3 File</p>
-            <div class="upload-zone" id="inMp3Zone">
-              <input type="file" id="inMp3Input" accept=".mp3,audio/mpeg" onchange="inHandleAudio(this,'mp3')">
-              <div class="upload-icon">&#9835;</div>
-              <div class="upload-label" id="inMp3Label">Click to upload MP3</div>
-              <div class="upload-hint">MP3, 320kbps recommended</div>
-              <div class="upload-filename" id="inMp3Name"></div>
-              <div class="audio-preview" id="inMp3Preview"><audio controls id="inMp3Audio"></audio></div>
-            </div>
-            <button class="upload-clear" id="inMp3Clear" style="display:none;" onclick="inClearAudio(event,'mp3')">Remove MP3</button>
+          <div style="margin-top:20px;padding:16px;background:var(--bg-input);border:1px solid var(--border);border-radius:10px;">
+            <p style="font-size:12px;color:var(--accent-2);font-weight:600;margin-bottom:8px;">Audio File Sharing</p>
+            <p style="font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:12px;">Upload your WAV and MP3 files to Google Drive, then set sharing to <strong style="color:#fff;">"Anyone with the link"</strong> and paste the links below. These links will be included in your outreach emails.</p>
+            <div class="form-group" style="margin-bottom:12px;"><label>WAV Google Drive Link</label><input type="text" id="in-dlWavDirect" oninput="intakeUpdate()" placeholder="https://drive.google.com/file/d/.../view?usp=sharing"></div>
+            <div class="form-group"><label>MP3 Google Drive Link</label><input type="text" id="in-dlMp3Direct" oninput="intakeUpdate()" placeholder="https://drive.google.com/file/d/.../view?usp=sharing"></div>
           </div>
         </div>
 
@@ -1208,41 +1190,12 @@
             </div>
           </div>
           <div class="form-section">
-            <div class="form-section-title">Audio Files (Upload for Download Page)</div>
-            <p style="font-size:12px;color:#555;margin-bottom:16px;line-height:1.6;">Upload your MP3 and WAV files here. They'll be embedded into a standalone download page you can host anywhere or share as a file.</p>
-            <div style="margin-bottom:16px;">
-              <label style="font-size:12px;color:#888;font-weight:500;display:block;margin-bottom:6px;">MP3 File</label>
-              <div class="upload-zone" id="egMp3Zone">
-                <input type="file" id="egMp3Input" accept=".mp3,audio/mpeg" onchange="egHandleAudioFile(this,'mp3')">
-                <div class="upload-icon">&#9835;</div>
-                <div class="upload-label" id="egMp3Label">Click to upload MP3</div>
-                <div class="upload-hint">MP3 format, recommended 320kbps</div>
-                <div class="upload-filename" id="egMp3Name"></div>
-                <div class="upload-size" id="egMp3Size"></div>
-                <div class="processing-bar" id="egMp3Progress"><div class="processing-bar-fill" id="egMp3ProgressFill"></div></div>
-                <div class="audio-preview" id="egMp3Preview"><audio controls id="egMp3Audio"></audio></div>
-              </div>
-              <button type="button" class="upload-clear" id="egMp3ClearBtn" style="display:none;" onclick="egClearAudioFile(event,'mp3')">Remove MP3</button>
-            </div>
-            <div>
-              <label style="font-size:12px;color:#888;font-weight:500;display:block;margin-bottom:6px;">WAV File</label>
-              <div class="upload-zone" id="egWavZone">
-                <input type="file" id="egWavInput" accept=".wav,audio/wav,audio/wave" onchange="egHandleAudioFile(this,'wav')">
-                <div class="upload-icon">&#9835;</div>
-                <div class="upload-label" id="egWavLabel">Click to upload WAV</div>
-                <div class="upload-hint">WAV format, uncompressed audio</div>
-                <div class="upload-filename" id="egWavName"></div>
-                <div class="upload-size" id="egWavSize"></div>
-                <div class="processing-bar" id="egWavProgress"><div class="processing-bar-fill" id="egWavProgressFill"></div></div>
-                <div class="audio-preview" id="egWavPreview"><audio controls id="egWavAudio"></audio></div>
-              </div>
-              <button type="button" class="upload-clear" id="egWavClearBtn" style="display:none;" onclick="egClearAudioFile(event,'wav')">Remove WAV</button>
-            </div>
-            <div class="form-grid" style="margin-top:20px;padding-top:16px;border-top:1px solid #1f1f1f;">
-              <div class="form-group full-width"><label style="color:#555;">Or paste external download URLs instead</label></div>
-              <div class="form-group full-width"><label>WAV Download URL</label><input type="text" id="egDlWav" placeholder="https://drive.google.com/... or Dropbox link"></div>
-              <div class="form-group full-width"><label>MP3 Download URL</label><input type="text" id="egDlMp3" placeholder="https://drive.google.com/... or Dropbox link"></div>
-              <div class="form-group full-width"><label>Press Kit / Photos ZIP URL</label><input type="text" id="egDlPressKit" placeholder="https://drive.google.com/..."></div>
+            <div class="form-section-title">Audio &amp; Press Kit Links</div>
+            <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px;line-height:1.6;">Upload files to <strong style="color:#fff;">Google Drive</strong>, set sharing to <strong style="color:var(--accent-2);">"Anyone with the link"</strong>, then paste the links below. These will be included in your email as download buttons.</p>
+            <div class="form-grid">
+              <div class="form-group full-width"><label>WAV Google Drive Link</label><input type="text" id="egDlWav" placeholder="https://drive.google.com/file/d/.../view?usp=sharing"></div>
+              <div class="form-group full-width"><label>MP3 Google Drive Link</label><input type="text" id="egDlMp3" placeholder="https://drive.google.com/file/d/.../view?usp=sharing"></div>
+              <div class="form-group full-width"><label>Press Kit / Photos ZIP Link</label><input type="text" id="egDlPressKit" placeholder="https://drive.google.com/file/d/.../view?usp=sharing"></div>
             </div>
           </div>
           <div class="form-section">
@@ -2322,6 +2275,7 @@ function intakeGetData() {
     linkYTVideo: v('in-linkYTVideo'), epk: v('in-epk'), website: v('in-website'),
     instagram: v('in-instagram'), facebook: v('in-facebook'), tiktok: v('in-tiktok'), twitter: v('in-twitter'),
     dlWav: v('in-dlWav'), dlMp3: v('in-dlMp3'), dlPressKit: v('in-dlPressKit'),
+    dlWavDirect: v('in-dlWavDirect'), dlMp3Direct: v('in-dlMp3Direct'),
     bio: v('in-bio'), emailIntro: v('in-emailIntro'),
     matRadioEdit: c('in-matRadioEdit'), matPressPhotos: c('in-matPressPhotos'), matBio: c('in-matBio'),
     matInstrumental: c('in-matInstrumental'), matAcapella: c('in-matAcapella'), matMusicVideo: c('in-matMusicVideo'),
@@ -5592,9 +5546,9 @@ function setupTrialBanner() {
       sessionStorage.setItem('rh_trial_nudge_shown', '1');
       setTimeout(() => {
         if (TRIAL_DAYS <= 3) {
-          showUpgradeNudge('Your trial ends in ' + TRIAL_DAYS + ' day' + (TRIAL_DAYS !== 1 ? 's' : '') + '. Subscribe to keep your campaigns and unlock Music Agent Pro.');
+          showUpgradeNudge('Your trial ends in ' + TRIAL_DAYS + ' day' + (TRIAL_DAYS !== 1 ? 's' : '') + '. Subscribe to unlock Music Agent Pro, unlimited campaigns, and unlimited storage.');
         } else {
-          showUpgradeNudge('You\'re on a free trial. Subscribe anytime to unlock Music Agent Pro and keep full access.');
+          showUpgradeNudge('You\'re on a free trial. Subscribe anytime to unlock Music Agent Pro, unlimited campaigns, and unlimited storage.');
         }
       }, 5000);
     }
@@ -5618,7 +5572,7 @@ function showSubscriptionGate() {
     <div style="text-align:center;max-width:480px;padding:48px;background:#0f1332;border:1px solid #1a1f4a;border-radius:20px;box-shadow:0 0 60px rgba(123,47,247,0.2);">
       <img src="/logo.png" alt="Rollout Heaven" style="height:64px;margin-bottom:24px;filter:drop-shadow(0 0 12px rgba(123,47,247,0.4));">
       <h2 style="font-size:26px;font-weight:800;color:#fff;margin-bottom:12px;">Your Trial Has Ended</h2>
-      <p style="color:#6b7094;font-size:15px;line-height:1.6;margin-bottom:32px;">Subscribe to Rollout Heaven to continue using all release management tools, AI features, and research capabilities.</p>
+      <p style="color:#6b7094;font-size:15px;line-height:1.6;margin-bottom:32px;">Subscribe to Rollout Heaven to unlock Music Agent Pro, unlimited campaigns and storage, and all release management tools.</p>
       <a href="/subscribe" style="display:inline-block;padding:14px 40px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-size:16px;font-weight:700;border-radius:10px;text-decoration:none;transition:all 0.3s;box-shadow:0 0 20px rgba(123,47,247,0.3);">Upgrade Now</a>
       <p style="margin-top:16px;"><a href="#" onclick="doLogout();return false;" style="color:#6b7094;font-size:13px;text-decoration:underline;">Log out</a></p>
     </div>

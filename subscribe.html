@@ -84,12 +84,13 @@
     </div>
 
     <ul class="features">
+      <li>Music Agent Pro — AI-powered live research</li>
+      <li>Unlimited campaigns and storage</li>
       <li>AI-powered email and caption generators</li>
       <li>Playlist submission tracking</li>
       <li>30-day marketing calendar</li>
       <li>Content bank with templates</li>
       <li>Radio and media outreach tools</li>
-      <li>Music Agent Pro with live research</li>
     </ul>
 
     <button class="btn-subscribe" id="subBtn" onclick="startCheckout()">Subscribe Now</button>
@@ -107,10 +108,13 @@ if (params.get('success')) {
   showStatus('info', 'Checkout canceled. Subscribe when you\'re ready.');
 }
 
-// Check if user already has access
+// Check if user already has a paid subscription
 fetch('/api/me').then(r => r.json()).then(data => {
-  if (data.hasAccess) {
+  if (data.subscription_status === 'active') {
+    // Already a paid subscriber — send them back to the app
     window.location.href = '/';
+  } else if (data.subscription_status === 'trialing' && data.trialDaysLeft > 0) {
+    showStatus('info', 'You have ' + data.trialDaysLeft + ' day' + (data.trialDaysLeft !== 1 ? 's' : '') + ' left on your free trial. Subscribe now to unlock Music Agent Pro and unlimited campaigns.');
   } else if (data.subscription_status === 'trialing' && data.trialDaysLeft === 0) {
     showStatus('info', 'Your free trial has ended. Subscribe to continue.');
   } else if (data.subscription_status === 'canceled') {
