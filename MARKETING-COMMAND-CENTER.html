@@ -3090,7 +3090,7 @@ async function mapOneClick(action) {
 // ============================
 // RESEARCH & DISCOVERY (Live Data)
 // ============================
-let researchApis = { spotify: false, search: false };
+let researchApis = { search: false };
 (async function checkResearchApis() {
   try {
     const resp = await fetch('/api/research/status');
@@ -3098,10 +3098,8 @@ let researchApis = { spotify: false, search: false };
       researchApis = await resp.json();
       const el = document.getElementById('researchStatus');
       if (el) {
-        const parts = [];
-        parts.push(researchApis.spotify ? 'Spotify: Connected' : 'Spotify: Not configured');
-        parts.push(researchApis.search ? 'Search: Connected' : 'Search: Not configured');
-        el.innerHTML = parts.map(p => `<span style="margin-right:16px;color:${p.includes('Connected') ? '#4caf50' : '#ff9800'}">${p.includes('Connected') ? '&#9679;' : '&#9675;'} ${p}</span>`).join('');
+        const connected = researchApis.search;
+        el.innerHTML = `<span style="color:${connected ? '#4caf50' : '#ff9800'}">${connected ? '&#9679; Search API: Connected' : '&#9675; Search API: Not configured'}</span>`;
       }
     }
   } catch(e) { /* running locally without server */ }
@@ -3172,10 +3170,10 @@ async function runResearch(action) {
 
     switch (action) {
       case 'findPlaylists': {
-        const plData = data.playlists.slice(0, 30).map((p, i) =>
-          `${i+1}. "${p.name}" by ${p.owner} | Tracks: ${p.trackCount} | ${p.url}\n   ${p.description || 'No description'}`
+        const plData = data.playlists.slice(0, 25).map((p, i) =>
+          `${i+1}. ${p.title}\n   URL: ${p.link}\n   ${p.snippet}`
         ).join('\n');
-        claudePrompt = `${ctx}\n\nHere are REAL Spotify playlists found for the genre "${genre}":\n\n${plData}\n\nAnalyze these playlists and provide:\n1. TOP 10 BEST FIT — rank the playlists most likely to accept this artist's submission, with reasoning\n2. SUBMISSION PRIORITY — which to pitch first and why\n3. PITCH ANGLE — for each top playlist, a one-line personalized pitch approach\n4. RED FLAGS — any playlists to avoid (bot playlists, inactive, wrong genre)\n\nInclude the Spotify URLs so the artist can click directly to them.`;
+        claudePrompt = `${ctx}\n\nHere are REAL search results for "${genre}" playlists and curators:\n\n${plData}\n\nAnalyze and provide:\n1. TOP 10 BEST FIT — rank by relevance to this artist, with reasoning\n2. SUBMISSION PRIORITY — which to pitch first and why\n3. PITCH ANGLE — for each top result, a one-line personalized pitch approach\n4. RED FLAGS — any to avoid\n\nInclude all real URLs.`;
         break;
       }
       case 'findContacts': {
@@ -3200,13 +3198,12 @@ async function runResearch(action) {
         break;
       }
       case 'analyzeCompetition': {
-        const compData = data.competitors.map(c =>
-          `ARTIST: ${c.name} | Followers: ${c.followers.toLocaleString()} | Popularity: ${c.popularity}/100\nGenres: ${c.genres.join(', ')}\nTop Tracks: ${c.topTracks.map(t => `"${t.name}" (pop: ${t.popularity})`).join(', ')}\nSpotify: ${c.url}`
-        ).join('\n\n');
-        const plData = data.playlistsFeaturingCompetitors.slice(0, 20).map((p, i) =>
-          `${i+1}. "${p.name}" by ${p.owner} | Tracks: ${p.trackCount} | ${p.url}`
-        ).join('\n');
-        claudePrompt = `${ctx}\n\nHere is REAL Spotify data on similar/competitor artists:\n\n${compData}\n\nPlaylists featuring these competitors:\n${plData}\n\nProvide:\n1. COMPETITOR ANALYSIS — what each artist is doing right, their strengths\n2. GAPS & OPPORTUNITIES — where this artist can differentiate\n3. PLAYLIST TARGETS — playlists featuring competitors that should also feature this artist (with URLs)\n4. GROWTH BENCHMARKS — realistic follower/stream targets based on competitor data\n5. ACTION PLAN — 5 specific moves to make based on this competitive intelligence`;
+        const compData = data.competitors.map(c => {
+          const plLinks = c.playlists.map((p, i) => `  ${i+1}. ${p.title}\n     ${p.link}\n     ${p.snippet}`).join('\n');
+          const pressLinks = c.press.map((p, i) => `  ${i+1}. ${p.title}\n     ${p.link}\n     ${p.snippet}`).join('\n');
+          return `ARTIST: ${c.name}\nPlaylists/Features:\n${plLinks}\nPress/Interviews:\n${pressLinks}`;
+        }).join('\n\n---\n\n');
+        claudePrompt = `${ctx}\n\nHere is REAL web data on similar/competitor artists:\n\n${compData}\n\nProvide:\n1. COMPETITOR ANALYSIS — what each artist is doing right, where they're getting placed\n2. GAPS & OPPORTUNITIES — where this artist can differentiate\n3. PLAYLIST TARGETS — playlists featuring competitors that should also feature this artist (with URLs)\n4. PRESS TARGETS — blogs/podcasts covering competitors that would cover this artist too\n5. ACTION PLAN — 5 specific moves based on this competitive intelligence\n\nInclude all real URLs.`;
         break;
       }
       case 'socialScout': {
@@ -3226,7 +3223,7 @@ async function runResearch(action) {
   } catch(err) {
     results.innerHTML = `<div style="color:#ff6b6b;">Error: ${err.message}</div>`;
     if (err.message.includes('not configured')) {
-      results.innerHTML += `<div style="color:#888;margin-top:8px;font-size:13px;">Set up your API keys in Railway environment variables:<br>- SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET (free at developer.spotify.com)<br>- SERPER_API_KEY (free tier at serper.dev)</div>`;
+      results.innerHTML += `<div style="color:#888;margin-top:8px;font-size:13px;">Add SERPER_API_KEY to your Railway environment variables.<br>Free tier at serper.dev (2,500 searches/month).</div>`;
     }
   } finally {
     loading.style.display = 'none';

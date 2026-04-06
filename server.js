@@ -229,52 +229,8 @@ app.get('/subscribe', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'subscribe.html'));
 });
 
-// --- Research API (Spotify + Serper) ---
-const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
-const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
+// --- Research API (Serper web search) ---
 const SERPER_API_KEY = process.env.SERPER_API_KEY || '';
-
-let spotifyToken = null;
-let spotifyTokenExpires = 0;
-
-async function getSpotifyToken() {
-  if (spotifyToken && Date.now() < spotifyTokenExpires) return spotifyToken;
-  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) return null;
-
-  const resp = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64'),
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: 'grant_type=client_credentials'
-  });
-  if (!resp.ok) throw new Error('Spotify auth failed');
-  const data = await resp.json();
-  spotifyToken = data.access_token;
-  spotifyTokenExpires = Date.now() + (data.expires_in - 60) * 1000;
-  return spotifyToken;
-}
-
-async function spotifySearch(query, type, limit = 20) {
-  const token = await getSpotifyToken();
-  if (!token) throw new Error('Spotify not configured');
-  const resp = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=${type}&limit=${limit}`, {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
-  if (!resp.ok) throw new Error('Spotify search failed');
-  return resp.json();
-}
-
-async function spotifyGet(endpoint) {
-  const token = await getSpotifyToken();
-  if (!token) throw new Error('Spotify not configured');
-  const resp = await fetch(`https://api.spotify.com/v1${endpoint}`, {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
-  if (!resp.ok) throw new Error('Spotify request failed');
-  return resp.json();
-}
 
 async function serperSearch(query, num = 10) {
   if (!SERPER_API_KEY) throw new Error('Search API not configured');
@@ -318,28 +274,24 @@ app.post('/api/research', requireAccess, async (req, res) => {
     switch (action) {
       case 'findPlaylists': {
         if (!genre) return res.status(400).json({ error: 'Genre required' });
-        const queries = [genre, `${genre} independent`, `${genre} new music`];
-        const allPlaylists = [];
-        for (const q of queries) {
-          const data = await spotifySearch(q, 'playlist', 15);
-          if (data.playlists?.items) {
-            for (const pl of data.playlists.items) {
-              if (!pl || !pl.name) continue;
-              allPlaylists.push({
-                name: pl.name,
-                description: (pl.description || '').substring(0, 200),
-                followers: pl.tracks?.total || 0,
-                trackCount: pl.tracks?.total || 0,
-                owner: pl.owner?.display_name || 'Unknown',
-                url: pl.external_urls?.spotify || '',
-                image: pl.images?.[0]?.url || ''
-              });
+        const searches = await Promise.all([
+          serperSearch(`${genre} spotify playlist submit song`),
+          serperSearch(`${genre} independent artist playlist spotify`),
+          serperSearch(`${genre} new music playlist curators accepting submissions`)
+        ]);
+        const playlists = [];
+        for (const s of searches) {
+          if (s.organic) {
+            for (const r of s.organic) {
+              playlists.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
             }
           }
         }
-        // Dedupe by URL
-        const seen = new Set();
-        result = { playlists: allPlaylists.filter(p => { if (seen.has(p.url)) return false; seen.add(p.url); return true; }) };
+        const seenDomains = new Set();
+        result = { playlists: playlists.filter(p => {
+          try { const domain = new URL(p.link).hostname + p.title; if (seenDomains.has(domain)) return false; seenDomains.add(domain); return true; }
+          catch { return true; }
+        })};
         break;
       }
 
@@ -413,44 +365,23 @@ app.post('/api/research', requireAccess, async (req, res) => {
 
       case 'analyzeCompetition': {
         if (!similarArtists || !similarArtists.length) return res.status(400).json({ error: 'Similar artists required' });
-        const competitorData = [];
+        const competitorSearches = [];
         for (const artist of similarArtists.slice(0, 5)) {
-          const searchResult = await spotifySearch(artist, 'artist', 1);
-          const found = searchResult.artists?.items?.[0];
-          if (!found) continue;
-          // Get their top tracks
-          const topTracks = await spotifyGet(`/artists/${found.id}/top-tracks?market=US`);
-          competitorData.push({
-            name: found.name,
-            followers: found.followers?.total || 0,
-            popularity: found.popularity || 0,
-            genres: found.genres || [],
-            image: found.images?.[0]?.url || '',
-            url: found.external_urls?.spotify || '',
-            topTracks: (topTracks.tracks || []).slice(0, 5).map(t => ({
-              name: t.name,
-              popularity: t.popularity,
-              album: t.album?.name || ''
-            }))
+          competitorSearches.push(serperSearch(`"${artist}" spotify playlists featured on`));
+          competitorSearches.push(serperSearch(`"${artist}" music blog feature interview`));
+        }
+        const allResults = await Promise.all(competitorSearches);
+        const competitors = [];
+        for (let i = 0; i < similarArtists.slice(0, 5).length; i++) {
+          const playlistResults = allResults[i * 2]?.organic || [];
+          const pressResults = allResults[i * 2 + 1]?.organic || [];
+          competitors.push({
+            name: similarArtists[i],
+            playlists: playlistResults.slice(0, 5).map(r => ({ title: r.title, link: r.link, snippet: r.snippet || '' })),
+            press: pressResults.slice(0, 5).map(r => ({ title: r.title, link: r.link, snippet: r.snippet || '' }))
           });
         }
-        // Search for playlists featuring these artists
-        const playlistHits = [];
-        for (const artist of similarArtists.slice(0, 3)) {
-          const plData = await spotifySearch(artist, 'playlist', 10);
-          if (plData.playlists?.items) {
-            for (const pl of plData.playlists.items) {
-              if (!pl || !pl.name) continue;
-              playlistHits.push({
-                name: pl.name,
-                owner: pl.owner?.display_name || 'Unknown',
-                url: pl.external_urls?.spotify || '',
-                trackCount: pl.tracks?.total || 0
-              });
-            }
-          }
-        }
-        result = { competitors: competitorData, playlistsFeaturingCompetitors: playlistHits };
+        result = { competitors };
         break;
       }
 
@@ -488,7 +419,6 @@ app.post('/api/research', requireAccess, async (req, res) => {
 // API config check endpoint
 app.get('/api/research/status', requireAccess, (req, res) => {
   res.json({
-    spotify: !!(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET),
     search: !!SERPER_API_KEY
   });
 });
