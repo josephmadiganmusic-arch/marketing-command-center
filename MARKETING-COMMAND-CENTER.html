@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>God In The Room - Marketing Command Center</title>
+<title>Marketing Command Center</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -289,8 +289,11 @@
 <body>
 <header class="header">
   <div class="container">
-    <div class="logo">GOD IN THE ROOM <span>MCC</span></div>
-    <div class="badge">Marketing Command Center</div>
+    <div class="logo">MARKETING <span>COMMAND CENTER</span></div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div class="badge">Madigan Music</div>
+      <button onclick="fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login')" style="background:none;border:1px solid #333;border-radius:6px;color:#666;padding:6px 14px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">Logout</button>
+    </div>
   </div>
 </header>
 <div class="container">

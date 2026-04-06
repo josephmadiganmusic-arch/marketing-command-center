@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Subscribe - Marketing Command Center</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #060606; color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .sub-container { width: 100%; max-width: 480px; padding: 24px; }
+  .sub-logo { text-align: center; margin-bottom: 40px; }
+  .sub-logo h1 { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: 1px; }
+  .sub-logo h1 span { color: #c9a84c; }
+  .sub-logo p { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 2px; margin-top: 6px; }
+  .sub-card { background: #111; border: 1px solid #1f1f1f; border-radius: 12px; padding: 32px; text-align: center; }
+  .sub-card h2 { font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+  .sub-card .desc { font-size: 14px; color: #888; margin-bottom: 24px; line-height: 1.6; }
+  .price-box { background: #0a0a0a; border: 1px solid #c9a84c; border-radius: 10px; padding: 24px; margin-bottom: 24px; }
+  .price-box .amount { font-size: 36px; font-weight: 800; color: #c9a84c; }
+  .price-box .amount span { font-size: 16px; font-weight: 400; color: #888; }
+  .price-box .trial-note { font-size: 13px; color: #888; margin-top: 8px; }
+  .features { text-align: left; margin-bottom: 24px; }
+  .features li { list-style: none; padding: 8px 0; font-size: 13px; color: #ccc; display: flex; align-items: center; gap: 10px; }
+  .features li::before { content: '\2713'; color: #c9a84c; font-weight: 700; font-size: 14px; }
+  .btn-subscribe { width: 100%; padding: 16px; background: #c9a84c; color: #000; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.2s; }
+  .btn-subscribe:hover { background: #d4b45c; }
+  .btn-subscribe:disabled { opacity: 0.5; cursor: not-allowed; }
+  .status-msg { padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; display: none; }
+  .status-msg.info { background: rgba(201,168,76,0.1); border: 1px solid rgba(201,168,76,0.2); color: #c9a84c; display: block; }
+  .status-msg.error { background: rgba(255,68,68,0.1); border: 1px solid rgba(255,68,68,0.2); color: #ff6b6b; display: block; }
+  .status-msg.success { background: rgba(76,175,80,0.1); border: 1px solid rgba(76,175,80,0.2); color: #66bb6a; display: block; }
+  .logout-link { display: inline-block; margin-top: 16px; color: #666; font-size: 12px; cursor: pointer; text-decoration: underline; }
+  .logout-link:hover { color: #c9a84c; }
+</style>
+</head>
+<body>
+<div class="sub-container">
+  <div class="sub-logo">
+    <h1>MARKETING <span>COMMAND CENTER</span></h1>
+    <p>Madigan Music</p>
+  </div>
+
+  <div class="sub-card">
+    <div id="statusMsg" class="status-msg"></div>
+
+    <h2>Unlock Full Access</h2>
+    <p class="desc">Your AI-powered music marketing toolkit. Release management, email generators, outreach tools, content bank, and more.</p>
+
+    <div class="price-box">
+      <div class="amount">$14.99 <span>/month</span></div>
+      <div class="trial-note">7-day free trial included</div>
+    </div>
+
+    <ul class="features">
+      <li>AI-powered email and caption generators</li>
+      <li>Playlist submission tracking</li>
+      <li>30-day marketing calendar</li>
+      <li>Content bank with templates</li>
+      <li>Radio and media outreach tools</li>
+      <li>Music Agent Pro analytics</li>
+    </ul>
+
+    <button class="btn-subscribe" id="subBtn" onclick="startCheckout()">Subscribe Now</button>
+    <br>
+    <span class="logout-link" onclick="logout()">Log out</span>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+if (params.get('success')) {
+  showStatus('success', 'Payment successful! Redirecting...');
+  setTimeout(() => window.location.href = '/', 2000);
+} else if (params.get('canceled')) {
+  showStatus('info', 'Checkout canceled. Subscribe when you\'re ready.');
+}
+
+// Check if user already has access
+fetch('/api/me').then(r => r.json()).then(data => {
+  if (data.hasAccess) {
+    window.location.href = '/';
+  } else if (data.subscription_status === 'trialing' && data.trialDaysLeft === 0) {
+    showStatus('info', 'Your free trial has ended. Subscribe to continue.');
+  } else if (data.subscription_status === 'canceled') {
+    showStatus('info', 'Your subscription was canceled. Resubscribe to regain access.');
+  }
+});
+
+function showStatus(type, msg) {
+  const el = document.getElementById('statusMsg');
+  el.className = 'status-msg ' + type;
+  el.textContent = msg;
+}
+
+async function startCheckout() {
+  const btn = document.getElementById('subBtn');
+  btn.disabled = true;
+  btn.textContent = 'Redirecting to checkout...';
+
+  try {
+    const res = await fetch('/api/create-checkout', { method: 'POST' });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      showStatus('error', data.error || 'Failed to start checkout. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Subscribe Now';
+    }
+  } catch (err) {
+    showStatus('error', 'Something went wrong. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Subscribe Now';
+  }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+</script>
+</body>
+</html>
