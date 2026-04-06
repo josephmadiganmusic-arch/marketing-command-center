@@ -132,6 +132,8 @@
   .checkbox-item span { font-size: 13px; color: #ccc; }
   .tab.locked { opacity: 0.35; cursor: not-allowed; position: relative; }
   .tab.locked:hover:not(.active) { color: var(--text-dim); }
+  .tab.premium-locked { position: relative; }
+  .tab.premium-locked::after { content: 'PRO'; position: absolute; top: -6px; right: -4px; font-size: 8px; font-weight: 800; background: linear-gradient(135deg, #ffd700, #ff8c00); color: #000; padding: 2px 5px; border-radius: 4px; letter-spacing: 0.5px; }
   .btn-generate-campaign { width: 100%; padding: 18px 24px; background: var(--gradient-primary); color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; margin-top: 24px; position: relative; overflow: hidden; }
   .btn-generate-campaign::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent); transform: rotate(45deg); transition: all 0.6s; }
   .btn-generate-campaign:hover::before { left: 100%; }
@@ -1924,140 +1926,15 @@ async function serverLoad() {
 // ============================
 // DATA
 // ============================
-let hooks = [
-  "This is what it sounds like when God walks into the room.",
-  "I was homeless at 16. Addicted. No direction. Now God has me making music that's changing lives.",
-  "A stranger opened their door for me when I had nothing. That moment changed everything.",
-  "I found faith in an assisted living program in Indiana. I wasn't looking for God. He found me.",
-  "My daughter Baisy is the reason I'll never stop. Everything I make, I make for her future.",
-  "Play this song and tell me you don't feel something.",
-  "If you've ever felt God's presence hit you out of nowhere -- this song is for you.",
-  "They told me Christian hip hop can't hit hard. Press play.",
-  "POV: You stopped running from God and He was already in the room.",
-  "Name one song that makes you feel like God is literally right there. I'll go first.",
-  "Here's why saving a song on Spotify is more powerful than streaming it 100 times.",
-  "Three things you can do right now to support an independent Christian artist.",
-  "The story behind this song is going to hit different. Let me tell you.",
-  "This song wasn't planned. It came out of worship and I had to record it.",
-  "Why I wear Grace Wins -- it's not just a hoodie. It's a testimony."
-];
+let hooks = [];
 
-let captions = [
-  { title: "Release Announcement", platform: "IG + FB", type: "Photo/Reel",
-    text: `It's here. "God In The Room" with my brother @Rogue2Redeemed is OUT NOW.\n\nThis song came from a real place. A season of silence. A season of doubt. But God never left. He was in the room the whole time.\n\nGo stream it. Save it. Share it with someone who needs to feel His presence today.\n\nLink in bio.\n\n#GodInTheRoom #Madigan #Rogue2Redeemed #ChristianHipHop #CHH #NewMusic #OutNow #FaithMusic #GraceWins #SpotifyMusic #ChristianRap`,
-    cta: "Save it on Spotify -- link in bio" },
-  { title: "Testimony Drop", platform: "IG Reel / TikTok", type: "Talking Head + Music",
-    text: `I was homeless at 16. Addicted. No direction. No hope.\n\nA stranger opened their door. God opened mine.\n\nNow I'm making music with my brother @Rogue2Redeemed that sounds like what it feels like when God walks into your situation.\n\n"God In The Room" -- out now. Link in bio. Save it on Spotify.\n\n#Testimony #ChristianHipHop #GodInTheRoom #Transformation #CHH #Madigan #Rogue2Redeemed #FromTheStreets #GraceWins`,
-    cta: "Link in bio -- save on Spotify" },
-  { title: "Collab Spotlight", platform: "IG + FB", type: "Photo",
-    text: `When God puts two soldiers in the same room, something shifts.\n\n@Rogue2Redeemed came through and we made something that hits different. Shoutout to Jay Beats on the production. This one was anointed from the jump.\n\n"God In The Room" -- out now on all platforms. Go save it and tag someone who needs this.\n\n#GodInTheRoom #Madigan #Rogue2Redeemed #JayBeats #CHH #ChristianHipHop #Collab`,
-    cta: "Tag someone who needs this" },
-  { title: "Save Push", platform: "IG / TikTok", type: "Talking Head",
-    text: `One save on Spotify does more than 100 streams on repeat.\n\nIf this song hit you -- save it. That's how you help independent artists like me reach more people who need this music. It costs you nothing but it changes everything for us.\n\n"God In The Room" -- link in bio.\n\n#SupportIndependentArtists #SpotifySave #ChristianHipHop #Madigan #Rogue2Redeemed #CHH`,
-    cta: "Save it -- link in bio" },
-  { title: "Engagement Prompt", platform: "FB + IG", type: "Text / Selfie",
-    text: `Real question: When was the last time you felt God's presence so strong it stopped you in your tracks?\n\nDrop your answer below. I want to hear your story.\n\nNew track "God In The Room" with @Rogue2Redeemed -- link in bio.\n\n#ChristianCommunity #GodInTheRoom #CHH #Madigan #FaithStories`,
-    cta: "Drop your story below + go stream" },
-  { title: "Tag & Share", platform: "All", type: "Any",
-    text: `Tag someone who needs to hear this today. Sometimes the right song at the right time changes everything.\n\n"God In The Room" with @Rogue2Redeemed -- out now everywhere.\n\n#GodInTheRoom #Madigan #Rogue2Redeemed #TagSomeone #ChristianRap #CHH`,
-    cta: "Tag + share" },
-  { title: "Recovery Community", platform: "FB + IG", type: "Written Post",
-    text: `This one's personal.\n\nI know what it's like to numb the pain. I know what it's like to feel like God left the building. But He didn't. He was in the room the whole time. Even when I couldn't feel Him.\n\n"God In The Room" is for everyone who's been through it and came out praising.\n\n@Rogue2Redeemed -- link in bio.\n\n#Recovery #Faith #Addiction #Hope #GodInTheRoom #CHH #Madigan #Redemption #GraceWins`,
-    cta: "Save it and share with someone in the fight" },
-  { title: "Week 2 Push", platform: "IG Reel / TikTok", type: "Performance",
-    text: `Y'all really showing up for this one. "God In The Room" is moving.\n\nBut we're not done. If you saved it -- thank you. If you haven't -- go do it right now. Link in bio.\n\nEvery save pushes this song to someone new who needs it. That's how we spread the gospel through music.\n\n#GodInTheRoom #KeepStreaming #CHH #Madigan #Rogue2Redeemed #SpotifySave`,
-    cta: "Save it now -- link in bio" },
-  { title: "Behind The Music", platform: "IG Reel", type: "BTS / Studio",
-    text: `This song wasn't planned. It came out of a worship session that turned into a studio session. When God's in the room you don't question it. You just record.\n\nMe and @Rogue2Redeemed tapped into something that night. Jay Beats laid the foundation. Jacob Johnston helped write what God put on our hearts.\n\n"God In The Room" -- stream it. Save it. Let it minister to you.\n\n#BehindTheMusic #StudioSession #GodInTheRoom #CHH #Madigan`,
-    cta: "Stream it -- link in bio" },
-  { title: "Month Recap / Gratitude", platform: "FB + IG", type: "Written Post",
-    text: `One month of "God In The Room."\n\nI didn't know what God was going to do with this song but He's been faithful. Every stream, every save, every share, every message -- I see you. I thank God for you.\n\nThis is just the beginning. More music coming. Stay locked in.\n\nFollow me on Spotify so you don't miss what's next.\n\n#GodInTheRoom #Madigan #Rogue2Redeemed #OneMonth #GratefulArtist #CHH #MoreComing`,
-    cta: "Follow on Spotify for what's next" }
-];
-
-let hashtagSets = [
-  { name: "Release", tags: "#GodInTheRoom #Madigan #Rogue2Redeemed #ChristianHipHop #CHH #NewMusic #OutNow #FaithMusic #GraceWins #SpotifyMusic #ChristianRap #NewChristianMusic" },
-  { name: "Testimony", tags: "#Testimony #Faith #Recovery #Hope #Transformation #ChristianHipHop #GodInTheRoom #Madigan #GraceWins #Redemption #Sobriety #MentalHealth" },
-  { name: "Engagement", tags: "#ChristianCommunity #FaithStories #GodsPower #HolySpirit #ChurchMusic #WorshipMusic #CHH #Madigan #GodInTheRoom #FaithOverFear" },
-  { name: "Spotify Growth", tags: "#SupportIndependentArtists #SpotifySave #IndieArtist #StreamNow #ChristianHipHop #Madigan #CHH #SpotifyPlaylist #MusicPromotion" },
-  { name: "TikTok / Viral", tags: "#ChristianTikTok #FaithTok #CHHTikTok #NewMusicFriday #GodInTheRoom #Madigan #MusicTikTok #FYP #ForYouPage #ChristianRapper" }
-];
-
-let ctas = [
-  "Save it on Spotify -- link in bio",
-  "Share this with someone who needs to hear it",
-  "Tag someone who needs this song today",
-  "Go add this to your playlist",
-  "Follow me on Spotify so you never miss a drop",
-  "Comment the line that hit you hardest",
-  "Save this song -- that one tap helps it reach more people",
-  "Put this on your drive-to-work playlist",
-  "Link in bio -- go press play right now",
-  "DM this to someone going through it right now",
-  "If this moved you -- screenshot your save and tag me",
-  "Add this to your worship playlist",
-  "Drop a prayer request in the comments -- I'm reading every one"
-];
-
-let calendarData = {
-  1: [
-    { day: "Thu Apr 3", platform: "IG Reel + TikTok + FB + YT Short + Stories", type: "RELEASE DAY", content: "Announcement + beat drop + cover art + 5-part Story sequence", cta: "Save on Spotify -- link in bio" },
-    { day: "Fri Apr 4", platform: "IG Reel + TikTok", type: "Testimony Hook", content: "Hook: 'I was homeless at 16...' + song plays", cta: "Link in bio -- save on Spotify" },
-    { day: "Sat Apr 5", platform: "IG + FB", type: "Collab Post", content: "Photo with Rogue2Redeemed + collab caption", cta: "Tag someone who needs this" },
-    { day: "Sun Apr 6", platform: "IG + FB", type: "Engagement", content: "Question: 'When did you last feel God's presence stop you?'", cta: "Drop your story below" },
-    { day: "Mon Apr 7", platform: "TikTok + IG Reel", type: "Performance", content: "Lip sync / perform hardest verse", cta: "Save it -- link in bio" },
-    { day: "Tue Apr 8", platform: "YouTube Short + Stories", type: "Lyric Visual", content: "Lyric over B-roll + Story poll", cta: "Full song on Spotify" },
-    { day: "Wed Apr 9", platform: "TikTok + FB + Stories", type: "Educational + Story Time", content: "'3 reasons to save on Spotify' + 3-part Story", cta: "Go save God In The Room" }
-  ],
-  2: [
-    { day: "Thu Apr 10", platform: "TikTok + IG Reel", type: "Full Testimony", content: "60-90 sec testimony story into song playing", cta: "Link in bio" },
-    { day: "Fri Apr 11", platform: "IG Reel + YouTube Short", type: "Behind the Scenes", content: "Studio session footage", cta: "Stream the finished product" },
-    { day: "Mon Apr 14", platform: "TikTok + IG Reel", type: "Turning Point", content: "Hook: 'A stranger opened their door...' + song", cta: "Link in bio" },
-    { day: "Tue Apr 15", platform: "IG + FB + Stories", type: "Engagement", content: "'What song makes you feel God's presence?' + poll", cta: "Drop yours below" },
-    { day: "Wed Apr 16", platform: "TikTok + FB", type: "Split Screen + Testimony", content: "Before/after (old photos vs. studio now) + longer written post", cta: "Share with someone who needs hope" }
-  ],
-  3: [
-    { day: "Thu Apr 17", platform: "TikTok + IG Reel", type: "UGC Prompt + Car Vibe", content: "'Film yourself hearing this for the first time' + car vibe video", cta: "Save first, then film" },
-    { day: "Fri Apr 18", platform: "IG + FB + YouTube Short", type: "Milestone + Trend", content: "Share stream count + 'Songs Christians bump in the car' trend", cta: "Keep streaming" },
-    { day: "Mon Apr 21", platform: "TikTok + IG Reel", type: "Finding Faith", content: "Hook: 'Walked into a program expecting nothing...' + song", cta: "Save on Spotify" },
-    { day: "Tue Apr 22", platform: "IG + FB + Stories", type: "Team Shoutout + Q&A", content: "Credit Rogue2Redeemed, Jay Beats, Jacob Johnston + Q&A box", cta: "Support everyone involved" },
-    { day: "Wed Apr 23", platform: "TikTok + YouTube Short", type: "For Baisy + Worship", content: "'Everything I do, I do for Baisy' + worship clip", cta: "Song on all platforms" }
-  ],
-  4: [
-    { day: "Thu Apr 24", platform: "TikTok + IG Reel", type: "Repurpose + Brand", content: "Re-edit top performer + 'Why I wear Grace Wins' brand story", cta: "Link in bio" },
-    { day: "Fri Apr 25", platform: "IG Reel + FB", type: "Playlist + Testimony", content: "Show your Spotify playlist + deeper written testimony", cta: "Follow the playlist" },
-    { day: "Mon Apr 28", platform: "TikTok + IG Reel", type: "Value + Montage", content: "Spotify saves education + month 1 montage", cta: "Follow on Spotify" },
-    { day: "Tue Apr 29", platform: "Stories + IG + FB", type: "Fan Feature + Community", content: "Repost fan reactions + 'Share YOUR testimony' prompt", cta: "Drop your story" },
-    { day: "Wed Apr 30", platform: "TikTok + Shorts + FB + IG", type: "NEW MUSIC TEASE + Gratitude", content: "5-sec snippet of next track + month recap / thank you", cta: "Follow on Spotify so you don't miss it" }
-  ]
-};
-
-let curatorMessages = [
-  { title: "Standard DM (Instagram)", type: "Playlist Curator",
-    body: `Hey [Name]! I just dropped a new single "God In The Room" featuring Rogue2Redeemed. It's Christian hip hop -- bold, worship-forward, hits hard. Produced by Jay Beats.\n\nI've been following your playlist [Playlist Name] and I think this track fits the vibe you're building. Would love if you'd check it out.\n\nSpotify link: [INSERT LINK]\n\nAppreciate your time either way. Keep curating. -- Madigan` },
-  { title: "Short Cold DM", type: "Playlist Curator",
-    body: `Hey! Just released "God In The Room" (Madigan x Rogue2Redeemed). Christian hip hop that hits different. Think it'd fit perfectly on [Playlist Name].\n\nSpotify: [INSERT LINK]\n\nAppreciate you even listening.` },
-  { title: "Email to Curators/Blogs", type: "Email",
-    body: `Subject: New CHH Single -- "God In The Room" (Madigan x Rogue2Redeemed)\n\nHey [Name],\n\nMy name is Madigan -- I'm an independent Christian hip hop artist from Connecticut, now based in Marion, Indiana. I just released a new single called "God In The Room" featuring Rogue2Redeemed, produced by Jay Beats.\n\nThe song is about experiencing God's presence in your lowest moments -- when everything feels silent but He's still there.\n\nI think it would be a great fit for your playlist [Playlist Name] / your blog / your audience.\n\nHere are the links:\n- Spotify: [INSERT LINK]\n- Press Kit / EPK: epk.madigansmusic.com\n\nQuick facts:\n- Genre: Christian Hip Hop\n- Label: Born Again Bold Inc.\n- UPC: 825626192850 | ISRC: QZTB72635357\n- Credits: Lyrics by Joseph Enrique Madigan & Jacob Johnston\n- Vocals by Madigan & Rogue2Redeemed, Beat by Jay.\n\nThanks for your time and for supporting independent Christian music.\n\nGod bless,\nMadigan\njosephmadiganmusic@gmail.com\nepk.madigansmusic.com` }
-];
-
-let followupMessages = [
-  { title: "7-Day Follow-Up (DM)", type: "Follow-Up",
-    body: `Hey [Name]! Just following up on the track I sent last week -- "God In The Room" (Madigan x Rogue2Redeemed). Wanted to make sure it didn't get buried in your DMs. No pressure at all -- just appreciate you taking a look when you get a chance. Spotify link: [INSERT LINK]. Thanks!` },
-  { title: "Follow-Up Email", type: "Email Follow-Up",
-    body: `Subject: Following Up -- "God In The Room" (Madigan x Rogue2Redeemed)\n\nHey [Name],\n\nJust following up on the single I sent over last week -- "God In The Room" featuring Rogue2Redeemed. Wanted to make sure it didn't get lost in your inbox.\n\nThe song is getting great early response and I'd love to get it in front of your audience. Happy to send any additional materials you need.\n\nSpotify: [INSERT LINK]\nEPK: epk.madigansmusic.com\n\nThanks for your time!\n\nGod bless,\nMadigan\nBorn Again Bold Inc.\njosephmadiganmusic@gmail.com` },
-  { title: "To Rogue2Redeemed (Promo Push)", type: "Collab Partner",
-    body: `Bro it's live! Can you post about it today and share to your stories? Let's push these first 48 hours hard. Tag me and I'll reshare everything.\n\nHere's the Spotify link: [INSERT LINK]\n\nLet's run this up together.` },
-  { title: "Friends / Family / Church Network", type: "Personal Network",
-    body: `Hey! I just dropped a new song called "God In The Room" with my brother Rogue2Redeemed. It would mean the world if you could:\n\n1. Go to Spotify and save the song (tap the heart)\n2. Add it to one of your playlists\n3. Share it on your story or send it to one person\n\nThat's it. Those three things help more than you know. Here's the link: [INSERT LINK]\n\nThank you for always supporting. God bless.` }
-];
-
-let playlists = [
-  { name: "God In The Room", desc: "Press play when you need to feel His presence. Bold faith. Real worship. No holding back. Madigan x Rogue2Redeemed.", purpose: "Anchor playlist for the single. Your track goes first. Add 15-20 similar CHH/worship tracks.", artists: "Lecrae, Andy Mineo, KB, Trip Lee, Hulvey, 1K Phew, Wande, WHATUPRG" },
-  { name: "Grace Wins", desc: "For everyone who's been counted out. Faith over fear. God's grace hits harder than anything the world throws at you.", purpose: "Evergreen brand playlist. Your full catalog + features + similar artists." },
-  { name: "Sunday Morning Shift", desc: "Start your week locked in. Worship, hip hop, and truth for believers who go hard for God.", purpose: "Weekly listen playlist. Drives repeat streams." },
-  { name: "Hope Dealers", desc: "Music for the ones who've been through it and came out praising. Recovery. Redemption. Real talk.", purpose: "Targets your recovery/testimony audience directly." }
-];
+let captions = [];
+let hashtagSets = [];
+let ctas = [];
+let calendarData = {};
+let curatorMessages = [];
+let followupMessages = [];
+let playlists = [];
 
 let submissionPlatforms = [
   { name: "SubmitHub", cost: "$1-3/submission (premium)", speed: "Fast responses", quality: "High", priority: "HIGH" },
@@ -2067,55 +1944,11 @@ let submissionPlatforms = [
   { name: "Playlist Push", cost: "$150+/campaign", speed: "Fast", quality: "High", priority: "LOW (expensive)" }
 ];
 
-let searchKeywords = [
-  "Christian hip hop","CHH playlist","New Christian music","Faith rap",
-  "Worship hip hop","Gospel rap","Christian motivation","Holy hip hop",
-  "Christian workout","Faith and flow","Jesus music hip hop"
-];
-
-let checklistToday = [
-  "Set Artist Pick on Spotify for Artists -- pin 'God In The Room'",
-  "Update link in bio (Linktree) -- Spotify link first",
-  "Post release announcement on IG, TikTok, FB, YouTube",
-  "Post 5-part Story sequence on IG",
-  "DM Rogue2Redeemed -- coordinate posting today",
-  "Create 'God In The Room' playlist on Spotify",
-  "Share on personal Facebook, church groups, family",
-  "Register song with PRO (BMI or ASCAP)",
-  "Register sound recording with SoundExchange",
-  "Claim mechanical rights at The MLC"
-];
-
-let checklistWeek = [
-  "Film first 3 videos (Hooks #1, #6, testimony story)",
-  "Send 10 playlist curator DMs (templates in Outreach tab)",
-  "Submit to SubmitHub (5-10 premium submissions)",
-  "Submit to Groover (3-5 submissions)",
-  "Submit to Daily Playlists and Soundplate (free)",
-  "Send emails to first 15 radio/media targets (use Email Generator)",
-  "Set up Meta Business Suite for scheduling",
-  "Create 'Grace Wins' evergreen playlist on Spotify",
-  "Schedule remaining Week 1 content",
-  "Complete all 5 registration steps in Registration tab (PRO, SoundExchange, MLC, Songtrust, Distribution)"
-];
-
-let checklistRecurring = [
-  "MONDAY: Post first content of the week + send 5 curator DMs + check Spotify stats",
-  "WEDNESDAY: Post Stories + reply to all comments (15 min) + review top content",
-  "FRIDAY: Post engagement content + update playlists + send 3 follow-up messages",
-  "SUNDAY: Screenshot stats + note top performer + plan next week + batch-film 2-3 videos"
-];
-
-let checklistMonth = [
-  "Complete all 4 weeks of the content calendar (20+ pieces)",
-  "Send all outreach emails + follow-ups (35+ contacts)",
-  "Track all submissions and follow up on responses",
-  "Build and maintain 2+ Spotify playlists (15-20 tracks each)",
-  "Review analytics weekly and adjust strategy",
-  "Film 15-20 total videos over the month",
-  "Engage daily -- reply to every comment within 2 hours",
-  "Begin teasing next release in Week 4"
-];
+let searchKeywords = [];
+let checklistToday = [];
+let checklistWeek = [];
+let checklistRecurring = [];
+let checklistMonth = [];
 
 // Registration platform definitions
 const regPlatforms = [
@@ -2290,7 +2123,29 @@ function toggleSidebarMinimize(minimize) {
   }
 }
 
+function isTrialUser() {
+  return SUB_STATUS === 'trialing' && USER_ROLE !== 'admin';
+}
+function isPaidUser() {
+  return SUB_STATUS === 'active' || USER_ROLE === 'admin';
+}
+function showUpgradeNudge(msg) {
+  const existing = document.getElementById('upgradeNudgeToast');
+  if (existing) existing.remove();
+  const nudge = document.createElement('div');
+  nudge.id = 'upgradeNudgeToast';
+  nudge.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;padding:14px 28px;border-radius:12px;font-size:14px;font-weight:600;z-index:100000;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(123,47,247,0.4);max-width:90vw;';
+  nudge.innerHTML = '<span>' + msg + '</span><a href="/subscribe" style="color:#fff;background:rgba(255,255,255,0.2);padding:8px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;white-space:nowrap;">Upgrade Now</a><button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:18px;padding:0 0 0 4px;">&times;</button>';
+  document.body.appendChild(nudge);
+  setTimeout(() => { if (nudge.parentElement) nudge.remove(); }, 12000);
+}
+
 function showPanel(id) {
+  // Block Music Agent Pro for trial users
+  if (id === 'claudeai' && isTrialUser()) {
+    showUpgradeNudge('Music Agent Pro is a premium feature. Subscribe to unlock AI-powered research tools.');
+    return;
+  }
   // Block locked tabs (except intake, admin, achievements)
   if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && !campaignGenerated) {
     showToast('Generate your campaign first to unlock all tabs');
@@ -4023,11 +3878,11 @@ async function runAiAction(action) {
 
   let userPrompt = '';
   switch(action) {
-    case 'freshContent': { const extra=document.getElementById('aiFreshContext').value.trim(); userPrompt=`Generate fresh social media content for "God In The Room" by Madigan ft Rogue2Redeemed.${trends}\n\nProvide exactly:\n1. 5 new Instagram/Facebook captions (each with relevant hashtags and a Spotify save CTA)\n2. 5 new video hooks (short punchy lines to say on camera at the start of a reel/TikTok)\n3. 3 video content concepts (describe what to film, the angle, and the caption approach)\n\n${extra?'Additional direction: '+extra:''}\n\nFormat each section with a clear header. Number each item.`; break; }
+    case 'freshContent': { const extra=document.getElementById('aiFreshContext').value.trim(); const _d=intakeGetData(); const _feat=_d.featArtist?' ft '+_d.featArtist:''; userPrompt=`Generate fresh social media content for "${_d.songTitle||'the release'}" by ${_d.primaryArtist||'the artist'}${_feat}.${trends}\n\nProvide exactly:\n1. 5 new Instagram/Facebook captions (each with relevant hashtags and a Spotify save CTA)\n2. 5 new video hooks (short punchy lines to say on camera at the start of a reel/TikTok)\n3. 3 video content concepts (describe what to film, the angle, and the caption approach)\n\n${extra?'Additional direction: '+extra:''}\n\nFormat each section with a clear header. Number each item.`; break; }
     case 'outreach': { const name=document.getElementById('aiOutreachName').value.trim(); const playlist=document.getElementById('aiOutreachPlaylist').value.trim(); const notes=document.getElementById('aiOutreachNotes').value.trim(); if(!name||!playlist) { showToast('Fill in curator name and playlist/show name'); return; } userPrompt=`Write personalized outreach messages for a playlist curator / media contact.\n\nContact Name: ${name}\nPlaylist/Show/Blog: ${playlist}\n${notes?'Notes about them: '+notes:''}\n\nGenerate:\n1. A personalized Instagram/Twitter DM (short, casual, respectful -- under 200 words)\n2. A personalized email (professional but warm, includes all relevant track info, under 300 words)\n\nMake each message feel genuinely personal to ${name} and ${playlist}, not generic. Reference their specific platform.`; break; }
     case 'repurpose': { const text=document.getElementById('aiRepurposeText').value.trim(); if(!text) { showToast('Paste your caption or hook first'); return; } const platforms=[]; document.querySelectorAll('#aiRepurposePlatforms input:checked').forEach(cb=>platforms.push(cb.value)); if(platforms.length===0) { showToast('Select at least one platform'); return; } userPrompt=`Take this caption/hook and adapt it for each of these platforms: ${platforms.join(', ')}${trends}\n\nOriginal content:\n"${text}"\n\nFor each platform, write a version optimized for that platform's style, length limits, and audience behavior. Include relevant hashtags and a Spotify save CTA for each.`; break; }
-    case 'analytics': { const stats=document.getElementById('aiAnalyticsStats').value.trim(); if(!stats) { showToast('Paste your stats first'); return; } userPrompt=`Analyze these music/social media stats for Madigan and provide strategic recommendations:\n\n${stats}\n\nProvide:\n1. KEY OBSERVATIONS\n2. WINS\n3. AREAS TO IMPROVE\n4. IMMEDIATE ACTIONS - 5 specific things to do this week\n5. 30-DAY STRATEGY`; break; }
-    case 'captionGen': { const mood=document.getElementById('aiCaptionMood').value.trim(); if(!mood) { showToast('Enter a mood or theme'); return; } userPrompt=`Generate 3 Instagram/Facebook captions for Madigan's "God In The Room" with this mood/theme/angle: "${mood}"${trends}\n\nEach caption should be ready to copy and paste, include relevant hashtags (8-12 per caption), include a clear CTA focused on Spotify saves, and be in Madigan's authentic voice.`; break; }
+    case 'analytics': { const stats=document.getElementById('aiAnalyticsStats').value.trim(); if(!stats) { showToast('Paste your stats first'); return; } const _d2=intakeGetData(); userPrompt=`Analyze these music/social media stats for ${_d2.primaryArtist||'the artist'} and provide strategic recommendations:\n\n${stats}\n\nProvide:\n1. KEY OBSERVATIONS\n2. WINS\n3. AREAS TO IMPROVE\n4. IMMEDIATE ACTIONS - 5 specific things to do this week\n5. 30-DAY STRATEGY`; break; }
+    case 'captionGen': { const mood=document.getElementById('aiCaptionMood').value.trim(); if(!mood) { showToast('Enter a mood or theme'); return; } const _d3=intakeGetData(); const _feat3=_d3.featArtist?' ft '+_d3.featArtist:''; userPrompt=`Generate 3 Instagram/Facebook captions for ${_d3.primaryArtist||'the artist'}'s "${_d3.songTitle||'release'}"${_feat3} with this mood/theme/angle: "${mood}"${trends}\n\nEach caption should be ready to copy and paste, include relevant hashtags (8-12 per caption), include a clear CTA focused on Spotify saves, and be in the artist's authentic voice.`; break; }
   }
   loadingEl.classList.add('active'); resultsEl.innerHTML = '';
   const submitBtn = loadingEl.previousElementSibling;
@@ -4089,8 +3944,21 @@ function buildInlinePrompt(id) {
   }
 }
 
+let _trialAiUseCount = parseInt(sessionStorage.getItem('rh_trial_ai_uses') || '0', 10);
+
 async function runInlineAi(id) {
   let prompt = buildInlinePrompt(id); if(!prompt) return;
+
+  // Track AI usage for trial nudges
+  if (isTrialUser()) {
+    _trialAiUseCount++;
+    sessionStorage.setItem('rh_trial_ai_uses', String(_trialAiUseCount));
+    if (_trialAiUseCount === 5) {
+      setTimeout(() => showUpgradeNudge('You\'re getting great use out of the AI tools! Subscribe to unlock Music Agent Pro for deep research.'), 2000);
+    } else if (_trialAiUseCount === 12) {
+      setTimeout(() => showUpgradeNudge('Power user alert! Subscribe to keep all your campaigns and unlock premium features.'), 2000);
+    }
+  }
 
   // Prepend live trend data for content-generation inline actions
   const trendIds = ['dashPlanWeek','dashNextAction','genHooks','genCaption','genHashtags','genCTAs','calDay','calWeek'];
@@ -4505,6 +4373,13 @@ Requirements:
 
     // Hide loader after a brief moment to show 100%
     setTimeout(() => loader.classList.remove('active'), 1200);
+
+    // Nudge trial users toward subscription after they see the value
+    if (isTrialUser()) {
+      setTimeout(() => {
+        showUpgradeNudge('Love your campaign? Subscribe to keep it forever and unlock Music Agent Pro with live research tools.');
+      }, 3000);
+    }
 
   } catch(err) {
     console.error('Generation error:', err);
@@ -5481,11 +5356,32 @@ function setupTrialBanner() {
     return;
   }
 
+  // Mark Music Agent Pro tab with PRO badge for trial users
+  if (SUB_STATUS === 'trialing') {
+    const tabs = document.querySelectorAll('#mainTabs .tab');
+    tabs.forEach((t, i) => {
+      if (panelNames[i] === 'claudeai') t.classList.add('premium-locked');
+    });
+  }
+
   if (SUB_STATUS === 'trialing' && TRIAL_DAYS > 0) {
-    // Active trial — show countdown
+    // Active trial — show countdown that links to subscribe
     const color = TRIAL_DAYS <= 2 ? '#ff4444' : '#ffd700';
-    banner.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;color:' + color + ';border:1px solid ' + color + '40;background:' + color + '15;white-space:nowrap;';
-    banner.innerHTML = '<span style="font-size:14px;">\u23F3</span> ' + TRIAL_DAYS + ' day' + (TRIAL_DAYS !== 1 ? 's' : '') + ' left in trial';
+    banner.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;color:' + color + ';border:1px solid ' + color + '40;background:' + color + '15;white-space:nowrap;cursor:pointer;transition:all 0.2s;';
+    banner.innerHTML = '<span style="font-size:14px;">\u23F3</span> ' + TRIAL_DAYS + ' day' + (TRIAL_DAYS !== 1 ? 's' : '') + ' left <span style="text-decoration:underline;margin-left:4px;">Upgrade</span>';
+    banner.onclick = function() { window.location.href = '/subscribe'; };
+
+    // Show upgrade nudge on first load for trial users (once per session)
+    if (!sessionStorage.getItem('rh_trial_nudge_shown')) {
+      sessionStorage.setItem('rh_trial_nudge_shown', '1');
+      setTimeout(() => {
+        if (TRIAL_DAYS <= 3) {
+          showUpgradeNudge('Your trial ends in ' + TRIAL_DAYS + ' day' + (TRIAL_DAYS !== 1 ? 's' : '') + '. Subscribe to keep your campaigns and unlock Music Agent Pro.');
+        } else {
+          showUpgradeNudge('You\'re on a free trial. Subscribe anytime to unlock Music Agent Pro and keep full access.');
+        }
+      }, 5000);
+    }
     return;
   }
 
