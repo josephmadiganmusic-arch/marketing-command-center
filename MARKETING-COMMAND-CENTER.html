@@ -349,6 +349,28 @@
   .site-sidebar .intake-summary { margin-bottom: 16px; }
   .sidebar-collapse-btn { display: none; background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin-bottom: 12px; transition: all 0.3s; }
   .sidebar-collapse-btn:hover { border-color: var(--accent-1); color: var(--accent-2); }
+  /* ═══ GAMIFICATION ═══ */
+  .ach-badge { background: var(--bg-input); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; transition: all 0.3s ease; position: relative; overflow: hidden; }
+  .ach-badge:hover { border-color: var(--accent-1); transform: translateY(-3px); box-shadow: var(--glow-purple); }
+  .ach-badge.unlocked { border-color: rgba(123,47,247,0.4); }
+  .ach-badge.unlocked::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--gradient-primary); }
+  .ach-badge.locked { opacity: 0.4; filter: grayscale(0.8); }
+  .ach-badge .ach-icon { font-size: 32px; margin-bottom: 8px; display: block; }
+  .ach-badge .ach-name { font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 2px; }
+  .ach-badge .ach-desc { font-size: 10px; color: var(--text-dim); line-height: 1.4; }
+  .ach-badge .ach-xp { font-size: 10px; color: var(--gold); font-weight: 700; margin-top: 6px; }
+  .ach-badge .ach-date { font-size: 9px; color: var(--accent-2); margin-top: 4px; }
+  .level-node { background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; transition: all 0.3s; }
+  .level-node.reached { border-color: var(--accent-1); background: rgba(123,47,247,0.08); }
+  .level-node.current { border-color: var(--accent-2); box-shadow: var(--glow-cyan); background: rgba(0,212,255,0.08); }
+  .level-node .lv-num { font-size: 18px; font-weight: 800; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .level-node .lv-name { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .level-node .lv-xp { font-size: 9px; color: var(--accent-2); margin-top: 2px; }
+  @keyframes xpPopIn { 0% { transform: scale(0) rotate(-10deg); opacity: 0; } 50% { transform: scale(1.2) rotate(2deg); } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+  @keyframes celebrationBurst { 0% { transform: scale(0); opacity: 1; } 100% { transform: scale(3); opacity: 0; } }
+  .xp-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 10001; pointer-events: none; animation: xpPopIn 0.5s ease forwards; }
+  .xp-popup-inner { background: var(--bg-card); border: 2px solid var(--accent-1); border-radius: 16px; padding: 32px 48px; text-align: center; box-shadow: 0 0 60px rgba(123,47,247,0.4), 0 0 120px rgba(0,212,255,0.1); }
+  .xp-toast { position: fixed; bottom: 80px; right: 30px; background: rgba(123,47,247,0.95); color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 14px; font-weight: 700; z-index: 10000; animation: xpPopIn 0.3s ease forwards; box-shadow: var(--glow-purple); pointer-events: none; }
   /* ═══ RESPONSIVE: TABLET (≤1100px) ═══ */
   @media (max-width: 1100px) {
     .site-layout { grid-template-columns: 1fr; }
@@ -754,8 +776,8 @@
       <div class="section-title">Quick Import — Upload &amp; Auto-Fill with Music Agent Pro</div>
       <p style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.6;">Upload screenshots, documents, DistroKid pages, cover art, or any files with song metadata. Music Agent Pro will scan everything and auto-fill the form below.</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
-        <div class="upload-zone" id="aiScanZone" onclick="document.getElementById('aiScanInput').click()" style="flex:1;min-width:250px;min-height:120px;border:2px dashed #2a2a2a;border-radius:10px;padding:24px;text-align:center;cursor:pointer;background:#0a0a0a;transition:all 0.2s;position:relative;">
-          <input type="file" id="aiScanInput" multiple accept="image/*,.pdf,.txt,.doc,.docx,.mp3,.wav,.flac,.aiff,.aif,.m4a,.ogg,.wma,audio/*" onchange="handleAiScanFiles(this)" style="position:absolute;inset:0;opacity:0;cursor:pointer;pointer-events:none;">
+        <div class="upload-zone" id="aiScanZone" style="flex:1;min-width:250px;min-height:120px;border:2px dashed #2a2a2a;border-radius:10px;padding:24px;text-align:center;cursor:pointer;background:#0a0a0a;transition:all 0.2s;position:relative;">
+          <input type="file" id="aiScanInput" multiple accept="image/*,.pdf,.txt,.doc,.docx,.mp3,.wav,.flac,.aiff,.aif,.m4a,.ogg,.wma,audio/*" onchange="handleAiScanFiles(this)">
           <div style="font-size:28px;color:#333;margin-bottom:8px;">&#128196;</div>
           <div style="font-size:13px;color:#888;">Drop files here or click to upload</div>
           <div style="font-size:11px;color:#555;margin-top:4px;">Audio files (MP3/WAV/FLAC), cover art, screenshots, PDFs, DistroKid pages — upload multiple at once</div>
@@ -900,8 +922,8 @@
         <div class="form-section">
           <div class="form-section-title">Files</div>
           <p style="font-size:12px;color:#555;margin-bottom:12px;">Cover Art</p>
-          <div class="upload-zone" id="inCoverZone" onclick="document.getElementById('inCoverInput').click()">
-            <input type="file" id="inCoverInput" accept="image/*" onchange="inHandleCover(this)" onclick="event.stopPropagation()">
+          <div class="upload-zone" id="inCoverZone">
+            <input type="file" id="inCoverInput" accept="image/*" onchange="inHandleCover(this)">
             <div class="upload-icon">&#9733;</div>
             <div class="upload-label">Drop cover art here or click to upload</div>
             <div class="upload-hint">JPG, PNG, WEBP — recommended 3000x3000</div>
@@ -911,8 +933,8 @@
           <button class="upload-clear" id="inCoverClear" style="display:none;" onclick="inClearCover(event)">Remove</button>
           <div style="margin-top:20px;">
             <p style="font-size:12px;color:#555;margin-bottom:12px;">WAV File</p>
-            <div class="upload-zone" id="inWavZone" onclick="document.getElementById('inWavInput').click()">
-              <input type="file" id="inWavInput" accept=".wav,audio/wav" onchange="inHandleAudio(this,'wav')" onclick="event.stopPropagation()">
+            <div class="upload-zone" id="inWavZone">
+              <input type="file" id="inWavInput" accept=".wav,audio/wav" onchange="inHandleAudio(this,'wav')">
               <div class="upload-icon">&#9835;</div>
               <div class="upload-label" id="inWavLabel">Click to upload WAV</div>
               <div class="upload-hint">WAV, uncompressed</div>
@@ -923,8 +945,8 @@
           </div>
           <div style="margin-top:16px;">
             <p style="font-size:12px;color:#555;margin-bottom:12px;">MP3 File</p>
-            <div class="upload-zone" id="inMp3Zone" onclick="document.getElementById('inMp3Input').click()">
-              <input type="file" id="inMp3Input" accept=".mp3,audio/mpeg" onchange="inHandleAudio(this,'mp3')" onclick="event.stopPropagation()">
+            <div class="upload-zone" id="inMp3Zone">
+              <input type="file" id="inMp3Input" accept=".mp3,audio/mpeg" onchange="inHandleAudio(this,'mp3')">
               <div class="upload-icon">&#9835;</div>
               <div class="upload-label" id="inMp3Label">Click to upload MP3</div>
               <div class="upload-hint">MP3, 320kbps recommended</div>
@@ -1105,8 +1127,8 @@
         <form id="egReleaseForm" onsubmit="return false;">
           <div class="form-section">
             <div class="form-section-title">Cover Art</div>
-            <div class="upload-zone" id="egCoverArtZone" onclick="document.getElementById('egCoverArtInput').click()">
-              <input type="file" id="egCoverArtInput" accept="image/*" onchange="egHandleCoverArt(this)" onclick="event.stopPropagation()">
+            <div class="upload-zone" id="egCoverArtZone">
+              <input type="file" id="egCoverArtInput" accept="image/*" onchange="egHandleCoverArt(this)">
               <div class="upload-icon">&#9733;</div>
               <div class="upload-label">Drop cover art here or click to upload</div>
               <div class="upload-hint">JPG, PNG, or WEBP (recommended 1500x1500)</div>
@@ -1156,8 +1178,8 @@ This track is a powerful declaration of faith. I would be honored if you would c
             <p style="font-size:12px;color:#555;margin-bottom:16px;line-height:1.6;">Upload your MP3 and WAV files here. They'll be embedded into a standalone download page you can host anywhere or share as a file.</p>
             <div style="margin-bottom:16px;">
               <label style="font-size:12px;color:#888;font-weight:500;display:block;margin-bottom:6px;">MP3 File</label>
-              <div class="upload-zone" id="egMp3Zone" onclick="document.getElementById('egMp3Input').click()">
-                <input type="file" id="egMp3Input" accept=".mp3,audio/mpeg" onchange="egHandleAudioFile(this,'mp3')" onclick="event.stopPropagation()">
+              <div class="upload-zone" id="egMp3Zone">
+                <input type="file" id="egMp3Input" accept=".mp3,audio/mpeg" onchange="egHandleAudioFile(this,'mp3')">
                 <div class="upload-icon">&#9835;</div>
                 <div class="upload-label" id="egMp3Label">Click to upload MP3</div>
                 <div class="upload-hint">MP3 format, recommended 320kbps</div>
@@ -1170,8 +1192,8 @@ This track is a powerful declaration of faith. I would be honored if you would c
             </div>
             <div>
               <label style="font-size:12px;color:#888;font-weight:500;display:block;margin-bottom:6px;">WAV File</label>
-              <div class="upload-zone" id="egWavZone" onclick="document.getElementById('egWavInput').click()">
-                <input type="file" id="egWavInput" accept=".wav,audio/wav,audio/wave" onchange="egHandleAudioFile(this,'wav')" onclick="event.stopPropagation()">
+              <div class="upload-zone" id="egWavZone">
+                <input type="file" id="egWavInput" accept=".wav,audio/wav,audio/wave" onchange="egHandleAudioFile(this,'wav')">
                 <div class="upload-icon">&#9835;</div>
                 <div class="upload-label" id="egWavLabel">Click to upload WAV</div>
                 <div class="upload-hint">WAV format, uncompressed audio</div>
@@ -2196,11 +2218,13 @@ function unlockTabs() {
   document.querySelectorAll('#mainTabs .tab').forEach(t => t.classList.remove('locked'));
   // Save generated state
   try { localStorage.setItem(ukey('mcc_campaign_generated'), 'true'); } catch(e) {}
+  // Award XP for campaign generation
+  awardXP('campaign_generate');
 }
 
 function showPanel(id) {
-  // Block locked tabs (except intake and admin)
-  if (id !== 'intake' && id !== 'admin' && !campaignGenerated) {
+  // Block locked tabs (except intake, admin, achievements)
+  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && !campaignGenerated) {
     showToast('Generate your campaign first to unlock all tabs');
     return;
   }
@@ -2212,6 +2236,7 @@ function showPanel(id) {
   if (id === 'registration') renderRegCards();
   if (id === 'emailgen') egLoadFromIntake(true);
   if (id === 'admin') adminLoadData();
+  if (id === 'achievements') { loadGamification(); renderAchievementsPanel(); }
 }
 
 function showToast(msg) {
@@ -2231,8 +2256,10 @@ function copyText(text, btn) {
 }
 
 function toggleCheck(el) {
+  const wasDone = el.classList.contains('done');
   el.classList.toggle('done');
   saveChecklistState();
+  if (!wasDone && el.classList.contains('done')) awardXP('task_complete');
 }
 
 function saveChecklistState() {
@@ -4307,6 +4334,194 @@ function loadSavedCampaign() {
 }
 
 // ============================
+// GAMIFICATION SYSTEM
+// ============================
+let _gamificationData = null;
+let _achFilterCategory = 'all';
+
+async function loadGamification() {
+  try {
+    const resp = await fetch('/api/gamification');
+    if (!resp.ok) return;
+    _gamificationData = await resp.json();
+    updateXPHeader();
+    if (document.getElementById('panel-achievements').classList.contains('active')) {
+      renderAchievementsPanel();
+    }
+  } catch(e) { console.warn('Gamification load failed:', e); }
+}
+
+function updateXPHeader() {
+  if (!_gamificationData) return;
+  const g = _gamificationData;
+  document.getElementById('xpHeaderLevel').textContent = 'LVL ' + g.level;
+  document.getElementById('xpHeaderFill').style.width = g.progressPercent + '%';
+  document.getElementById('xpHeaderXP').textContent = g.xp.toLocaleString() + ' XP';
+  if (g.streak >= 2) {
+    document.getElementById('xpHeaderStreak').style.display = 'inline';
+    document.getElementById('xpStreakNum').textContent = g.streak;
+  }
+  // Show new achievement popups
+  if (g.newAchievements && g.newAchievements.length > 0) {
+    g.newAchievements.forEach((ach, i) => {
+      setTimeout(() => showAchievementPopup(ach), i * 2000);
+    });
+  }
+}
+
+function renderAchievementsPanel() {
+  if (!_gamificationData) return;
+  const g = _gamificationData;
+  // Level display
+  const levelIcons = ['🚀','🎵','🎶','🎸','🎹','🎤','📡','🚀','💿','📈','📣','🧲','🏗️','🏭','💥','💎','🏷️','🌪️','🌟','🏛️'];
+  document.getElementById('achLevelIcon').textContent = levelIcons[g.level - 1] || '🏛️';
+  document.getElementById('achLevelTitle').textContent = 'Level ' + g.level;
+  document.getElementById('achLevelName').textContent = g.levelName;
+  document.getElementById('achTotalXP').textContent = g.xp.toLocaleString() + ' XP';
+  document.getElementById('achXPToNext').textContent = g.progressXp + ' / ' + g.neededXp + ' XP to next level';
+  document.getElementById('achXPBar').style.width = g.progressPercent + '%';
+  document.getElementById('achLevelCurrent').textContent = 'Level ' + g.level + ' — ' + g.levelName;
+  document.getElementById('achLevelNext').textContent = g.level < 20 ? 'Level ' + (g.level + 1) + ' — ' + g.nextLevelName : 'MAX LEVEL';
+  // Stats
+  document.getElementById('achStatStreak').textContent = g.streak;
+  document.getElementById('achStatTasks').textContent = g.stats.tasks_completed;
+  document.getElementById('achStatCampaigns').textContent = g.stats.campaigns_generated;
+  document.getElementById('achStatResearch').textContent = g.stats.research_runs;
+  document.getElementById('achStatEmails').textContent = g.stats.emails_generated;
+  document.getElementById('achStatPlaylists').textContent = g.stats.playlists_submitted;
+  document.getElementById('achStatContent').textContent = g.stats.content_copied;
+  document.getElementById('achStatLogins').textContent = g.stats.logins_total;
+  // Category filters
+  const categories = [...new Set(g.allAchievements.map(a => a.category))];
+  const filterEl = document.getElementById('achCategoryFilter');
+  filterEl.innerHTML = '<button class="template-btn' + (_achFilterCategory === 'all' ? ' active' : '') + '" onclick="filterAchievements(\'all\',this)">All</button>' +
+    categories.map(c => '<button class="template-btn' + (_achFilterCategory === c ? ' active' : '') + '" onclick="filterAchievements(\'' + c.replace(/'/g,"\\'") + '\',this)">' + c + '</button>').join('');
+  // Badges grid
+  renderBadges(g);
+  // Recent XP
+  const recentEl = document.getElementById('achRecentXP');
+  if (g.recentXp && g.recentXp.length) {
+    recentEl.innerHTML = g.recentXp.map(x => {
+      const date = new Date(x.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(26,31,74,0.5);">' +
+        '<div><span style="color:#fff;font-size:13px;font-weight:600;">' + esc(x.description) + '</span></div>' +
+        '<div style="display:flex;align-items:center;gap:12px;"><span style="color:var(--gold);font-weight:700;font-size:13px;">+' + x.xp_amount + ' XP</span><span style="color:var(--text-dim);font-size:11px;">' + date + '</span></div></div>';
+    }).join('');
+  } else {
+    recentEl.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:20px;text-align:center;">No activity yet. Start using Rollout Heaven to earn XP!</div>';
+  }
+  // Level roadmap
+  const roadmapEl = document.getElementById('achLevelRoadmap');
+  const levelNames = g.levelNames || [];
+  const thresholds = g.levelThresholds || [];
+  roadmapEl.innerHTML = levelNames.map((name, i) => {
+    const lvl = i + 1;
+    const xpReq = thresholds[i] || 0;
+    const isCurrent = lvl === g.level;
+    const isReached = lvl <= g.level;
+    return '<div class="level-node' + (isCurrent ? ' current' : (isReached ? ' reached' : '')) + '">' +
+      '<div class="lv-num">' + lvl + '</div>' +
+      '<div class="lv-name">' + name + '</div>' +
+      '<div class="lv-xp">' + (xpReq > 0 ? xpReq.toLocaleString() + ' XP' : 'Start') + '</div></div>';
+  }).join('');
+}
+
+function renderBadges(g) {
+  const unlockedIds = new Set(g.achievements.map(a => a.id));
+  const filtered = _achFilterCategory === 'all' ? g.allAchievements : g.allAchievements.filter(a => a.category === _achFilterCategory);
+  const grid = document.getElementById('achBadgesGrid');
+  grid.innerHTML = filtered.map(a => {
+    const isUnlocked = unlockedIds.has(a.id);
+    const unlockDate = isUnlocked ? g.achievements.find(u => u.id === a.id)?.unlocked_at : null;
+    const dateStr = unlockDate ? new Date(unlockDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+    return '<div class="ach-badge ' + (isUnlocked ? 'unlocked' : 'locked') + '">' +
+      '<span class="ach-icon">' + a.icon + '</span>' +
+      '<div class="ach-name">' + a.name + '</div>' +
+      '<div class="ach-desc">' + a.desc + '</div>' +
+      '<div class="ach-xp">+' + a.xp + ' XP</div>' +
+      (isUnlocked ? '<div class="ach-date">' + dateStr + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function filterAchievements(category, btn) {
+  _achFilterCategory = category;
+  document.querySelectorAll('#achCategoryFilter .template-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (_gamificationData) renderBadges(_gamificationData);
+}
+
+function showAchievementPopup(ach) {
+  const popup = document.createElement('div');
+  popup.className = 'xp-popup';
+  popup.innerHTML = '<div class="xp-popup-inner">' +
+    '<div style="font-size:48px;margin-bottom:12px;">' + ach.icon + '</div>' +
+    '<div style="font-size:11px;letter-spacing:2px;color:var(--gold);font-weight:700;text-transform:uppercase;margin-bottom:8px;">Achievement Unlocked!</div>' +
+    '<div style="font-size:20px;font-weight:800;color:#fff;margin-bottom:4px;">' + ach.name + '</div>' +
+    '<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">' + ach.desc + '</div>' +
+    '<div style="font-size:16px;color:var(--gold);font-weight:800;">+' + ach.xp + ' XP</div>' +
+  '</div>';
+  document.body.appendChild(popup);
+  setTimeout(() => { popup.style.transition = 'opacity 0.5s'; popup.style.opacity = '0'; setTimeout(() => popup.remove(), 500); }, 2500);
+}
+
+function showLevelUpPopup(level, levelName) {
+  const popup = document.createElement('div');
+  popup.className = 'xp-popup';
+  popup.innerHTML = '<div class="xp-popup-inner" style="border-color:var(--gold);">' +
+    '<div style="font-size:48px;margin-bottom:12px;">🎉</div>' +
+    '<div style="font-size:11px;letter-spacing:2px;color:var(--accent-2);font-weight:700;text-transform:uppercase;margin-bottom:8px;">Level Up!</div>' +
+    '<div style="font-size:32px;font-weight:800;background:var(--gradient-gold);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px;">Level ' + level + '</div>' +
+    '<div style="font-size:16px;color:#fff;font-weight:600;">' + levelName + '</div>' +
+  '</div>';
+  document.body.appendChild(popup);
+  setTimeout(() => { popup.style.transition = 'opacity 0.5s'; popup.style.opacity = '0'; setTimeout(() => popup.remove(), 500); }, 3000);
+}
+
+function showXPToast(amount, action) {
+  const toast = document.createElement('div');
+  toast.className = 'xp-toast';
+  toast.textContent = '+' + amount + ' XP — ' + action;
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.style.transition = 'opacity 0.4s'; toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2000);
+}
+
+async function awardXP(action) {
+  try {
+    const resp = await fetch('/api/gamification/award', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action })
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.success) {
+      showXPToast(data.xpAwarded, action.replace(/_/g, ' '));
+      if (data.leveledUp) {
+        setTimeout(() => showLevelUpPopup(data.newLevel, data.newLevelName), 500);
+      }
+      if (data.newAchievements && data.newAchievements.length) {
+        data.newAchievements.forEach((ach, i) => {
+          setTimeout(() => showAchievementPopup(ach), 1000 + i * 2500);
+        });
+      }
+      // Update header bar
+      document.getElementById('xpHeaderLevel').textContent = 'LVL ' + data.level;
+      document.getElementById('xpHeaderXP').textContent = data.totalXp.toLocaleString() + ' XP';
+      // Refresh full data if achievements panel is open
+      if (_gamificationData) {
+        _gamificationData.xp = data.totalXp;
+        _gamificationData.level = data.level;
+        _gamificationData.levelName = data.levelName;
+      }
+      if (document.getElementById('panel-achievements').classList.contains('active')) {
+        loadGamification();
+      }
+    }
+  } catch(e) { console.warn('XP award failed:', e); }
+}
+
+// ============================
 // INIT
 // ============================
 function init() {
@@ -5095,6 +5310,7 @@ serverLoad().then(() => {
   init();
   adminInit();
   setupTrialBanner();
+  loadGamification();
 });
 </script>
 </body>
