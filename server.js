@@ -136,7 +136,7 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 // --- Middleware ---
 app.use((req, res, next) => {
   if (req.path === '/webhook') return next(); // raw body for Stripe
-  express.json()(req, res, next);
+  express.json({ limit: '10mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true }));
 
@@ -155,6 +155,16 @@ app.use(session({
 
 // Trust Railway proxy
 app.set('trust proxy', 1);
+
+// Redirect Railway URL to custom domain
+const CUSTOM_DOMAIN = process.env.CUSTOM_DOMAIN || 'rolloutheaven.com';
+app.use((req, res, next) => {
+  const host = req.hostname;
+  if (host && host.endsWith('.railway.app')) {
+    return res.redirect(301, `https://${CUSTOM_DOMAIN}${req.originalUrl}`);
+  }
+  next();
+});
 
 // --- Auth Helpers ---
 function hasAccess(user) {
@@ -706,10 +716,43 @@ app.get('/api/support/my-tickets', requireAuth, (req, res) => {
   res.json({ tickets });
 });
 
+// --- Claude API Proxy (keeps API key server-side) ---
+app.post('/api/claude', requireAccess, async (req, res) => {
+  const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
+  if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured' });
+
+  try {
+    const { model, max_tokens, system, messages } = req.body;
+    const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': CLAUDE_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model || 'claude-sonnet-4-20250514',
+        max_tokens: Math.min(max_tokens || 1024, 4096),
+        system: system || '',
+        messages: messages || []
+      })
+    });
+    if (!aiResp.ok) {
+      const errText = await aiResp.text();
+      return res.status(aiResp.status).json({ error: 'Claude API error: ' + aiResp.status });
+    }
+    const data = await aiResp.json();
+    res.json(data);
+  } catch(err) {
+    console.error('Claude proxy error:', err.message);
+    res.status(500).json({ error: 'AI request failed' });
+  }
+});
+
 // --- Main App (protected — allows expired trial to see upgrade prompt) ---
 app.get('/', requireAuth, (req, res) => {
   let html = fs.readFileSync(path.join(__dirname, 'MARKETING-COMMAND-CENTER.html'), 'utf8');
-  html = html.replace('%%CLAUDE_API_KEY%%', process.env.CLAUDE_API_KEY || '');
+  html = html.replace('%%CLAUDE_API_KEY%%', ''); // API key no longer sent to client
   html = html.replace('%%USER_ID%%', String(req.user.id));
   html = html.replace('%%USER_ROLE%%', req.user.role || 'user');
   // Calculate trial days left
@@ -726,11 +769,34 @@ app.get('/', requireAuth, (req, res) => {
   res.type('html').send(html);
 });
 
-// Static files (CSS, images, etc.)
-app.use(express.static(__dirname, {
-  index: false // don't serve index.html automatically
-}));
+// Static files — only serve safe static assets, NOT the entire project directory
+const publicDir = path.join(__dirname, 'public');
+if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+// Serve logo.png and other safe static files from project root (only specific extensions)
+app.get('/logo.png', (req, res) => {
+  const logoPath = path.join(__dirname, 'logo.png');
+  if (fs.existsSync(logoPath)) res.sendFile(logoPath);
+  else res.sendStatus(404);
+});
+app.use('/public', express.static(publicDir, { index: false }));
 
-app.listen(PORT, () => {
-  console.log(`Rollout Heaven running on port ${PORT}`);
+// --- Start Server ---
+async function startServer() {
+  const SQL = await initSqlJs();
+  if (fs.existsSync(DB_PATH)) {
+    const fileBuffer = fs.readFileSync(DB_PATH);
+    db = new SQL.Database(fileBuffer);
+  } else {
+    db = new SQL.Database();
+  }
+  initDb();
+
+  app.listen(PORT, () => {
+    console.log(`Rollout Heaven running on port ${PORT}`);
+  });
+}
+
+startServer().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
