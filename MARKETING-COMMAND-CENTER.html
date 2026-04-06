@@ -2682,6 +2682,7 @@ function intakeFillForm(d) {
   setVal('in-instagram', d.instagram); setVal('in-facebook', d.facebook);
   setVal('in-tiktok', d.tiktok); setVal('in-twitter', d.twitter);
   setVal('in-dlWav', d.dlWav); setVal('in-dlMp3', d.dlMp3); setVal('in-dlPressKit', d.dlPressKit);
+  setVal('in-dlWavDirect', d.dlWavDirect); setVal('in-dlMp3Direct', d.dlMp3Direct);
   setVal('in-bio', d.bio); setVal('in-emailIntro', d.emailIntro);
   document.getElementById('in-matRadioEdit').checked = !!d.matRadioEdit;
   document.getElementById('in-matPressPhotos').checked = !!d.matPressPhotos;
@@ -3388,8 +3389,8 @@ function egLoadFromIntake(silent) {
   document.getElementById('egInstagram').value = d.instagram || '';
   document.getElementById('egTwitter').value = d.twitter || '';
   document.getElementById('egTiktok').value = d.tiktok || '';
-  document.getElementById('egDlWav').value = d.dlWav || '';
-  document.getElementById('egDlMp3').value = d.dlMp3 || '';
+  document.getElementById('egDlWav').value = d.dlWavDirect || d.dlWav || '';
+  document.getElementById('egDlMp3').value = d.dlMp3Direct || d.dlMp3 || '';
   document.getElementById('egDlPressKit').value = d.dlPressKit || '';
   document.getElementById('egMatRadioEdit').checked = !!d.matRadioEdit;
   document.getElementById('egMatPressPhotos').checked = !!d.matPressPhotos;
@@ -3541,7 +3542,8 @@ function egDownloadHTML() {
 }
 
 function egGenerateDownloadPage() {
-  if(!egMp3Data && !egWavData) { showToast('Upload MP3 or WAV files first!'); return; }
+  const hasDlLinks = document.getElementById('egDlMp3').value.trim() || document.getElementById('egDlWav').value.trim();
+  if(!egMp3Data && !egWavData && !hasDlLinks) { showToast('Add Google Drive links for your audio files first!'); return; }
   const t = egThemes[egCurrentTheme]; const data = egGatherFormData();
   let audioSection = '';
   if(egMp3Data) audioSection += `<div style="background:${t.cardBg};border:1px solid ${t.cardBorder};border-radius:12px;padding:24px;margin-bottom:16px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;"><div><div style="font-size:11px;letter-spacing:2px;color:${t.accent};text-transform:uppercase;font-weight:600;">MP3</div><div style="font-size:14px;color:${t.textPrimary};margin-top:4px;font-weight:600;">${egEscHtml(egMp3Data.name)}</div><div style="font-size:12px;color:${t.textMuted};margin-top:2px;">${egFormatBytes(egMp3Data.size)}</div></div><a href="${egMp3Data.base64}" download="${egEscHtml(egMp3Data.name)}" style="display:inline-block;padding:12px 28px;background:${t.accentGradBtn};color:${t.btnText};text-decoration:none;border-radius:8px;font-size:14px;font-weight:700;">&#11015; Download MP3</a></div><audio controls style="width:100%;border-radius:8px;" preload="metadata"><source src="${egMp3Data.base64}" type="audio/mpeg"></audio></div>`;
