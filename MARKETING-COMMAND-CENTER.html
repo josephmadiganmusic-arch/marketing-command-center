@@ -715,6 +715,33 @@
     border-radius: 4px;
     transition: width 0.6s ease;
   }
+
+  .cl-live-status {
+    margin-top: 16px;
+    font-size: 13px; color: #8b8fb0;
+    text-align: center;
+    min-height: 20px;
+    transition: opacity 0.3s ease;
+  }
+  .cl-live-status .cl-detail {
+    display: block; font-size: 11px; color: #555a7a; margin-top: 4px;
+    font-style: italic;
+  }
+
+  .cl-error-state {
+    margin-top: 24px; text-align: center;
+    display: none; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .cl-error-state.active { display: flex; }
+  .cl-error-msg {
+    color: #ff6b6b; font-size: 13px; max-width: 320px; line-height: 1.5;
+  }
+  .cl-retry-btn {
+    padding: 10px 28px; background: var(--gradient-primary); color: #fff;
+    border: none; border-radius: 8px; font-size: 14px; font-weight: 700;
+    cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+  }
+  .cl-retry-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(123,47,247,0.4); }
 </style>
 </head>
 <body>
@@ -740,6 +767,12 @@
     <div class="cl-step-item" id="clStep-checklist"><span class="cl-step-dot"></span>Action Items</div>
   </div>
   <div class="cl-progress-bar"><div class="cl-progress-fill" id="clProgressFill"></div></div>
+  <div class="cl-live-status" id="clLiveStatus"></div>
+  <div class="cl-error-state" id="clErrorState">
+    <div class="cl-error-msg" id="clErrorMsg"></div>
+    <button class="cl-retry-btn" onclick="retryCampaignGeneration()">Retry</button>
+    <button style="background:none;border:1px solid #3a3f6a;color:#8b8fb0;padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;" onclick="closeCampaignLoader()">Close</button>
+  </div>
 </div>
 
 <header class="header">
@@ -1052,7 +1085,7 @@
 
         <div style="text-align:center;margin-top:24px;">
           <div class="form-section-title">Launch Campaign</div>
-          <p style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.6;">Fill in your release details and outreach targets above, then generate your complete marketing campaign. Claude AI will create personalized content with real names — no placeholders.</p>
+          <p style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.6;">Fill in your release details and outreach targets above, then generate your complete marketing campaign. AI will create personalized content with real names — no placeholders.</p>
           <button class="btn-generate-campaign" id="btnGenerateCampaign" onclick="generateCampaign()">Generate Campaign</button>
           <div class="generate-status" id="generateStatus"></div>
         </div>
@@ -3739,9 +3772,9 @@ async function callClaude(userMessage) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, max_tokens:4096, system:MADIGAN_SYSTEM_PROMPT, messages:[{role:'user',content:userMessage}] })
   });
-  if(!response.ok) { const err = await response.text(); throw new Error('API Error: '+err); }
+  if(!response.ok) { const err = await response.text(); throw new Error('Server error — please try again in a moment'); }
   const data = await response.json();
-  if (!data.content || !data.content[0]) throw new Error('Empty response from AI');
+  if (!data.content || !data.content[0]) throw new Error('Empty response — please try again');
   return data.content[0].text;
 }
 
@@ -4076,6 +4109,51 @@ function renderInlineAiResults(container, text) {
 // ============================
 // CAMPAIGN GENERATOR
 // ============================
+// Retry wrapper for API calls — retries up to 2 times with backoff on 502/503/timeout
+async function callClaudeWithRetry(prompt, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await callClaude(prompt);
+    } catch(err) {
+      const is502 = err.message && (err.message.includes('502') || err.message.includes('503') || err.message.includes('failed to respond'));
+      if (is502 && attempt < retries) {
+        const wait = (attempt + 1) * 5000;
+        clSetLiveStatus('Server busy — retrying in ' + ((wait/1000)|0) + 's...', 'Attempt ' + (attempt+2) + ' of ' + (retries+1));
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+let _campaignRetryState = null;
+
+function closeCampaignLoader() {
+  const loader = document.getElementById('campaignLoader');
+  loader.classList.remove('active');
+  const btn = document.getElementById('btnGenerateCampaign');
+  btn.disabled = false;
+  btn.textContent = 'RETRY GENERATE CAMPAIGN';
+  btn.style.background = '';
+  btn.style.color = '';
+}
+
+function retryCampaignGeneration() {
+  document.getElementById('clErrorState').classList.remove('active');
+  if (_campaignRetryState) {
+    _runCampaignSteps(_campaignRetryState.stepIndex, _campaignRetryState.ctx, _campaignRetryState.trends, _campaignRetryState.d);
+  } else {
+    closeCampaignLoader();
+    generateCampaign();
+  }
+}
+
+function clSetLiveStatus(main, detail) {
+  const el = document.getElementById('clLiveStatus');
+  if (el) el.innerHTML = main + (detail ? `<span class="cl-detail">${detail}</span>` : '');
+}
+
 async function generateCampaign() {
   const d = intakeGetData();
   if (!d.songTitle || !d.primaryArtist) {
@@ -4092,23 +4170,14 @@ async function generateCampaign() {
   const loader = document.getElementById('campaignLoader');
   const progressFill = document.getElementById('clProgressFill');
   loader.classList.add('active');
+  document.getElementById('clErrorState').classList.remove('active');
   // Reset all step indicators
   ['content','calendar','outreach','playlists','checklist'].forEach(id => {
     const el = document.getElementById('clStep-' + id);
     if (el) el.className = 'cl-step-item';
   });
   progressFill.style.width = '0%';
-
-  function clMarkStep(id, state) {
-    const el = document.getElementById('clStep-' + id);
-    if (!el) return;
-    if (state === 'active') el.className = 'cl-step-item active';
-    else if (state === 'done') el.className = 'cl-step-item done';
-  }
-  function clProgress(pct) { progressFill.style.width = pct + '%'; }
-
-  // Fetch live trend data once for all campaign prompts (cached 1hr)
-  const trends = await getTrendContext();
+  clSetLiveStatus('Initializing campaign engine...', '');
 
   const steps = [
     { id: 'content', label: 'Content Bank (hooks, captions, hashtags, CTAs)' },
@@ -4164,8 +4233,44 @@ TARGET BLOGS/MEDIA: ${targetBlogs.join(', ') || 'N/A'}
 TARGET PODCASTS: ${targetPodcasts.join(', ') || 'N/A'}
 COLLAB PARTNERS/NETWORK: ${targetCollabs.join(', ') || 'N/A'}`;
 
+  // Fetch live trend data once for all campaign prompts (cached 1hr)
+  clSetLiveStatus('Searching trends in your niche...', `Scanning TikTok & Instagram for ${genre} trends`);
+  const trends = await getTrendContext();
+  if (trends) {
+    clSetLiveStatus('Trends loaded — building your campaign...', 'Using live trend data to personalize content');
+  } else {
+    clSetLiveStatus('Starting campaign generation...', 'Trend data unavailable — using genre best practices');
+  }
+
+  _campaignRetryState = { stepIndex: 0, ctx, trends, d };
+  _runCampaignSteps(0, ctx, trends, d);
+}
+
+function clMarkStep(id, state) {
+  const el = document.getElementById('clStep-' + id);
+  if (!el) return;
+  if (state === 'active') el.className = 'cl-step-item active';
+  else if (state === 'done') el.className = 'cl-step-item done';
+}
+function clProgress(pct) { document.getElementById('clProgressFill').style.width = pct + '%'; }
+
+async function _runCampaignSteps(startStep, ctx, trends, d) {
+  const statusEl = document.getElementById('generateStatus');
+  const btn = document.getElementById('btnGenerateCampaign');
+  const loader = document.getElementById('campaignLoader');
+
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
+
+  // Gather outreach targets (re-read in case of retry)
+  const targetCurators = (document.getElementById('gen-curators').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const targetPlaylists = (document.getElementById('gen-playlists').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const targetBlogs = (document.getElementById('gen-blogs').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const targetPodcasts = (document.getElementById('gen-podcasts').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const targetCollabs = (document.getElementById('gen-collabs').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+
   function markStep(id, state) {
     const el = document.getElementById('genStep-' + id);
+    if (!el) return;
     if (state === 'active') {
       el.className = 'step active';
       el.innerHTML = `<span class="spinner"></span> ${el.textContent.replace(/^[\u2713\s]*/,'')}`;
@@ -4175,10 +4280,20 @@ COLLAB PARTNERS/NETWORK: ${targetCollabs.join(', ') || 'N/A'}`;
     }
   }
 
+  function showLoaderError(stepIndex, errMsg) {
+    _campaignRetryState = { stepIndex, ctx, trends, d };
+    const errorState = document.getElementById('clErrorState');
+    document.getElementById('clErrorMsg').textContent = errMsg + ' — your progress is saved. Hit Retry to continue.';
+    errorState.classList.add('active');
+    clSetLiveStatus('', '');
+  }
+
   try {
     // --- 1. Content Bank ---
+    if (startStep <= 0) {
     markStep('content', 'active'); clMarkStep('content', 'active'); clProgress(5);
-    const contentResult = await callClaude(`${ctx}${trends}
+    clSetLiveStatus('Crafting video hooks & captions...', `Analyzing ${genre} content patterns & viral formats`);
+    const contentResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate a complete content bank for this release. Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {
@@ -4205,10 +4320,13 @@ Requirements:
       renderHooks(); renderCaptions(); renderHashtags(); renderCTAs();
     } catch(e) { console.error('Content parse error:', e); }
     markStep('content', 'done'); clMarkStep('content', 'done'); clProgress(20);
+    } // end startStep <= 0
 
     // --- 2. Calendar ---
+    if (startStep <= 1) {
     markStep('calendar', 'active'); clMarkStep('calendar', 'active');
-    const calResult = await callClaude(`${ctx}${trends}
+    clSetLiveStatus('Building your 30-day rollout calendar...', `Mapping pre-release & post-release strategy for ${d.releaseDate || 'your launch'}`);
+    const calResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate a 30-day marketing calendar. The calendar has 4 weeks. If the release date is in the future, the first 1-2 weeks should be PRE-RELEASE strategy (teasers, countdowns, snippet drops, hype building, pre-save campaigns). Post-release weeks focus on streaming growth, engagement, and outreach.
 
@@ -4235,9 +4353,12 @@ Requirements:
       renderCalendar(1);
     } catch(e) { console.error('Calendar parse error:', e); }
     markStep('calendar', 'done'); clMarkStep('calendar', 'done'); clProgress(40);
+    } // end startStep <= 1
 
     // --- 3. Outreach ---
+    if (startStep <= 2) {
     markStep('outreach', 'active'); clMarkStep('outreach', 'active');
+    clSetLiveStatus('Writing personalized outreach messages...', `Crafting pitches for ${targetCurators.length + targetBlogs.length + targetPodcasts.length || 'your'} targets`);
 
     // Build outreach target instructions
     let outreachTargetInstructions = '';
@@ -4260,7 +4381,7 @@ Requirements:
       outreachTargetInstructions = '\nNo specific targets provided. Write 5 general templates with [Name] and [Playlist Name] as placeholders.';
     }
 
-    const outreachResult = await callClaude(`${ctx}${trends}
+    const outreachResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate outreach messages for this release. IMPORTANT: Use REAL NAMES from the targets provided — do NOT use bracket placeholders like [Name] when a real name is available.
 ${outreachTargetInstructions}
@@ -4286,10 +4407,13 @@ Requirements:
       renderOutreach();
     } catch(e) { console.error('Outreach parse error:', e); }
     markStep('outreach', 'done'); clMarkStep('outreach', 'done'); clProgress(60);
+    } // end startStep <= 2
 
     // --- 4. Playlists ---
+    if (startStep <= 3) {
     markStep('playlists', 'active'); clMarkStep('playlists', 'active');
-    const playlistResult = await callClaude(`${ctx}${trends}
+    clSetLiveStatus('Designing your playlist strategy...', `Finding curator keywords & playlist angles for ${genre}`);
+    const playlistResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate a playlist strategy for this release. Return ONLY valid JSON (no markdown, no code fences):
 {
@@ -4310,10 +4434,13 @@ Requirements:
       renderPlaylists();
     } catch(e) { console.error('Playlist parse error:', e); }
     markStep('playlists', 'done'); clMarkStep('playlists', 'done'); clProgress(80);
+    } // end startStep <= 3
 
     // --- 5. Action Items ---
+    if (startStep <= 4) {
     markStep('checklist', 'active'); clMarkStep('checklist', 'active');
-    const checklistResult = await callClaude(`${ctx}${trends}
+    clSetLiveStatus('Creating your action item checklists...', 'Prioritizing tasks for today, this week & this month');
+    const checklistResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate action item checklists for this release campaign. Return ONLY valid JSON (no markdown, no code fences):
 {
@@ -4343,6 +4470,9 @@ Requirements:
       renderChecklist('checklist-month', checklistMonth);
     } catch(e) { console.error('Checklist parse error:', e); }
     markStep('checklist', 'done'); clMarkStep('checklist', 'done'); clProgress(100);
+    } // end startStep <= 4
+
+    clSetLiveStatus('Campaign complete!', '');
 
     // Save generated campaign data
     try {
@@ -4357,16 +4487,21 @@ Requirements:
     btn.style.background = 'linear-gradient(135deg, #2a6b2a, #3a8a3a)';
     btn.style.color = '#fff';
     showToast('Campaign generated! All tabs are now unlocked.');
+    _campaignRetryState = null;
 
     // Hide loader after a brief moment to show 100%
-    setTimeout(() => loader.classList.remove('active'), 800);
+    setTimeout(() => loader.classList.remove('active'), 1200);
 
   } catch(err) {
     console.error('Generation error:', err);
-    loader.classList.remove('active');
-    statusEl.innerHTML += `<div class="step" style="color:#ff6b6b;">Error: ${err.message}. Check your API key and try again.</div>`;
-    btn.disabled = false;
-    btn.textContent = 'RETRY GENERATE CAMPAIGN';
+    // Figure out which step failed for retry
+    let failedStep = 0;
+    if (document.getElementById('clStep-content')?.classList.contains('done')) failedStep = 1;
+    if (document.getElementById('clStep-calendar')?.classList.contains('done')) failedStep = 2;
+    if (document.getElementById('clStep-outreach')?.classList.contains('done')) failedStep = 3;
+    if (document.getElementById('clStep-playlists')?.classList.contains('done')) failedStep = 4;
+    showLoaderError(failedStep, err.message || 'Generation failed');
+    statusEl.innerHTML += `<div class="step" style="color:#ff6b6b;">Error: ${err.message}. Use the Retry button to continue where it left off.</div>`;
   }
 }
 

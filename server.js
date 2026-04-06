@@ -1035,6 +1035,10 @@ app.post('/api/claude', requireAccess, async (req, res) => {
   const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
   if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured' });
 
+  // Extend request timeout to 120s to prevent Railway proxy 502s on long AI generations
+  req.setTimeout(120000);
+  res.setTimeout(120000);
+
   try {
     const { model, max_tokens, system, messages } = req.body;
     const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1049,16 +1053,17 @@ app.post('/api/claude', requireAccess, async (req, res) => {
         max_tokens: Math.min(max_tokens || 1024, 4096),
         system: system || '',
         messages: messages || []
-      })
+      }),
+      signal: AbortSignal.timeout(90000)
     });
     if (!aiResp.ok) {
       const errText = await aiResp.text();
-      return res.status(aiResp.status).json({ error: 'Claude API error: ' + aiResp.status });
+      return res.status(aiResp.status).json({ error: 'AI error: ' + aiResp.status });
     }
     const data = await aiResp.json();
     res.json(data);
   } catch(err) {
-    console.error('Claude proxy error:', err.message);
+    console.error('AI proxy error:', err.message);
     res.status(500).json({ error: 'AI request failed' });
   }
 });
@@ -1105,9 +1110,11 @@ async function startServer() {
   }
   initDb();
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Rollout Heaven running on port ${PORT}`);
   });
+  server.timeout = 120000;
+  server.keepAliveTimeout = 120000;
 }
 
 startServer().catch(err => {
