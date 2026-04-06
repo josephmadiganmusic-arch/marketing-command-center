@@ -664,6 +664,8 @@ app.get('/', requireAuth, (req, res) => {
   html = html.replace('%%TRIAL_DAYS%%', String(trialDays));
   html = html.replace('%%SUB_STATUS%%', subStatus);
   html = html.replace('%%USER_EMAIL%%', req.user.email || '');
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
   res.type('html').send(html);
 });
 
