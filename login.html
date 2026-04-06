@@ -97,6 +97,16 @@
   .trial-badge { text-align: center; margin-top: 20px; padding: 12px; background: rgba(123,47,247,0.08); border: 1px solid rgba(123,47,247,0.2); border-radius: 8px; }
   .trial-badge .highlight { background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700; font-size: 14px; }
   .trial-badge .detail { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+  .remember-row { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+  .remember-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent-1); cursor: pointer; }
+  .remember-row label { font-size: 13px; color: var(--text-dim); cursor: pointer; margin: 0; }
+  .verify-notice { background: rgba(0,212,255,0.08); border: 1px solid rgba(0,212,255,0.2); border-radius: 8px; padding: 16px; text-align: center; display: none; }
+  .verify-notice h3 { color: #fff; font-size: 15px; margin-bottom: 8px; }
+  .verify-notice p { color: #9ea2b8; font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
+  .verify-notice .email-highlight { color: var(--accent-2); font-weight: 600; }
+  .btn-secondary { background: none; border: 1px solid var(--border); color: var(--accent-2); padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; }
+  .btn-secondary:hover { border-color: var(--accent-2); box-shadow: 0 0 12px rgba(0,212,255,0.15); }
+  .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
   .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
   .alt-text { text-align: center; font-size: 12px; color: var(--text-dim); }
 
@@ -145,6 +155,14 @@
     <div id="error" class="error-msg"></div>
     <div id="success" class="success-msg"></div>
 
+    <!-- Verification Notice (shown after signup or when unverified user tries to log in) -->
+    <div id="verifyNotice" class="verify-notice">
+      <h3>Check Your Email</h3>
+      <p>We sent a verification link to<br><span id="verifyEmail" class="email-highlight"></span></p>
+      <p>Click the link to verify your email and start your free trial.</p>
+      <button class="btn-secondary" id="resendBtn" onclick="resendVerification()">Resend Email</button>
+    </div>
+
     <!-- Login Form -->
     <form id="loginForm" class="auth-form active" onsubmit="handleLogin(event)">
       <div class="form-group">
@@ -159,6 +177,10 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>
+      </div>
+      <div class="remember-row">
+        <input type="checkbox" id="rememberMe" checked>
+        <label for="rememberMe">Remember me</label>
       </div>
       <button type="submit" class="btn-primary" id="loginBtn">Log In</button>
     </form>
@@ -197,6 +219,8 @@
 </div>
 
 <script>
+let pendingVerifyEmail = '';
+
 function togglePw(inputId, btn) {
   const input = document.getElementById(inputId);
   const isHidden = input.type === 'password';
@@ -211,6 +235,7 @@ function showForm(type) {
   document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
   document.getElementById('error').style.display = 'none';
   document.getElementById('success').style.display = 'none';
+  document.getElementById('verifyNotice').style.display = 'none';
 
   if (type === 'login') {
     document.querySelector('.auth-tab:first-child').classList.add('active');
@@ -235,6 +260,33 @@ function showSuccess(msg) {
   document.getElementById('error').style.display = 'none';
 }
 
+function showVerifyNotice(email) {
+  pendingVerifyEmail = email;
+  document.getElementById('verifyEmail').textContent = email;
+  document.getElementById('verifyNotice').style.display = 'block';
+  document.getElementById('error').style.display = 'none';
+  document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+}
+
+async function resendVerification() {
+  const btn = document.getElementById('resendBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  try {
+    await fetch('/api/resend-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: pendingVerifyEmail })
+    });
+    btn.textContent = 'Sent!';
+    setTimeout(() => { btn.textContent = 'Resend Email'; btn.disabled = false; }, 3000);
+  } catch {
+    btn.textContent = 'Resend Email';
+    btn.disabled = false;
+  }
+}
+
 async function handleLogin(e) {
   e.preventDefault();
   const btn = document.getElementById('loginBtn');
@@ -247,11 +299,20 @@ async function handleLogin(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: document.getElementById('loginEmail').value,
-        password: document.getElementById('loginPassword').value
+        password: document.getElementById('loginPassword').value,
+        rememberMe: document.getElementById('rememberMe').checked
       })
     });
     const data = await res.json();
-    if (!res.ok) { showError(data.error); return; }
+
+    if (!res.ok) {
+      if (data.needsVerification) {
+        showVerifyNotice(data.email);
+      } else {
+        showError(data.error);
+      }
+      return;
+    }
 
     if (data.hasAccess) {
       window.location.href = '/';
@@ -277,24 +338,28 @@ async function handleSignup(e) {
   btn.textContent = 'Creating account...';
 
   try {
+    const email = document.getElementById('signupEmail').value;
     const res = await fetch('/api/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: document.getElementById('signupEmail').value,
-        password: pw
-      })
+      body: JSON.stringify({ email, password: pw })
     });
     const data = await res.json();
     if (!res.ok) { showError(data.error); return; }
 
-    window.location.href = '/';
+    showVerifyNotice(email);
   } catch (err) {
     showError('Something went wrong. Please try again.');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Start Free Trial';
   }
+}
+
+// Check for ?verified=1 in URL (after email verification redirect)
+if (new URLSearchParams(window.location.search).get('verified') === '1') {
+  showSuccess('Email verified! You can now log in.');
+  window.history.replaceState({}, '', '/login');
 }
 </script>
 </body>

@@ -1,10 +1,12 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const initSqlJs = require('sql.js');
 const Stripe = require('stripe');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -80,9 +82,20 @@ function initDb() {
       stripe_subscription_id TEXT,
       subscription_status TEXT DEFAULT 'none',
       trial_ends_at TEXT,
+      email_verified INTEGER DEFAULT 0,
+      verification_token TEXT,
+      verification_expires TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // Add email verification columns if they don't exist (migration for existing DB)
+  try { db.run("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN verification_token TEXT"); } catch(e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN verification_expires TEXT"); } catch(e) {}
+
+  // Mark existing admin accounts as verified
+  db.run("UPDATE users SET email_verified = 1 WHERE role = 'admin'");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS support_tickets (
@@ -177,6 +190,43 @@ const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SEC
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
+// --- Email Setup ---
+const emailTransporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+
+async function sendVerificationEmail(email, token) {
+  const verifyUrl = `https://${CUSTOM_DOMAIN}/api/verify-email?token=${token}`;
+  await emailTransporter.sendMail({
+    from: process.env.SMTP_FROM || `"Rollout Heaven" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject: 'Verify Your Email - Rollout Heaven',
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #080b1e; color: #e0e0e0; border-radius: 12px; overflow: hidden;">
+        <div style="text-align: center; padding: 32px 24px 16px;">
+          <h1 style="margin: 0; font-size: 24px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Rollout Heaven</h1>
+          <p style="color: #6b7094; font-size: 12px; letter-spacing: 2px; margin-top: 4px;">RELEASE MANAGEMENT PLATFORM</p>
+        </div>
+        <div style="padding: 24px 32px 32px;">
+          <h2 style="color: #fff; font-size: 18px; margin-bottom: 12px;">Verify Your Email</h2>
+          <p style="color: #9ea2b8; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">Click the button below to verify your email and activate your 7-day free trial.</p>
+          <div style="text-align: center; margin-bottom: 24px;">
+            <a href="${verifyUrl}" style="display: inline-block; padding: 14px 40px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); color: #fff; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px;">Verify Email</a>
+          </div>
+          <p style="color: #6b7094; font-size: 12px; line-height: 1.5;">If the button doesn't work, copy and paste this link:<br><a href="${verifyUrl}" style="color: #00d4ff; word-break: break-all;">${verifyUrl}</a></p>
+          <p style="color: #6b7094; font-size: 12px; margin-top: 16px;">This link expires in 24 hours.</p>
+        </div>
+      </div>
+    `
+  });
+}
+
 // --- Middleware ---
 app.use((req, res, next) => {
   if (req.path === '/webhook') return next(); // raw body for Stripe
@@ -191,8 +241,8 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production' && process.env.RAILWAY_ENVIRONMENT ? true : false,
     httpOnly: true,
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     sameSite: 'lax'
+    // maxAge set per-login based on "Remember Me" checkbox
   },
   proxy: true
 }));
@@ -245,7 +295,7 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/api/login', (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, rememberMe } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
   const user = dbHelpers.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
@@ -253,11 +303,22 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
+  if (!user.email_verified && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Please verify your email before logging in. Check your inbox for a verification link.', needsVerification: true, email: user.email });
+  }
+
+  // Remember Me: 30 days if checked, session-only if not
+  if (rememberMe) {
+    req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+  } else {
+    req.session.cookie.maxAge = null; // session cookie — expires on browser close
+  }
+
   req.session.userId = user.id;
   res.json({ success: true, hasAccess: hasAccess(user) });
 });
 
-app.post('/api/signup', (req, res) => {
+app.post('/api/signup', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
@@ -268,13 +329,61 @@ app.post('/api/signup', (req, res) => {
 
   const hash = bcrypt.hashSync(password, 10);
   const trialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-  const result = dbHelpers.prepare(
-    'INSERT INTO users (email, password, subscription_status, trial_ends_at) VALUES (?, ?, ?, ?)'
-  ).run(cleanEmail, hash, 'trialing', trialEnd);
+  dbHelpers.prepare(
+    'INSERT INTO users (email, password, subscription_status, trial_ends_at, verification_token, verification_expires) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(cleanEmail, hash, 'trialing', trialEnd, token, tokenExpires);
 
-  req.session.userId = result.lastInsertRowid;
-  res.json({ success: true, hasAccess: true, trial: true });
+  try {
+    await sendVerificationEmail(cleanEmail, token);
+    res.json({ success: true, needsVerification: true });
+  } catch (err) {
+    console.error('Email send error:', err.message);
+    res.json({ success: true, needsVerification: true, emailError: true });
+  }
+});
+
+// --- Email Verification Route ---
+app.get('/api/verify-email', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send('Invalid verification link.');
+
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE verification_token = ?').get(token);
+  if (!user) return res.status(400).send('Invalid or expired verification link.');
+
+  if (new Date(user.verification_expires) < new Date()) {
+    return res.status(400).send('Verification link has expired. Please request a new one.');
+  }
+
+  dbHelpers.prepare('UPDATE users SET email_verified = 1, verification_token = NULL, verification_expires = NULL WHERE id = ?').run(user.id);
+
+  // Auto-login after verification
+  req.session.userId = user.id;
+  res.redirect('/login?verified=1');
+});
+
+// --- Resend Verification Email ---
+app.post('/api/resend-verification', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
+  if (!user) return res.json({ success: true }); // Don't reveal if account exists
+  if (user.email_verified) return res.json({ success: true });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  dbHelpers.prepare('UPDATE users SET verification_token = ?, verification_expires = ? WHERE id = ?').run(token, tokenExpires, user.id);
+
+  try {
+    await sendVerificationEmail(user.email, token);
+  } catch (err) {
+    console.error('Resend email error:', err.message);
+  }
+
+  res.json({ success: true });
 });
 
 app.post('/api/logout', (req, res) => {
