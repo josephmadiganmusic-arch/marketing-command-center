@@ -1215,8 +1215,19 @@ app.use('/public', express.static(publicDir, { index: false }));
 // --- Start Server ---
 async function startServer() {
   console.log(`[BOOT] Starting Rollout Heaven...`);
-  console.log(`[BOOT] PORT=${PORT}, NODE_ENV=${process.env.NODE_ENV}, RAILWAY=${!!process.env.RAILWAY_ENVIRONMENT}`);
+  console.log(`[BOOT] Node ${process.version}, PORT=${PORT}, NODE_ENV=${process.env.NODE_ENV}`);
+  console.log(`[BOOT] RAILWAY=${!!process.env.RAILWAY_ENVIRONMENT}`);
   console.log(`[BOOT] DB_PATH=${DB_PATH}, DATA_DIR=${DATA_DIR}`);
+
+  // Verify data directory is writable
+  try {
+    const testFile = path.join(DATA_DIR, '.write-test');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    console.log('[BOOT] DATA_DIR is writable');
+  } catch (e) {
+    console.error('[BOOT] WARNING: DATA_DIR not writable:', e.message);
+  }
 
   console.log('[BOOT] Loading sql.js...');
   const SQL = await initSqlJs();
@@ -1241,6 +1252,16 @@ async function startServer() {
   server.timeout = 120000;
   server.keepAliveTimeout = 120000;
 }
+
+// Catch uncaught errors so they show in logs instead of silent crash
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('[FATAL] Unhandled rejection:', err);
+  process.exit(1);
+});
 
 startServer().catch(err => {
   console.error('[BOOT] Failed to start server:', err);
