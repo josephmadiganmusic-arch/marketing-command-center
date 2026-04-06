@@ -250,11 +250,15 @@ app.use(session({
 // Trust Railway proxy
 app.set('trust proxy', 1);
 
+// Health check endpoint (must respond before any redirects)
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
 // Redirect Railway URL to custom domain
 const CUSTOM_DOMAIN = process.env.CUSTOM_DOMAIN || 'rolloutheaven.com';
 app.use((req, res, next) => {
   const host = req.hostname;
-  if (host && host.endsWith('.railway.app')) {
+  // Don't redirect health checks or internal Railway requests
+  if (host && host.endsWith('.railway.app') && req.path !== '/health') {
     return res.redirect(301, `https://${CUSTOM_DOMAIN}${req.originalUrl}`);
   }
   next();
