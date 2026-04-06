@@ -4570,7 +4570,7 @@ function renderAllCampaignTabs() {
   try { renderCaptions(); } catch(e) {}
   try { renderHashtags(); } catch(e) {}
   try { renderCTAs(); } catch(e) {}
-  try { if (calendarData['1']) renderCalendar(1); } catch(e) {}
+  try { renderCalendar(1); } catch(e) {}
   try { renderOutreach(); } catch(e) {}
   try { renderPlaylists(); } catch(e) {}
   try { renderChecklist('checklist-today', checklistToday); } catch(e) {}
