@@ -4586,20 +4586,22 @@ function getChecklistState() {
 
 function loadSavedCampaign() {
   try {
-    // First try loading from the current release record
     const d = intakeGetData();
-    if (d.songTitle) {
-      const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
-      if (saved[d.songTitle] && saved[d.songTitle]._campaign) {
-        applyCampaignData(saved[d.songTitle]._campaign);
+    if (!d.songTitle) return false;
+    // Only load campaign that belongs to the current release
+    const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+    if (saved[d.songTitle] && saved[d.songTitle]._campaign) {
+      applyCampaignData(saved[d.songTitle]._campaign);
+      return true;
+    }
+    // Check global key but only if it matches current release
+    const campaignSong = localStorage.getItem(ukey('mcc_campaign_song')) || '';
+    if (campaignSong === d.songTitle) {
+      const globalSaved = localStorage.getItem(ukey('mcc_campaign_data'));
+      if (globalSaved) {
+        applyCampaignData(JSON.parse(globalSaved));
         return true;
       }
-    }
-    // Fallback to legacy global key
-    const globalSaved = localStorage.getItem(ukey('mcc_campaign_data'));
-    if (globalSaved) {
-      applyCampaignData(JSON.parse(globalSaved));
-      return true;
     }
   } catch(e) {}
   return false;
