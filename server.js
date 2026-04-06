@@ -404,6 +404,57 @@ app.post('/api/research', requireAccess, async (req, res) => {
         break;
       }
 
+      case 'tiktokTrends': {
+        if (!genre) return res.status(400).json({ error: 'Genre required' });
+        const searches = await Promise.all([
+          serperSearch(`site:ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag ${genre}`, 10),
+          serperSearch(`tiktok creative center trending songs ${genre} music`, 10),
+          serperSearch(`tiktok creative center trending ${genre} creators artists`, 10),
+          serperSearch(`tiktok ${genre} trending sounds viral 2026`, 10),
+          serperSearch(`tiktok ${genre} music trends what is trending now`, 10)
+        ]);
+        const trends = { hashtags: [], songs: [], creators: [], videos: [] };
+        for (let i = 0; i < searches.length; i++) {
+          const s = searches[i];
+          const items = [];
+          if (s.organic) {
+            for (const r of s.organic) {
+              items.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
+            }
+          }
+          if (i === 0) trends.hashtags = items;
+          else if (i === 1) trends.songs = items;
+          else if (i === 2) trends.creators = items;
+          else { trends.videos = trends.videos.concat(items); }
+        }
+        result = trends;
+        break;
+      }
+
+      case 'instagramMonitor': {
+        if (!genre) return res.status(400).json({ error: 'Genre required' });
+        const searches = await Promise.all([
+          serperSearch(`instagram ${genre} music accounts to follow independent artists`, 10),
+          serperSearch(`instagram ${genre} repost pages promotion music`, 10),
+          serperSearch(`#${genre.replace(/\s+/g, '')} instagram top posts music`, 10),
+          serperSearch(`instagram ${genre} music content strategy hooks captions 2026`, 10),
+          serperSearch(`instagram reels ${genre} music trending audio format`, 10)
+        ]);
+        const monitor = { accounts: [], repostPages: [], hashtags: [], strategies: [], reelTrends: [] };
+        const keys = ['accounts', 'repostPages', 'hashtags', 'strategies', 'reelTrends'];
+        for (let i = 0; i < searches.length; i++) {
+          const items = [];
+          if (searches[i].organic) {
+            for (const r of searches[i].organic) {
+              items.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
+            }
+          }
+          monitor[keys[i]] = items;
+        }
+        result = monitor;
+        break;
+      }
+
       default:
         return res.status(400).json({ error: 'Unknown action: ' + action });
     }

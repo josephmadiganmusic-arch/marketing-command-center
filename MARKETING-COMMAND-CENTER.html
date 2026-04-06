@@ -1207,6 +1207,8 @@ This track is a powerful declaration of faith. I would be honored if you would c
         <button class="ai-action-btn" onclick="runResearch('findPodcasts')"><span class="ai-icon">&#127908;</span>Find Podcasts to Pitch<span class="ai-desc">Podcast names, host names, booking links for your genre</span></button>
         <button class="ai-action-btn" onclick="runResearch('analyzeCompetition')"><span class="ai-icon">&#128200;</span>Analyze My Competition<span class="ai-desc">See which playlists similar artists are on — those are your targets</span></button>
         <button class="ai-action-btn" onclick="runResearch('socialScout')"><span class="ai-icon">&#128225;</span>Social Media Scout<span class="ai-desc">Find active music pages and influencers promoting artists like you</span></button>
+        <button class="ai-action-btn" onclick="runResearch('tiktokTrends')"><span class="ai-icon">&#127916;</span>TikTok Trend Scout<span class="ai-desc">Trending hashtags, sounds, creators, and video formats from TikTok Creative Center</span></button>
+        <button class="ai-action-btn" onclick="runResearch('instagramMonitor')"><span class="ai-icon">&#128247;</span>Instagram Intel<span class="ai-desc">Top accounts, repost pages, trending Reels formats, and caption strategies in your niche</span></button>
       </div>
     </div>
 
@@ -3122,7 +3124,9 @@ async function runResearch(action) {
     findBlogs: 'Finding blogs accepting music submissions...',
     findPodcasts: 'Finding podcasts in your genre...',
     analyzeCompetition: 'Analyzing similar artists on Spotify...',
-    socialScout: 'Scouting social media promotion pages...'
+    socialScout: 'Scouting social media promotion pages...',
+    tiktokTrends: 'Scanning TikTok Creative Center for trending sounds, hashtags & creators...',
+    instagramMonitor: 'Gathering Instagram account watchlists, Reels trends & caption strategies...'
   };
 
   section.style.display = 'block';
@@ -3211,6 +3215,23 @@ async function runResearch(action) {
           `${i+1}. ${a.title}\n   URL: ${a.link}\n   ${a.snippet}`
         ).join('\n');
         claudePrompt = `${ctx}\n\nHere are REAL social media pages/influencers found promoting "${genre}" music:\n\n${acctData}\n\nAnalyze and organize:\n1. TOP PROMOTION PAGES — ranked by relevance and engagement potential\n2. REPOST/FEATURE PAGES — pages that actively repost or feature independent artists\n3. INFLUENCERS — individual content creators promoting this genre\n4. DM TEMPLATES — short DM pitches customized for each type of account\n5. HASHTAG STRATEGY — hashtags these pages use that the artist should adopt\n\nInclude all real URLs and handles found.`;
+        break;
+      }
+      case 'tiktokTrends': {
+        const hashData = data.hashtags.slice(0, 10).map((h, i) => `${i+1}. ${h.title}\n   ${h.link}\n   ${h.snippet}`).join('\n');
+        const songData = data.songs.slice(0, 10).map((s, i) => `${i+1}. ${s.title}\n   ${s.link}\n   ${s.snippet}`).join('\n');
+        const creatorData = data.creators.slice(0, 10).map((c, i) => `${i+1}. ${c.title}\n   ${c.link}\n   ${c.snippet}`).join('\n');
+        const videoData = data.videos.slice(0, 10).map((v, i) => `${i+1}. ${v.title}\n   ${v.link}\n   ${v.snippet}`).join('\n');
+        claudePrompt = `${ctx}\n\nHere is REAL TikTok trend data for "${genre}" from TikTok Creative Center and web sources:\n\n## TRENDING HASHTAGS\n${hashData}\n\n## TRENDING SONGS/SOUNDS\n${songData}\n\n## TRENDING CREATORS\n${creatorData}\n\n## TRENDING VIDEOS/FORMATS\n${videoData}\n\nAnalyze and provide an actionable TikTok strategy:\n1. TOP 10 HASHTAGS TO USE NOW — ranked by relevance to this artist, with mix strategy (big + niche)\n2. TRENDING SOUNDS — which sounds/audio this artist should use or duet with, and why\n3. CREATOR COLLABS — creators in this genre space worth reaching out to for duets/features\n4. VIDEO FORMAT IDEAS — 5 specific TikTok video concepts based on what's trending, tailored to this artist's story and music\n5. POSTING STRATEGY — best times, frequency, and content mix for ${genre} on TikTok right now\n6. HOOKS THAT WORK — 5 opening lines/hooks based on trending formats that would work for this artist\n\nInclude all real URLs. Be specific to the artist's genre and brand.`;
+        break;
+      }
+      case 'instagramMonitor': {
+        const acctData = data.accounts.slice(0, 10).map((a, i) => `${i+1}. ${a.title}\n   ${a.link}\n   ${a.snippet}`).join('\n');
+        const repostData = data.repostPages.slice(0, 10).map((r, i) => `${i+1}. ${r.title}\n   ${r.link}\n   ${r.snippet}`).join('\n');
+        const hashData = data.hashtags.slice(0, 10).map((h, i) => `${i+1}. ${h.title}\n   ${h.link}\n   ${h.snippet}`).join('\n');
+        const stratData = data.strategies.slice(0, 10).map((s, i) => `${i+1}. ${s.title}\n   ${s.link}\n   ${s.snippet}`).join('\n');
+        const reelData = data.reelTrends.slice(0, 10).map((r, i) => `${i+1}. ${r.title}\n   ${r.link}\n   ${r.snippet}`).join('\n');
+        claudePrompt = `${ctx}\n\nHere is REAL Instagram intelligence for "${genre}" music:\n\n## TOP ACCOUNTS TO WATCH\n${acctData}\n\n## REPOST/FEATURE PAGES\n${repostData}\n\n## HASHTAG RESEARCH\n${hashData}\n\n## CONTENT STRATEGIES\n${stratData}\n\n## TRENDING REELS FORMATS\n${reelData}\n\nAnalyze and provide an actionable Instagram strategy:\n1. WATCHLIST — Top 20 accounts this artist should follow and study (with what to learn from each)\n2. REPOST TARGETS — pages that repost/feature independent ${genre} artists, how to submit\n3. HASHTAG SETS — 3 ready-to-use hashtag sets (15-20 each): one for reach, one for niche community, one for discovery\n4. CONTENT CALENDAR — weekly Instagram content plan with specific post types (Reels, carousels, stories, static)\n5. REELS STRATEGY — 5 Reel concepts based on trending formats adapted for this artist\n6. CAPTION FORMULAS — 3 proven caption structures with fill-in-the-blank templates\n7. ENGAGEMENT TACTICS — daily actions to grow (comment strategy, story engagement, DM approach)\n\nInclude all real URLs and handles. Be specific to ${genre} music promotion.`;
         break;
       }
     }
