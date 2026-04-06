@@ -10,7 +10,7 @@
   body { font-family: 'Inter', sans-serif; background: #060606; color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
   .auth-container { width: 100%; max-width: 420px; padding: 24px; }
   .auth-logo { text-align: center; margin-bottom: 40px; }
-  .auth-logo img { width: 180px; height: auto; margin-bottom: 12px; }
+  .auth-logo img { width: 280px; height: auto; margin-bottom: 16px; }
   .auth-logo h1 { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: 1px; }
   .auth-logo h1 span { color: #c9a84c; }
   .auth-logo p { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 2px; margin-top: 6px; }
@@ -24,6 +24,10 @@
   .form-group label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; font-weight: 500; }
   .form-group input { width: 100%; background: #0a0a0a; border: 1px solid #222; border-radius: 8px; padding: 12px 14px; color: #fff; font-size: 14px; font-family: 'Inter', sans-serif; transition: border-color 0.2s; }
   .form-group input:focus { outline: none; border-color: #c9a84c; }
+  .pw-wrapper { position: relative; }
+  .pw-wrapper input { padding-right: 44px; }
+  .pw-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #555; padding: 4px; font-size: 16px; line-height: 1; transition: color 0.2s; }
+  .pw-toggle:hover { color: #c9a84c; }
   .btn-primary { width: 100%; padding: 14px; background: #c9a84c; color: #000; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.2s; }
   .btn-primary:hover { background: #d4b45c; }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -60,7 +64,12 @@
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" id="loginPassword" required placeholder="Enter your password" autocomplete="current-password">
+        <div class="pw-wrapper">
+          <input type="password" id="loginPassword" required placeholder="Enter your password" autocomplete="current-password">
+          <button type="button" class="pw-toggle" onclick="togglePw('loginPassword', this)" aria-label="Show password">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
       </div>
       <button type="submit" class="btn-primary" id="loginBtn">Log In</button>
     </form>
@@ -73,11 +82,21 @@
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" id="signupPassword" required placeholder="Min 8 characters" minlength="8" autocomplete="new-password">
+        <div class="pw-wrapper">
+          <input type="password" id="signupPassword" required placeholder="Min 8 characters" minlength="8" autocomplete="new-password">
+          <button type="button" class="pw-toggle" onclick="togglePw('signupPassword', this)" aria-label="Show password">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
       </div>
       <div class="form-group">
         <label>Confirm Password</label>
-        <input type="password" id="signupConfirm" required placeholder="Confirm your password" autocomplete="new-password">
+        <div class="pw-wrapper">
+          <input type="password" id="signupConfirm" required placeholder="Confirm your password" autocomplete="new-password">
+          <button type="button" class="pw-toggle" onclick="togglePw('signupConfirm', this)" aria-label="Show password">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
       </div>
       <button type="submit" class="btn-primary" id="signupBtn">Start Free Trial</button>
       <div class="trial-badge">
@@ -89,6 +108,15 @@
 </div>
 
 <script>
+function togglePw(inputId, btn) {
+  const input = document.getElementById(inputId);
+  const isHidden = input.type === 'password';
+  input.type = isHidden ? 'text' : 'password';
+  btn.innerHTML = isHidden
+    ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
+
 function showForm(type) {
   document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
