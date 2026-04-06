@@ -3010,6 +3010,65 @@ function loadClaudeKey() {
 function getClaudeKey() {
   return localStorage.getItem('claude_api_key') || CLAUDE_API_KEY;
 }
+// ============================
+// TREND DATA — auto-fetched & cached 1hr
+// ============================
+let _trendCache = { data: null, expires: 0 };
+
+async function getTrendContext() {
+  // Return cached if still fresh
+  if (_trendCache.data && Date.now() < _trendCache.expires) return _trendCache.data;
+
+  const d = intakeGetData();
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' ') || 'Hip-Hop';
+
+  let tiktok = null, instagram = null;
+  try {
+    const [ttRes, igRes] = await Promise.all([
+      fetch('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'tiktokTrends', genre }) }),
+      fetch('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'instagramMonitor', genre }) })
+    ]);
+    if (ttRes.ok) tiktok = await ttRes.json();
+    if (igRes.ok) instagram = await igRes.json();
+  } catch (e) {
+    console.warn('Trend fetch failed (offline or no server):', e.message);
+  }
+
+  if (!tiktok && !instagram) {
+    _trendCache = { data: '', expires: Date.now() + 300000 }; // retry in 5min
+    return '';
+  }
+
+  function summarizeItems(items, max) {
+    if (!items || !items.length) return 'None found';
+    return items.slice(0, max).map(i => `- ${i.title}${i.snippet ? ' — ' + i.snippet.slice(0, 120) : ''}`).join('\n');
+  }
+
+  let block = '\n\n=== CURRENT TRENDS (Live Data — use these in your output) ===\n';
+
+  if (tiktok) {
+    block += '\nTIKTOK TRENDS:\n';
+    block += 'Trending Hashtags:\n' + summarizeItems(tiktok.hashtags, 8) + '\n';
+    block += 'Trending Sounds:\n' + summarizeItems(tiktok.songs, 8) + '\n';
+    block += 'Trending Creators:\n' + summarizeItems(tiktok.creators, 5) + '\n';
+    block += 'Viral Video Formats:\n' + summarizeItems(tiktok.videos, 5) + '\n';
+  }
+
+  if (instagram) {
+    block += '\nINSTAGRAM TRENDS:\n';
+    block += 'Top Accounts:\n' + summarizeItems(instagram.accounts, 5) + '\n';
+    block += 'Repost Pages:\n' + summarizeItems(instagram.repostPages, 5) + '\n';
+    block += 'Trending Hashtags:\n' + summarizeItems(instagram.hashtags, 5) + '\n';
+    block += 'Content Strategies:\n' + summarizeItems(instagram.strategies, 5) + '\n';
+    block += 'Reels Trends:\n' + summarizeItems(instagram.reelTrends, 5) + '\n';
+  }
+
+  block += '\nIMPORTANT: Reference specific trending sounds, hashtags, and content formats from above. Do NOT give generic advice like "use trending audio" — name the actual trends.\n===\n';
+
+  _trendCache = { data: block, expires: Date.now() + 3600000 }; // cache 1hr
+  return block;
+}
+
 function openAiModal(action) { document.getElementById('aiModal-'+action).classList.add('active'); }
 function closeAiModal(action) { document.getElementById('aiModal-'+action).classList.remove('active'); }
 document.addEventListener('click', e => { if(e.target.classList.contains('ai-modal-overlay')) e.target.classList.remove('active'); });
@@ -3054,11 +3113,14 @@ async function mapOneClick(action) {
   const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
   const ctx = `SONG: "${d.songTitle || 'Untitled'}"${feat}\nARTIST: ${d.primaryArtist || 'Unknown'}\nGENRE: ${genre}\nRELEASE DATE: ${d.releaseDate || 'TBD'}\nPRODUCER: ${d.producer || 'N/A'}\nLABEL: ${d.label || 'Independent'}\nBIO: ${d.bio || 'N/A'}\nSPOTIFY: ${d.linkSpotify || 'N/A'}\nEMAIL: ${d.email || 'N/A'}\nINSTAGRAM: ${d.instagram || 'N/A'}`;
 
+  // Fetch live trend data (cached 1hr)
+  const trends = await getTrendContext();
+
   const prompts = {
-    freshContent: { loading: 'Generating fresh content...', prompt: `${ctx}\n\nGenerate for this specific release:\n1. Five ready-to-post captions (each with hashtags and CTA)\n2. Five punchy video hooks (camera-ready openers)\n3. Three video concept ideas (format, angle, script outline)\n\nAll content must reference this song by name, be in the artist's authentic voice, and include Spotify save CTAs.` },
-    captionGen: { loading: 'Writing captions...', prompt: `${ctx}\n\nWrite 3 ready-to-post Instagram/Facebook captions for this specific song. Each caption should:\n- Reference the song title and artist by name\n- Be 100-250 words in the artist's authentic voice\n- Include 8-12 relevant hashtags\n- Include a specific CTA focused on Spotify saves\n- Have a different angle (announcement, testimony/story, engagement)` },
-    weekPlan: { loading: 'Planning your week...', prompt: `${ctx}\n\nCreate a prioritized day-by-day action plan (Monday through Sunday) for this release campaign this week. For each day give:\n- THE ONE most important task\n- A quick win (under 10 min)\n- Content to post (specific to this song)\n- Any outreach to send\n\nBe specific, actionable, and reference the song by name.` },
-    nextAction: { loading: 'Finding your highest-impact move...', prompt: `${ctx}\n\nWhat is the single highest-impact action to take RIGHT NOW for this release campaign?\n\n1. THE ONE THING to do next (be extremely specific)\n2. WHY this is the highest priority\n3. How long it should take\n4. Step-by-step instructions to do it\n5. What to do immediately after\n\nBe direct. Reference the song and artist by name.` },
+    freshContent: { loading: 'Generating fresh content...', prompt: `${ctx}${trends}\n\nGenerate for this specific release:\n1. Five ready-to-post captions (each with hashtags and CTA)\n2. Five punchy video hooks (camera-ready openers)\n3. Three video concept ideas (format, angle, script outline)\n\nAll content must reference this song by name, be in the artist's authentic voice, and include Spotify save CTAs.` },
+    captionGen: { loading: 'Writing captions...', prompt: `${ctx}${trends}\n\nWrite 3 ready-to-post Instagram/Facebook captions for this specific song. Each caption should:\n- Reference the song title and artist by name\n- Be 100-250 words in the artist's authentic voice\n- Include 8-12 relevant hashtags\n- Include a specific CTA focused on Spotify saves\n- Have a different angle (announcement, testimony/story, engagement)` },
+    weekPlan: { loading: 'Planning your week...', prompt: `${ctx}${trends}\n\nCreate a prioritized day-by-day action plan (Monday through Sunday) for this release campaign this week. For each day give:\n- THE ONE most important task\n- A quick win (under 10 min)\n- Content to post (specific to this song)\n- Any outreach to send\n\nBe specific, actionable, and reference the song by name.` },
+    nextAction: { loading: 'Finding your highest-impact move...', prompt: `${ctx}${trends}\n\nWhat is the single highest-impact action to take RIGHT NOW for this release campaign?\n\n1. THE ONE THING to do next (be extremely specific)\n2. WHY this is the highest priority\n3. How long it should take\n4. Step-by-step instructions to do it\n5. What to do immediately after\n\nBe direct. Reference the song and artist by name.` },
     pitchRefine: { loading: 'Refining your pitch...', prompt: `${ctx}\nCURRENT BIO: ${d.bio || 'None written yet'}\nCURRENT EMAIL INTRO: ${d.emailIntro || 'None written yet'}\n\nRewrite and improve both:\n\n1. ARTIST BIO (2-3 paragraphs, professional but personal, highlights testimony and credentials)\n2. EMAIL INTRO PARAGRAPH (3-5 sentences, hooks the reader, makes them want to listen)\n\nBoth should reference this specific song and be ready to copy-paste into submissions.` },
     playlistStrategy: { loading: 'Building playlist strategy...', prompt: `${ctx}\n\nCreate a detailed playlist strategy for this release:\n\n1. Five new playlist concepts the artist should create on Spotify (with names, descriptions, and 5 similar artists to include)\n2. Ten search terms to find curators accepting submissions in this genre\n3. Five creative angles for getting on playlists beyond the obvious genre match\n4. Three DM templates (short, medium, detailed) for pitching this specific song to curators\n\nAll tailored to this song's genre and niche.` }
   };
@@ -3255,13 +3317,18 @@ async function runAiAction(action) {
   const loadingEl = document.getElementById('aiLoading-'+action);
   const resultsEl = document.getElementById('aiResults-'+action);
   const btnEl = document.getElementById('ai'+action.charAt(0).toUpperCase()+action.slice(1)+'Btn');
+
+  // Fetch live trends for content actions (cached 1hr)
+  const trendActions = ['freshContent', 'captionGen', 'repurpose'];
+  const trends = trendActions.includes(action) ? await getTrendContext() : '';
+
   let userPrompt = '';
   switch(action) {
-    case 'freshContent': { const extra=document.getElementById('aiFreshContext').value.trim(); userPrompt=`Generate fresh social media content for "God In The Room" by Madigan ft Rogue2Redeemed.\n\nProvide exactly:\n1. 5 new Instagram/Facebook captions (each with relevant hashtags and a Spotify save CTA)\n2. 5 new video hooks (short punchy lines to say on camera at the start of a reel/TikTok)\n3. 3 video content concepts (describe what to film, the angle, and the caption approach)\n\n${extra?'Additional direction: '+extra:''}\n\nFormat each section with a clear header. Number each item.`; break; }
+    case 'freshContent': { const extra=document.getElementById('aiFreshContext').value.trim(); userPrompt=`Generate fresh social media content for "God In The Room" by Madigan ft Rogue2Redeemed.${trends}\n\nProvide exactly:\n1. 5 new Instagram/Facebook captions (each with relevant hashtags and a Spotify save CTA)\n2. 5 new video hooks (short punchy lines to say on camera at the start of a reel/TikTok)\n3. 3 video content concepts (describe what to film, the angle, and the caption approach)\n\n${extra?'Additional direction: '+extra:''}\n\nFormat each section with a clear header. Number each item.`; break; }
     case 'outreach': { const name=document.getElementById('aiOutreachName').value.trim(); const playlist=document.getElementById('aiOutreachPlaylist').value.trim(); const notes=document.getElementById('aiOutreachNotes').value.trim(); if(!name||!playlist) { showToast('Fill in curator name and playlist/show name'); return; } userPrompt=`Write personalized outreach messages for a playlist curator / media contact.\n\nContact Name: ${name}\nPlaylist/Show/Blog: ${playlist}\n${notes?'Notes about them: '+notes:''}\n\nGenerate:\n1. A personalized Instagram/Twitter DM (short, casual, respectful -- under 200 words)\n2. A personalized email (professional but warm, includes all relevant track info, under 300 words)\n\nMake each message feel genuinely personal to ${name} and ${playlist}, not generic. Reference their specific platform.`; break; }
-    case 'repurpose': { const text=document.getElementById('aiRepurposeText').value.trim(); if(!text) { showToast('Paste your caption or hook first'); return; } const platforms=[]; document.querySelectorAll('#aiRepurposePlatforms input:checked').forEach(cb=>platforms.push(cb.value)); if(platforms.length===0) { showToast('Select at least one platform'); return; } userPrompt=`Take this caption/hook and adapt it for each of these platforms: ${platforms.join(', ')}\n\nOriginal content:\n"${text}"\n\nFor each platform, write a version optimized for that platform's style, length limits, and audience behavior. Include relevant hashtags and a Spotify save CTA for each.`; break; }
+    case 'repurpose': { const text=document.getElementById('aiRepurposeText').value.trim(); if(!text) { showToast('Paste your caption or hook first'); return; } const platforms=[]; document.querySelectorAll('#aiRepurposePlatforms input:checked').forEach(cb=>platforms.push(cb.value)); if(platforms.length===0) { showToast('Select at least one platform'); return; } userPrompt=`Take this caption/hook and adapt it for each of these platforms: ${platforms.join(', ')}${trends}\n\nOriginal content:\n"${text}"\n\nFor each platform, write a version optimized for that platform's style, length limits, and audience behavior. Include relevant hashtags and a Spotify save CTA for each.`; break; }
     case 'analytics': { const stats=document.getElementById('aiAnalyticsStats').value.trim(); if(!stats) { showToast('Paste your stats first'); return; } userPrompt=`Analyze these music/social media stats for Madigan and provide strategic recommendations:\n\n${stats}\n\nProvide:\n1. KEY OBSERVATIONS\n2. WINS\n3. AREAS TO IMPROVE\n4. IMMEDIATE ACTIONS - 5 specific things to do this week\n5. 30-DAY STRATEGY`; break; }
-    case 'captionGen': { const mood=document.getElementById('aiCaptionMood').value.trim(); if(!mood) { showToast('Enter a mood or theme'); return; } userPrompt=`Generate 3 Instagram/Facebook captions for Madigan's "God In The Room" with this mood/theme/angle: "${mood}"\n\nEach caption should be ready to copy and paste, include relevant hashtags (8-12 per caption), include a clear CTA focused on Spotify saves, and be in Madigan's authentic voice.`; break; }
+    case 'captionGen': { const mood=document.getElementById('aiCaptionMood').value.trim(); if(!mood) { showToast('Enter a mood or theme'); return; } userPrompt=`Generate 3 Instagram/Facebook captions for Madigan's "God In The Room" with this mood/theme/angle: "${mood}"${trends}\n\nEach caption should be ready to copy and paste, include relevant hashtags (8-12 per caption), include a clear CTA focused on Spotify saves, and be in Madigan's authentic voice.`; break; }
   }
   loadingEl.classList.add('active'); resultsEl.innerHTML = '';
   const submitBtn = loadingEl.previousElementSibling;
@@ -3316,7 +3383,15 @@ function buildInlinePrompt(id) {
 }
 
 async function runInlineAi(id) {
-  const prompt = buildInlinePrompt(id); if(!prompt) return;
+  let prompt = buildInlinePrompt(id); if(!prompt) return;
+
+  // Prepend live trend data for content-generation inline actions
+  const trendIds = ['dashPlanWeek','dashNextAction','genHooks','genCaption','genHashtags','genCTAs','calDay','calWeek'];
+  if (trendIds.includes(id)) {
+    const trends = await getTrendContext();
+    if (trends) prompt = prompt + trends;
+  }
+
   const loadingEl = document.getElementById('inlineAiLoading-'+id);
   const resultsEl = document.getElementById('inlineAiResults-'+id);
   const goBtn = loadingEl.previousElementSibling;
@@ -3352,6 +3427,9 @@ async function generateCampaign() {
   const statusEl = document.getElementById('generateStatus');
   btn.disabled = true;
   btn.textContent = 'GENERATING...';
+
+  // Fetch live trend data once for all campaign prompts (cached 1hr)
+  const trends = await getTrendContext();
 
   const steps = [
     { id: 'content', label: 'Content Bank (hooks, captions, hashtags, CTAs)' },
@@ -3421,7 +3499,7 @@ COLLAB PARTNERS/NETWORK: ${targetCollabs.join(', ') || 'N/A'}`;
   try {
     // --- 1. Content Bank ---
     markStep('content', 'active');
-    const contentResult = await callClaude(`${ctx}
+    const contentResult = await callClaude(`${ctx}${trends}
 
 Generate a complete content bank for this release. Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {
@@ -3451,7 +3529,7 @@ Requirements:
 
     // --- 2. Calendar ---
     markStep('calendar', 'active');
-    const calResult = await callClaude(`${ctx}
+    const calResult = await callClaude(`${ctx}${trends}
 
 Generate a 30-day marketing calendar. The calendar has 4 weeks. If the release date is in the future, the first 1-2 weeks should be PRE-RELEASE strategy (teasers, countdowns, snippet drops, hype building, pre-save campaigns). Post-release weeks focus on streaming growth, engagement, and outreach.
 
@@ -3503,7 +3581,7 @@ Requirements:
       outreachTargetInstructions = '\nNo specific targets provided. Write 5 general templates with [Name] and [Playlist Name] as placeholders.';
     }
 
-    const outreachResult = await callClaude(`${ctx}
+    const outreachResult = await callClaude(`${ctx}${trends}
 
 Generate outreach messages for this release. IMPORTANT: Use REAL NAMES from the targets provided — do NOT use bracket placeholders like [Name] when a real name is available.
 ${outreachTargetInstructions}
@@ -3532,7 +3610,7 @@ Requirements:
 
     // --- 4. Playlists ---
     markStep('playlists', 'active');
-    const playlistResult = await callClaude(`${ctx}
+    const playlistResult = await callClaude(`${ctx}${trends}
 
 Generate a playlist strategy for this release. Return ONLY valid JSON (no markdown, no code fences):
 {
@@ -3556,7 +3634,7 @@ Requirements:
 
     // --- 5. Action Items ---
     markStep('checklist', 'active');
-    const checklistResult = await callClaude(`${ctx}
+    const checklistResult = await callClaude(`${ctx}${trends}
 
 Generate action item checklists for this release campaign. Return ONLY valid JSON (no markdown, no code fences):
 {
