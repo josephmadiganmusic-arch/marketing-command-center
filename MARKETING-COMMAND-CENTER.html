@@ -1389,6 +1389,45 @@ const USER_EMAIL = '%%USER_EMAIL%%';
 // Scope localStorage per user — prefixes all keys with user ID
 function ukey(key) { return 'u' + USER_ID + '_' + key; }
 
+// Server-backed data persistence — saves to DB and localStorage
+let _serverSaveTimer = null;
+function serverSave(key, value) {
+  // Save to localStorage immediately for fast reads
+  localStorage.setItem(ukey(key), JSON.stringify(value));
+  // Debounce server save to avoid hammering API
+  clearTimeout(_serverSaveTimer);
+  _serverSaveTimer = setTimeout(() => serverFlush(), 1000);
+}
+
+function serverFlush() {
+  clearTimeout(_serverSaveTimer);
+  const keys = ['release_data','release_data_all','artist_profile','mcc_campaign_data','mcc_campaign_song','mcc_campaign_generated','mcc-checklist','registration_progress','bab_releases'];
+  const items = [];
+  for (const k of keys) {
+    const raw = localStorage.getItem(ukey(k));
+    if (raw) items.push({ key: k, value: raw });
+  }
+  if (!items.length) return;
+  navigator.sendBeacon('/api/data/save-batch', new Blob([JSON.stringify({ items })], { type: 'application/json' }));
+}
+
+async function serverLoad() {
+  try {
+    const resp = await fetch('/api/data/load');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    // Merge server data into localStorage (server wins if local is empty)
+    for (const [key, value] of Object.entries(data)) {
+      const localKey = ukey(key);
+      const localVal = localStorage.getItem(localKey);
+      // Server data takes priority if local is missing
+      if (!localVal) {
+        localStorage.setItem(localKey, typeof value === 'string' ? value : JSON.stringify(value));
+      }
+    }
+  } catch(e) { console.warn('Server load failed:', e); }
+}
+
 // ============================
 // DATA
 // ============================
@@ -1785,6 +1824,7 @@ function saveChecklistState() {
   const state = {};
   document.querySelectorAll('.check').forEach((el, i) => { state[i] = el.classList.contains('done'); });
   localStorage.setItem(ukey('mcc-checklist'), JSON.stringify(state));
+  serverSave('mcc-checklist', state);
 }
 
 function loadChecklistState() {
@@ -1934,6 +1974,8 @@ function intakeForceFlush() {
       saved[d.songTitle] = slim;
       localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
     }
+    // Flush everything to server DB
+    serverFlush();
   } catch(e) {}
 }
 
@@ -1967,6 +2009,7 @@ function saveArtistProfile() {
   }
   if (Object.keys(profile).length > 0) {
     localStorage.setItem(ukey('artist_profile'), JSON.stringify(profile));
+    serverSave('artist_profile', profile);
   }
 }
 
@@ -2141,6 +2184,8 @@ function intakeUpdate() {
     }
     // Also update artist profile with sticky fields
     saveArtistProfile();
+    // Sync to server DB
+    serverSave('release_data', d);
   }, 500);
 
   // Save to named releases list — debounce 5 seconds so partial titles don't create junk entries
@@ -4573,10 +4618,13 @@ function showSubscriptionGate() {
   document.body.appendChild(overlay);
 }
 
-migrateOldStorage();
-init();
-adminInit();
-setupTrialBanner();
+// Load data from server DB first, then initialize
+serverLoad().then(() => {
+  migrateOldStorage();
+  init();
+  adminInit();
+  setupTrialBanner();
+});
 </script>
 </body>
 </html>

@@ -47,6 +47,17 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, key)
+  )
+`);
+
 // --- Seed Admin Accounts ---
 const ADMINS = [
   { email: 'josephmadiganmusic@gmail.com', password: 'Bornagainbold123!' },
@@ -172,6 +183,42 @@ app.get('/api/me', (req, res) => {
   }
 
   res.json({ loggedIn: true, ...user, hasAccess: hasAccess(user), trialDaysLeft: daysLeft });
+});
+
+// --- User Data Save/Load (server-side persistence) ---
+app.post('/api/data/save', requireAuth, (req, res) => {
+  const { key, value } = req.body;
+  if (!key) return res.status(400).json({ error: 'Key required' });
+  db.prepare(`
+    INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+  `).run(req.user.id, key, typeof value === 'string' ? value : JSON.stringify(value));
+  res.json({ success: true });
+});
+
+app.post('/api/data/save-batch', requireAuth, (req, res) => {
+  const { items } = req.body;
+  if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'Items array required' });
+  const stmt = db.prepare(`
+    INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+  `);
+  const batch = db.transaction(() => {
+    for (const { key, value } of items) {
+      if (key) stmt.run(req.user.id, key, typeof value === 'string' ? value : JSON.stringify(value));
+    }
+  });
+  batch();
+  res.json({ success: true });
+});
+
+app.get('/api/data/load', requireAuth, (req, res) => {
+  const rows = db.prepare('SELECT key, value FROM user_data WHERE user_id = ?').all(req.user.id);
+  const data = {};
+  for (const row of rows) {
+    try { data[row.key] = JSON.parse(row.value); } catch(e) { data[row.key] = row.value; }
+  }
+  res.json(data);
 });
 
 // --- Stripe Routes ---
