@@ -23,53 +23,40 @@
   body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 20%, rgba(123,47,247,0.08) 0%, transparent 50%), radial-gradient(circle at 70% 80%, rgba(0,212,255,0.05) 0%, transparent 50%); pointer-events: none; }
   .auth-container { width: 100%; max-width: 420px; padding: 24px; position: relative; z-index: 1; }
   .auth-logo { text-align: center; margin-bottom: 40px; position: relative; overflow: visible; }
-  .auth-logo .logo-wrap { position: relative; display: inline-block; animation: flyUp 1.8s cubic-bezier(0.22, 1, 0.36, 1) forwards, hover 3s ease-in-out 2.2s infinite; }
-  .auth-logo img { width: 280px; height: auto; margin-bottom: 16px; filter: drop-shadow(0 0 16px rgba(123,47,247,0.4)) drop-shadow(0 0 40px rgba(0,212,255,0.15)); }
-  /* Wind lines */
-  .wind-lines { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-  .wind-line { position: absolute; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, rgba(0,212,255,0.6), transparent); opacity: 0; }
-  .wind-line:nth-child(1) { width: 60px; top: 30%; left: -30px; animation: windSweep 1.8s 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-  .wind-line:nth-child(2) { width: 80px; top: 50%; left: -50px; animation: windSweep 1.8s 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-  .wind-line:nth-child(3) { width: 45px; top: 70%; left: -20px; animation: windSweep 1.8s 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-  .wind-line:nth-child(4) { width: 55px; top: 40%; right: -40px; left: auto; animation: windSweepR 1.8s 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-  .wind-line:nth-child(5) { width: 70px; top: 65%; right: -30px; left: auto; animation: windSweepR 1.8s 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-  /* Sparkle particles */
-  .sparkle { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #fff; opacity: 0; box-shadow: 0 0 6px rgba(255,255,255,0.8); }
-  .sparkle:nth-child(6) { top: 20%; left: 15%; animation: sparkleFloat 2s 0.8s ease-out forwards; }
-  .sparkle:nth-child(7) { top: 35%; right: 10%; animation: sparkleFloat 2.2s 1s ease-out forwards; }
-  .sparkle:nth-child(8) { top: 55%; left: 25%; animation: sparkleFloat 1.8s 1.2s ease-out forwards; }
-  .sparkle:nth-child(9) { top: 15%; right: 20%; animation: sparkleFloat 2.4s 0.6s ease-out forwards; }
-  .sparkle:nth-child(10) { top: 45%; left: 8%; animation: sparkleFloat 2s 1.4s ease-out forwards; }
+  .auth-logo .logo-wrap { position: relative; display: inline-block; width: 280px; height: 280px; display: flex; align-items: center; justify-content: center; }
+  .auth-logo img { width: 180px; height: auto; filter: drop-shadow(0 0 30px rgba(123,47,247,0.6)) drop-shadow(0 0 60px rgba(0,212,255,0.3)); animation: clFlySpinFloat 4s cubic-bezier(0.22,1,0.36,1) infinite; position: relative; z-index: 2; }
 
-  @keyframes flyUp {
-    0% { transform: translateY(80px) scale(0.7) rotate(-8deg); opacity: 0; filter: blur(4px); }
-    40% { transform: translateY(-20px) scale(1.05) rotate(3deg); opacity: 1; filter: blur(0); }
-    60% { transform: translateY(5px) scale(0.98) rotate(-1deg); opacity: 1; }
-    80% { transform: translateY(-8px) scale(1.02) rotate(1deg); opacity: 1; }
-    100% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+  /* Orbiting rings */
+  .cl-orbit { position: absolute; border: 2px solid transparent; border-radius: 50%; pointer-events: none; }
+  .cl-orbit:nth-child(1) { width: 260px; height: 260px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(123,47,247,0.6); border-right-color: rgba(0,212,255,0.4); animation: clOrbitSpin 2s linear infinite; }
+  .cl-orbit:nth-child(2) { width: 300px; height: 300px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(0,212,255,0.3); border-right-color: rgba(123,47,247,0.2); animation: clOrbitSpin 3s linear infinite reverse; }
+
+  /* Sparkle particles */
+  .cl-sparkles { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .cl-spark { position: absolute; width: 4px; height: 4px; background: #fff; border-radius: 50%; box-shadow: 0 0 8px rgba(255,255,255,0.8), 0 0 16px rgba(123,47,247,0.4); opacity: 0; animation: clSparkle 2.5s ease-in-out infinite; }
+  .cl-spark:nth-child(1) { top: 10%; left: 20%; animation-delay: 0s; }
+  .cl-spark:nth-child(2) { top: 20%; right: 15%; animation-delay: 0.3s; }
+  .cl-spark:nth-child(3) { top: 70%; left: 10%; animation-delay: 0.6s; }
+  .cl-spark:nth-child(4) { top: 80%; right: 20%; animation-delay: 0.9s; }
+  .cl-spark:nth-child(5) { top: 40%; left: 5%; animation-delay: 1.2s; }
+  .cl-spark:nth-child(6) { top: 50%; right: 5%; animation-delay: 1.5s; }
+  .cl-spark:nth-child(7) { top: 15%; left: 50%; animation-delay: 1.8s; }
+  .cl-spark:nth-child(8) { top: 85%; left: 50%; animation-delay: 2.1s; }
+
+  @keyframes clFlySpinFloat {
+    0%   { transform: translateY(0) rotate(0deg) scale(1); }
+    15%  { transform: translateY(-40px) rotate(12deg) scale(1.08); }
+    30%  { transform: translateY(-20px) rotate(-8deg) scale(1.02); }
+    50%  { transform: translateY(-50px) rotate(360deg) scale(1.1); filter: drop-shadow(0 0 50px rgba(123,47,247,0.9)) drop-shadow(0 0 80px rgba(0,212,255,0.5)); }
+    65%  { transform: translateY(-15px) rotate(375deg) scale(1.04); }
+    80%  { transform: translateY(-30px) rotate(368deg) scale(1.06); }
+    100% { transform: translateY(0) rotate(360deg) scale(1); }
   }
-  @keyframes hover {
-    0%, 100% { transform: translateY(0) rotate(0deg); }
-    25% { transform: translateY(-8px) rotate(1deg); }
-    75% { transform: translateY(-4px) rotate(-0.5deg); }
-  }
-  @keyframes windSweep {
-    0% { opacity: 0; transform: translateX(0) translateY(0) scaleX(0.3); }
-    20% { opacity: 0.8; transform: translateX(30px) translateY(-15px) scaleX(1); }
-    60% { opacity: 0.5; transform: translateX(120px) translateY(-40px) scaleX(1.5); }
-    100% { opacity: 0; transform: translateX(200px) translateY(-60px) scaleX(0.5); }
-  }
-  @keyframes windSweepR {
-    0% { opacity: 0; transform: translateX(0) translateY(0) scaleX(0.3); }
-    20% { opacity: 0.8; transform: translateX(-30px) translateY(-15px) scaleX(1); }
-    60% { opacity: 0.5; transform: translateX(-120px) translateY(-40px) scaleX(1.5); }
-    100% { opacity: 0; transform: translateX(-200px) translateY(-60px) scaleX(0.5); }
-  }
-  @keyframes sparkleFloat {
-    0% { opacity: 0; transform: translateY(0) scale(0); }
-    30% { opacity: 1; transform: translateY(-10px) scale(1); }
-    70% { opacity: 0.6; transform: translateY(-30px) scale(0.8); }
-    100% { opacity: 0; transform: translateY(-50px) scale(0); }
+  @keyframes clOrbitSpin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+  @keyframes clSparkle {
+    0%, 100% { opacity: 0; transform: scale(0) translateY(0); }
+    30% { opacity: 1; transform: scale(1.5) translateY(-10px); }
+    60% { opacity: 0.6; transform: scale(1) translateY(-25px); }
   }
   .auth-logo p { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-top: 6px; animation: fadeIn 1s 1.5s both; }
   .auth-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 40px rgba(123,47,247,0.05); }
@@ -113,7 +100,10 @@
   /* ═══ MOBILE ═══ */
   @media (max-width: 480px) {
     .auth-container { padding: 16px; }
-    .auth-logo img { width: 200px; }
+    .auth-logo img { width: 140px; }
+    .auth-logo .logo-wrap { width: 220px; height: 220px; }
+    .cl-orbit:nth-child(1) { width: 200px; height: 200px; }
+    .cl-orbit:nth-child(2) { width: 240px; height: 240px; }
     .auth-logo p { font-size: 11px; letter-spacing: 1.5px; }
     .auth-card { padding: 24px 20px; border-radius: 10px; }
     .auth-tab { padding: 12px 8px; font-size: 12px; min-height: 44px; }
@@ -129,19 +119,13 @@
 <div class="auth-container">
   <div class="auth-logo">
     <div class="logo-wrap">
-      <img src="/logo.png" alt="Rollout Heaven">
-      <div class="wind-lines">
-        <div class="wind-line"></div>
-        <div class="wind-line"></div>
-        <div class="wind-line"></div>
-        <div class="wind-line"></div>
-        <div class="wind-line"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
-        <div class="sparkle"></div>
+      <div class="cl-orbit"></div>
+      <div class="cl-orbit"></div>
+      <div class="cl-sparkles">
+        <div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div>
+        <div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div>
       </div>
+      <img src="/logo.png" alt="Rollout Heaven">
     </div>
     <p>Release Management Platform</p>
   </div>
