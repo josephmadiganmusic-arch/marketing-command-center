@@ -2176,16 +2176,12 @@ function intakeUpdate() {
   clearTimeout(_autosaveTimer);
   _autosaveTimer = setTimeout(() => {
     if (!d) d = intakeGetData();
-    try {
-      localStorage.setItem(ukey('release_data'), JSON.stringify(d));
-    } catch(e) {
-      const slim = Object.assign({}, d, { coverArt: null });
-      try { localStorage.setItem(ukey('release_data'), JSON.stringify(slim)); } catch(e2) {}
-    }
+    const slim = Object.assign({}, d, { coverArt: null });
+    try { localStorage.setItem(ukey('release_data'), JSON.stringify(slim)); } catch(e) {}
     // Also update artist profile with sticky fields
     saveArtistProfile();
     // Sync to server DB
-    serverSave('release_data', d);
+    serverSave('release_data', slim);
   }, 500);
 
   // Save to named releases list — debounce 5 seconds so partial titles don't create junk entries
@@ -2249,7 +2245,16 @@ function intakeSave() {
     const d = intakeGetData();
     if (!d.songTitle) { showToast('Enter a song title first'); return; }
     clearTimeout(_autosaveTimer);
-    intakeAutosave(d);
+    const slim = Object.assign({}, d, { coverArt: null });
+    localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
+    // Save to named releases
+    const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+    saved[d.songTitle] = slim;
+    localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
+    intakeLoadList();
+    saveArtistProfile();
+    serverSave('release_data', slim);
+    serverSave('release_data_all', saved);
     showToast('Release saved!');
   } catch(e) {
     console.error('intakeSave error:', e);
@@ -4563,13 +4568,30 @@ function migrateOldStorage() {
   for (const k of oldKeys) {
     const val = localStorage.getItem(k);
     if (val) {
-      localStorage.setItem(ukey(k), val);
-      localStorage.removeItem(k);
-      found = true;
+      try {
+        // Strip cover art to avoid quota issues
+        let clean = val;
+        if (k === 'release_data' || k === 'release_data_all') {
+          try {
+            const parsed = JSON.parse(val);
+            if (k === 'release_data' && parsed.coverArt) parsed.coverArt = null;
+            if (k === 'release_data_all') {
+              Object.keys(parsed).forEach(rk => { if (parsed[rk]?.coverArt) parsed[rk].coverArt = null; });
+            }
+            clean = JSON.stringify(parsed);
+          } catch(e) {}
+        }
+        localStorage.setItem(ukey(k), clean);
+        localStorage.removeItem(k);
+        found = true;
+      } catch(e) {
+        // Quota exceeded — remove old key to free space and skip
+        localStorage.removeItem(k);
+      }
     }
   }
   localStorage.setItem('_migrated_' + USER_ID, '1');
-  if (found) location.reload(); // reload so init() picks up the migrated data
+  if (found) location.reload();
 }
 
 // ============================
