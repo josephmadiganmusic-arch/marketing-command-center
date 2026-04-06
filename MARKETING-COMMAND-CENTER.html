@@ -1130,16 +1130,12 @@ This track is a powerful declaration of faith. I would be honored if you would c
   <div class="panel" id="panel-claudeai">
     <h2>Music Agent Pro</h2>
     <p class="subtitle">AI-powered content generation, outreach personalization, and analytics.</p>
-    <div class="section">
-      <div class="section-title">API Configuration</div>
-      <div class="ai-key-bar">
-        <input type="password" id="claudeApiKey" placeholder="Music Agent Pro API key (pre-loaded)" />
-        <select id="claudeModel">
-          <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
-          <option value="claude-opus-4-6">claude-opus-4-6</option>
-        </select>
-        <button onclick="saveClaudeKey()">Save Key</button>
-      </div>
+    <div style="display:none;">
+      <input type="password" id="claudeApiKey" />
+      <select id="claudeModel">
+        <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+        <option value="claude-opus-4-6">claude-opus-4-6</option>
+      </select>
     </div>
     <div class="ai-actions">
       <button class="ai-action-btn" onclick="openAiModal('freshContent')"><span class="ai-icon">&#9998;</span>Generate Fresh Content<span class="ai-desc">5 captions + 5 hooks + 3 video concepts</span></button>
