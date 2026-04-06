@@ -3142,18 +3142,28 @@ function exportCalendarICS() {
 }
 
 function renderOutreach() {
-  document.getElementById('curator-messages').innerHTML = curatorMessages.map(m => `
-    <div class="outreach-card">
-      <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.body').textContent,this)">Copy</button>
-      <h4>${m.title}</h4><span class="type-badge">${m.type}</span>
-      <div class="body">${m.body}</div>
-    </div>`).join('');
-  document.getElementById('followup-messages').innerHTML = followupMessages.map(m => `
-    <div class="outreach-card">
-      <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.body').textContent,this)">Copy</button>
-      <h4>${m.title}</h4><span class="type-badge">${m.type}</span>
-      <div class="body">${m.body}</div>
-    </div>`).join('');
+  const cmEl = document.getElementById('curator-messages');
+  if (curatorMessages.length === 0) {
+    cmEl.innerHTML = '<p style="color:var(--text-dim);padding:12px 0;">No outreach messages yet. Generate your campaign with outreach targets filled in to populate personalized messages.</p>';
+  } else {
+    cmEl.innerHTML = curatorMessages.map(m => `
+      <div class="outreach-card">
+        <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.body').textContent,this)">Copy</button>
+        <h4>${esc(m.title)}</h4><span class="type-badge">${esc(m.type)}</span>
+        <div class="body">${esc(m.body)}</div>
+      </div>`).join('');
+  }
+  const fuEl = document.getElementById('followup-messages');
+  if (followupMessages.length === 0) {
+    fuEl.innerHTML = '<p style="color:var(--text-dim);padding:12px 0;">No follow-up templates yet. These will be generated with your campaign.</p>';
+  } else {
+    fuEl.innerHTML = followupMessages.map(m => `
+      <div class="outreach-card">
+        <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.body').textContent,this)">Copy</button>
+        <h4>${esc(m.title)}</h4><span class="type-badge">${esc(m.type)}</span>
+        <div class="body">${esc(m.body)}</div>
+      </div>`).join('');
+  }
   document.getElementById('media-messages').innerHTML = '<p style="font-size:13px;color:#555;">Use the Email Generator tab for the full HTML press email.</p>';
 }
 
