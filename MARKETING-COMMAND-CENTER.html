@@ -2704,6 +2704,7 @@ function intakeSave() {
     serverSave('release_data', slim);
     serverSave('release_data_all', saved);
     showToast('Release saved!');
+    awardXP('release_complete');
   } catch(e) {
     console.error('intakeSave error:', e);
     showToast('Save error — check console');

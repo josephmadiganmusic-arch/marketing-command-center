@@ -112,6 +112,50 @@ function initDb() {
     )
   `);
 
+  // --- Gamification Tables ---
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_xp (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      total_xp INTEGER DEFAULT 0,
+      level INTEGER DEFAULT 1,
+      current_streak INTEGER DEFAULT 0,
+      longest_streak INTEGER DEFAULT 0,
+      last_active_date TEXT,
+      releases_completed INTEGER DEFAULT 0,
+      tasks_completed INTEGER DEFAULT 0,
+      emails_generated INTEGER DEFAULT 0,
+      research_runs INTEGER DEFAULT 0,
+      playlists_submitted INTEGER DEFAULT 0,
+      campaigns_generated INTEGER DEFAULT 0,
+      content_copied INTEGER DEFAULT 0,
+      logins_total INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_achievements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      achievement_id TEXT NOT NULL,
+      unlocked_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, achievement_id)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS xp_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      xp_amount INTEGER NOT NULL,
+      description TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // --- Seed Admin Accounts (passwords from env vars, with fallback) ---
   const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Bornagainbold123!';
   const ADMINS = [
@@ -714,6 +758,276 @@ app.post('/api/support/submit', requireAuth, async (req, res) => {
 app.get('/api/support/my-tickets', requireAuth, (req, res) => {
   const tickets = dbHelpers.prepare('SELECT * FROM support_tickets WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
   res.json({ tickets });
+});
+
+// --- Gamification System ---
+
+// Level thresholds: level N requires LEVEL_XP[N-1] total XP
+const LEVEL_XP = [0, 100, 300, 600, 1000, 1500, 2200, 3000, 4000, 5200, 6500, 8000, 10000, 12500, 15500, 19000, 23000, 27500, 32500, 38000];
+const LEVEL_NAMES = ['Newcomer','Beat Dropper','Vibe Setter','Playlist Pusher','Hook Writer','Content Creator','Trend Spotter','Campaign Runner','Release Pro','Chart Climber','Buzz Builder','Fan Magnet','Brand Builder','Industry Mover','Hit Maker','Platinum Push','Label Ready','Viral Force','Legendary','Hall of Fame'];
+
+// XP values per action
+const XP_VALUES = {
+  login: 10,
+  campaign_generate: 50,
+  task_complete: 15,
+  email_generate: 25,
+  research_run: 20,
+  playlist_submit: 20,
+  content_copy: 5,
+  release_complete: 100,
+  streak_bonus: 25  // bonus per day of streak (3+ days)
+};
+
+// Achievement definitions
+const ACHIEVEMENTS = [
+  // Getting Started
+  { id: 'first_login', name: 'First Steps', desc: 'Log in for the first time', icon: '🚀', category: 'Getting Started', xp: 25 },
+  { id: 'first_campaign', name: 'Campaign Launched', desc: 'Generate your first campaign', icon: '🎯', category: 'Getting Started', xp: 50 },
+  { id: 'first_email', name: 'Inbox Ready', desc: 'Generate your first email', icon: '📧', category: 'Getting Started', xp: 25 },
+  { id: 'first_research', name: 'Scout Mode', desc: 'Run your first research query', icon: '🔍', category: 'Getting Started', xp: 25 },
+  // Consistency
+  { id: 'streak_3', name: 'On a Roll', desc: '3-day login streak', icon: '🔥', category: 'Consistency', xp: 50 },
+  { id: 'streak_7', name: 'Week Warrior', desc: '7-day login streak', icon: '⚡', category: 'Consistency', xp: 100 },
+  { id: 'streak_14', name: 'Unstoppable', desc: '14-day login streak', icon: '💎', category: 'Consistency', xp: 200 },
+  { id: 'streak_30', name: 'Monthly Legend', desc: '30-day login streak', icon: '👑', category: 'Consistency', xp: 500 },
+  // Productivity
+  { id: 'tasks_5', name: 'Task Crusher', desc: 'Complete 5 checklist items', icon: '✅', category: 'Productivity', xp: 50 },
+  { id: 'tasks_25', name: 'Grind Mode', desc: 'Complete 25 checklist items', icon: '💪', category: 'Productivity', xp: 150 },
+  { id: 'tasks_50', name: 'Machine', desc: 'Complete 50 checklist items', icon: '🤖', category: 'Productivity', xp: 300 },
+  { id: 'tasks_100', name: 'Centurion', desc: 'Complete 100 checklist items', icon: '🏆', category: 'Productivity', xp: 500 },
+  // Content & Outreach
+  { id: 'emails_5', name: 'Email Pro', desc: 'Generate 5 emails', icon: '📬', category: 'Outreach', xp: 75 },
+  { id: 'emails_25', name: 'Outreach King', desc: 'Generate 25 emails', icon: '👑', category: 'Outreach', xp: 250 },
+  { id: 'research_10', name: 'Deep Diver', desc: 'Run 10 research queries', icon: '🧠', category: 'Research', xp: 100 },
+  { id: 'research_50', name: 'Intel Master', desc: 'Run 50 research queries', icon: '🕵️', category: 'Research', xp: 300 },
+  { id: 'playlists_10', name: 'Playlist Hunter', desc: 'Submit to 10 playlists', icon: '🎵', category: 'Outreach', xp: 100 },
+  { id: 'playlists_50', name: 'Playlist Legend', desc: 'Submit to 50 playlists', icon: '🎶', category: 'Outreach', xp: 400 },
+  { id: 'content_25', name: 'Content Machine', desc: 'Copy 25 content pieces', icon: '📝', category: 'Content', xp: 75 },
+  { id: 'content_100', name: 'Content Factory', desc: 'Copy 100 content pieces', icon: '🏭', category: 'Content', xp: 250 },
+  // Campaigns & Releases
+  { id: 'campaigns_3', name: 'Triple Threat', desc: 'Generate 3 campaigns', icon: '🎪', category: 'Campaigns', xp: 100 },
+  { id: 'campaigns_10', name: 'Campaign Veteran', desc: 'Generate 10 campaigns', icon: '🎖️', category: 'Campaigns', xp: 300 },
+  { id: 'releases_1', name: 'First Release', desc: 'Complete your first release', icon: '💿', category: 'Releases', xp: 100 },
+  { id: 'releases_5', name: 'Discography Builder', desc: 'Complete 5 releases', icon: '📀', category: 'Releases', xp: 300 },
+  { id: 'releases_10', name: 'Catalog King', desc: 'Complete 10 releases', icon: '🎤', category: 'Releases', xp: 500 },
+  // Levels
+  { id: 'level_5', name: 'Rising Star', desc: 'Reach Level 5', icon: '⭐', category: 'Levels', xp: 100 },
+  { id: 'level_10', name: 'Established', desc: 'Reach Level 10', icon: '🌟', category: 'Levels', xp: 250 },
+  { id: 'level_15', name: 'Elite', desc: 'Reach Level 15', icon: '💫', category: 'Levels', xp: 500 },
+  { id: 'level_20', name: 'Hall of Fame', desc: 'Reach Level 20', icon: '🏛️', category: 'Levels', xp: 1000 },
+  // XP Milestones
+  { id: 'xp_1000', name: 'First Thousand', desc: 'Earn 1,000 XP', icon: '🔋', category: 'XP Milestones', xp: 50 },
+  { id: 'xp_5000', name: 'Five Stack', desc: 'Earn 5,000 XP', icon: '🔥', category: 'XP Milestones', xp: 150 },
+  { id: 'xp_10000', name: 'XP Legend', desc: 'Earn 10,000 XP', icon: '💰', category: 'XP Milestones', xp: 300 },
+];
+
+function getLevel(totalXp) {
+  let level = 1;
+  for (let i = LEVEL_XP.length - 1; i >= 0; i--) {
+    if (totalXp >= LEVEL_XP[i]) { level = i + 1; break; }
+  }
+  return Math.min(level, 20);
+}
+
+function ensureUserXp(userId) {
+  const existing = dbHelpers.prepare('SELECT id FROM user_xp WHERE user_id = ?').get(userId);
+  if (!existing) {
+    dbHelpers.prepare('INSERT INTO user_xp (user_id) VALUES (?)').run(userId);
+  }
+}
+
+function checkAndUnlockAchievements(userId) {
+  const xp = dbHelpers.prepare('SELECT * FROM user_xp WHERE user_id = ?').get(userId);
+  if (!xp) return [];
+  const unlocked = dbHelpers.prepare('SELECT achievement_id FROM user_achievements WHERE user_id = ?').all(userId);
+  const unlockedIds = new Set(unlocked.map(a => a.achievement_id));
+  const newlyUnlocked = [];
+
+  const checks = {
+    first_login: xp.logins_total >= 1,
+    first_campaign: xp.campaigns_generated >= 1,
+    first_email: xp.emails_generated >= 1,
+    first_research: xp.research_runs >= 1,
+    streak_3: xp.current_streak >= 3 || xp.longest_streak >= 3,
+    streak_7: xp.current_streak >= 7 || xp.longest_streak >= 7,
+    streak_14: xp.current_streak >= 14 || xp.longest_streak >= 14,
+    streak_30: xp.current_streak >= 30 || xp.longest_streak >= 30,
+    tasks_5: xp.tasks_completed >= 5,
+    tasks_25: xp.tasks_completed >= 25,
+    tasks_50: xp.tasks_completed >= 50,
+    tasks_100: xp.tasks_completed >= 100,
+    emails_5: xp.emails_generated >= 5,
+    emails_25: xp.emails_generated >= 25,
+    research_10: xp.research_runs >= 10,
+    research_50: xp.research_runs >= 50,
+    playlists_10: xp.playlists_submitted >= 10,
+    playlists_50: xp.playlists_submitted >= 50,
+    content_25: xp.content_copied >= 25,
+    content_100: xp.content_copied >= 100,
+    campaigns_3: xp.campaigns_generated >= 3,
+    campaigns_10: xp.campaigns_generated >= 10,
+    releases_1: xp.releases_completed >= 1,
+    releases_5: xp.releases_completed >= 5,
+    releases_10: xp.releases_completed >= 10,
+    level_5: xp.level >= 5,
+    level_10: xp.level >= 10,
+    level_15: xp.level >= 15,
+    level_20: xp.level >= 20,
+    xp_1000: xp.total_xp >= 1000,
+    xp_5000: xp.total_xp >= 5000,
+    xp_10000: xp.total_xp >= 10000,
+  };
+
+  for (const [achId, met] of Object.entries(checks)) {
+    if (met && !unlockedIds.has(achId)) {
+      const ach = ACHIEVEMENTS.find(a => a.id === achId);
+      if (ach) {
+        dbHelpers.prepare('INSERT OR IGNORE INTO user_achievements (user_id, achievement_id) VALUES (?, ?)').run(userId, achId);
+        // Award bonus XP for achievement
+        const newTotal = xp.total_xp + ach.xp;
+        const newLevel = getLevel(newTotal);
+        dbHelpers.prepare('UPDATE user_xp SET total_xp = ?, level = ? WHERE user_id = ?').run(newTotal, newLevel, userId);
+        dbHelpers.prepare('INSERT INTO xp_log (user_id, action, xp_amount, description) VALUES (?, ?, ?, ?)').run(userId, 'achievement', ach.xp, 'Unlocked: ' + ach.name);
+        xp.total_xp = newTotal;
+        xp.level = newLevel;
+        newlyUnlocked.push(ach);
+      }
+    }
+  }
+  return newlyUnlocked;
+}
+
+// GET gamification state
+app.get('/api/gamification', requireAuth, (req, res) => {
+  ensureUserXp(req.user.id);
+
+  // Update login streak
+  const xp = dbHelpers.prepare('SELECT * FROM user_xp WHERE user_id = ?').get(req.user.id);
+  const today = new Date().toISOString().split('T')[0];
+
+  if (xp.last_active_date !== today) {
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    let newStreak = xp.current_streak;
+    if (xp.last_active_date === yesterday) {
+      newStreak += 1;
+    } else if (xp.last_active_date !== today) {
+      newStreak = 1; // streak broken
+    }
+    const longest = Math.max(xp.longest_streak, newStreak);
+    const loginXp = XP_VALUES.login + (newStreak >= 3 ? XP_VALUES.streak_bonus : 0);
+    const newTotal = xp.total_xp + loginXp;
+    const newLevel = getLevel(newTotal);
+    dbHelpers.prepare('UPDATE user_xp SET last_active_date = ?, current_streak = ?, longest_streak = ?, logins_total = logins_total + 1, total_xp = ?, level = ? WHERE user_id = ?')
+      .run(today, newStreak, longest, newTotal, newLevel, req.user.id);
+    dbHelpers.prepare('INSERT INTO xp_log (user_id, action, xp_amount, description) VALUES (?, ?, ?, ?)').run(req.user.id, 'login', loginXp, 'Daily login' + (newStreak >= 3 ? ' (streak bonus!)' : ''));
+  }
+
+  // Check achievements
+  const newAchievements = checkAndUnlockAchievements(req.user.id);
+
+  // Re-fetch updated data
+  const updated = dbHelpers.prepare('SELECT * FROM user_xp WHERE user_id = ?').get(req.user.id);
+  const achievements = dbHelpers.prepare('SELECT achievement_id, unlocked_at FROM user_achievements WHERE user_id = ?').all(req.user.id);
+  const recentXp = dbHelpers.prepare('SELECT action, xp_amount, description, created_at FROM xp_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 20').all(req.user.id);
+
+  // Calculate level progress
+  const currentLevelXp = LEVEL_XP[updated.level - 1] || 0;
+  const nextLevelXp = LEVEL_XP[updated.level] || LEVEL_XP[LEVEL_XP.length - 1];
+  const progressXp = updated.total_xp - currentLevelXp;
+  const neededXp = nextLevelXp - currentLevelXp;
+
+  res.json({
+    xp: updated.total_xp,
+    level: updated.level,
+    levelName: LEVEL_NAMES[updated.level - 1] || 'Legend',
+    nextLevelName: LEVEL_NAMES[updated.level] || 'Max Level',
+    progressXp,
+    neededXp,
+    progressPercent: neededXp > 0 ? Math.min(100, Math.round((progressXp / neededXp) * 100)) : 100,
+    streak: updated.current_streak,
+    longestStreak: updated.longest_streak,
+    stats: {
+      tasks_completed: updated.tasks_completed,
+      emails_generated: updated.emails_generated,
+      research_runs: updated.research_runs,
+      playlists_submitted: updated.playlists_submitted,
+      campaigns_generated: updated.campaigns_generated,
+      content_copied: updated.content_copied,
+      releases_completed: updated.releases_completed,
+      logins_total: updated.logins_total
+    },
+    achievements: achievements.map(a => {
+      const def = ACHIEVEMENTS.find(d => d.id === a.achievement_id);
+      return { ...def, unlocked_at: a.unlocked_at };
+    }).filter(Boolean),
+    allAchievements: ACHIEVEMENTS,
+    newAchievements,
+    recentXp,
+    levelThresholds: LEVEL_XP,
+    levelNames: LEVEL_NAMES
+  });
+});
+
+// POST award XP for an action
+app.post('/api/gamification/award', requireAuth, (req, res) => {
+  const { action } = req.body;
+  if (!action || !XP_VALUES[action]) return res.status(400).json({ error: 'Invalid action' });
+
+  ensureUserXp(req.user.id);
+  const xp = dbHelpers.prepare('SELECT * FROM user_xp WHERE user_id = ?').get(req.user.id);
+  const amount = XP_VALUES[action];
+  const newTotal = xp.total_xp + amount;
+  const newLevel = getLevel(newTotal);
+  const leveledUp = newLevel > xp.level;
+
+  // Update stat counters
+  const statMap = {
+    campaign_generate: 'campaigns_generated',
+    task_complete: 'tasks_completed',
+    email_generate: 'emails_generated',
+    research_run: 'research_runs',
+    playlist_submit: 'playlists_submitted',
+    content_copy: 'content_copied',
+    release_complete: 'releases_completed'
+  };
+  const statCol = statMap[action];
+  if (statCol) {
+    dbHelpers.prepare(`UPDATE user_xp SET total_xp = ?, level = ?, ${statCol} = ${statCol} + 1 WHERE user_id = ?`).run(newTotal, newLevel, req.user.id);
+  } else {
+    dbHelpers.prepare('UPDATE user_xp SET total_xp = ?, level = ? WHERE user_id = ?').run(newTotal, newLevel, req.user.id);
+  }
+
+  dbHelpers.prepare('INSERT INTO xp_log (user_id, action, xp_amount, description) VALUES (?, ?, ?, ?)').run(req.user.id, action, amount, action.replace(/_/g, ' '));
+
+  // Check for new achievements
+  const newAchievements = checkAndUnlockAchievements(req.user.id);
+
+  // Re-fetch for accurate totals (achievements may have added XP)
+  const final = dbHelpers.prepare('SELECT total_xp, level FROM user_xp WHERE user_id = ?').get(req.user.id);
+  const finalLeveledUp = final.level > xp.level;
+
+  res.json({
+    success: true,
+    xpAwarded: amount,
+    totalXp: final.total_xp,
+    level: final.level,
+    levelName: LEVEL_NAMES[final.level - 1] || 'Legend',
+    leveledUp: finalLeveledUp,
+    newLevel: finalLeveledUp ? final.level : null,
+    newLevelName: finalLeveledUp ? (LEVEL_NAMES[final.level - 1] || 'Legend') : null,
+    newAchievements
+  });
+});
+
+// GET leaderboard (admin)
+app.get('/api/gamification/leaderboard', requireAuth, (req, res) => {
+  const leaders = dbHelpers.prepare(`
+    SELECT u.email, x.total_xp, x.level, x.current_streak, x.tasks_completed, x.campaigns_generated
+    FROM user_xp x JOIN users u ON u.id = x.user_id
+    ORDER BY x.total_xp DESC LIMIT 50
+  `).all();
+  res.json({ leaderboard: leaders });
 });
 
 // --- Claude API Proxy (keeps API key server-side) ---
