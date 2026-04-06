@@ -467,6 +467,7 @@
     .eg-fullscreen-bar .theme-pill { padding: 6px 12px; font-size: 11px; }
     .eg-fullscreen-actions { margin-left: 0; width: 100%; justify-content: center; }
     .eg-fullscreen-frame { max-width: 100%; }
+    .eg-fullscreen-instructions { font-size: 12px !important; padding: 8px 14px !important; }
 
     /* Stat cards */
     .stat-card { padding: 14px; }
@@ -1260,6 +1261,9 @@ This track is a powerful declaration of faith. I would be honored if you would c
         <button class="eg-fullscreen-copy" onclick="egCopyHTML();showToast('HTML copied!')">Copy HTML</button>
         <button class="eg-fullscreen-close" onclick="egCloseFullscreen()">Close</button>
       </div>
+    </div>
+    <div class="eg-fullscreen-instructions" style="width:100%;padding:10px 20px;background:rgba(123,47,247,0.08);border-bottom:1px solid rgba(123,47,247,0.2);text-align:center;font-size:13px;color:#ccc;line-height:1.6;">
+      Click inside the preview below, then <strong style="color:#00d4ff;">Ctrl+A</strong> (Windows) or <strong style="color:#00d4ff;">Cmd+A</strong> (Mac) to select all, then <strong style="color:#00d4ff;">Ctrl+C</strong> / <strong style="color:#00d4ff;">Cmd+C</strong> to copy. Paste directly into Gmail Compose.
     </div>
     <iframe class="eg-fullscreen-frame" id="egFullscreenFrame"></iframe>
   </div>
@@ -3356,6 +3360,8 @@ function egGenerateEmail() {
   doc.open(); doc.write(egGeneratedHTML); doc.close();
   document.getElementById('egCodeContent').textContent = egGeneratedHTML;
   showToast('Email generated!');
+  // Auto-open fullscreen preview
+  egOpenFullscreen();
 }
 
 function egCopyHTML() { if(!egGeneratedHTML) egGenerateEmail(); navigator.clipboard.writeText(egGeneratedHTML).then(()=>showToast('HTML copied!')); }
