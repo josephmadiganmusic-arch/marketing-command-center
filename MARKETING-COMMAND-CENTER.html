@@ -2326,7 +2326,9 @@ function intakeGetData() {
     matRadioEdit: c('in-matRadioEdit'), matPressPhotos: c('in-matPressPhotos'), matBio: c('in-matBio'),
     matInstrumental: c('in-matInstrumental'), matAcapella: c('in-matAcapella'), matMusicVideo: c('in-matMusicVideo'),
     matLyrics: c('in-matLyrics'), matInterview: c('in-matInterview'),
-    coverArt: inCoverData
+    coverArt: inCoverData,
+    targetCurators: v('gen-curators'), targetPlaylists: v('gen-playlists'),
+    targetBlogs: v('gen-blogs'), targetPodcasts: v('gen-podcasts'), targetCollabs: v('gen-collabs')
   };
 }
 
@@ -2735,6 +2737,9 @@ function intakeFillForm(d) {
   document.getElementById('in-matMusicVideo').checked = !!d.matMusicVideo;
   document.getElementById('in-matLyrics').checked = !!d.matLyrics;
   document.getElementById('in-matInterview').checked = !!d.matInterview;
+  setVal('gen-curators', d.targetCurators); setVal('gen-playlists', d.targetPlaylists);
+  setVal('gen-blogs', d.targetBlogs); setVal('gen-podcasts', d.targetPodcasts);
+  setVal('gen-collabs', d.targetCollabs);
   document.getElementById('in-songwriterRows').innerHTML = '';
   (d.songwriters || []).forEach(() => intakeAddSongwriter());
   document.querySelectorAll('#in-songwriterRows .dynamic-row').forEach((row, i) => {
@@ -2811,6 +2816,9 @@ function intakeClear() {
   ['in-instrumental','in-matRadioEdit','in-matPressPhotos','in-matBio',
    'in-matInstrumental','in-matAcapella','in-matMusicVideo','in-matLyrics','in-matInterview'
   ].forEach(id => { const el = document.getElementById(id); if (el) el.checked = false; });
+  ['gen-curators','gen-playlists','gen-blogs','gen-podcasts','gen-collabs'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
   inClearCover({ stopPropagation: () => {} });
   // Pre-fill sticky fields from saved artist profile
   prefillFromProfile();
@@ -4813,7 +4821,7 @@ function init() {
   const currentSong = intakeGetData().songTitle || '';
   // Verify the release actually has real campaign content (not stale/empty data)
   const hasRealContent = hooks.length > 0 || captions.length > 0 || Object.keys(calendarData).length > 0;
-  // Also check the per-release flag
+  // Also check the per-release flag stored in release_data_all
   const allReleases = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
   const releaseRecord = allReleases[currentSong];
   const releaseHasCampaign = releaseRecord && releaseRecord._campaignGenerated === true;
@@ -4823,15 +4831,12 @@ function init() {
     btn.textContent = 'RE-GENERATE CAMPAIGN';
     btn.style.background = 'linear-gradient(135deg, #2a6b2a, #3a8a3a)';
     btn.style.color = '#fff';
-    document.getElementById('generateStatus').innerHTML = `<div class="step done">\u2713 Campaign generated for "${esc(campaignSong)}"</div>`;
+    document.getElementById('generateStatus').innerHTML = `<div class="step done">\u2713 Campaign generated for "${esc(currentSong)}"</div>`;
   } else {
     // No campaign for this release — clear stale data and lock
     campaignGenerated = false;
+    applyCampaignData({});
     lockTabs();
-    if (campaignSong && campaignSong !== currentSong) {
-      // Clear the global campaign data so it doesn't bleed into wrong release
-      applyCampaignData({});
-    }
   }
 
   renderHooks(); renderCaptions(); renderHashtags(); renderCTAs();
