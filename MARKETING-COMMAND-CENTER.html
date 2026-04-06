@@ -1001,8 +1001,6 @@
             <div class="form-group"><label>Facebook</label><input type="text" id="in-facebook" oninput="intakeUpdate()" placeholder="https://facebook.com/..."></div>
             <div class="form-group"><label>TikTok</label><input type="text" id="in-tiktok" oninput="intakeUpdate()" placeholder="https://tiktok.com/@..."></div>
             <div class="form-group"><label>Twitter / X</label><input type="text" id="in-twitter" oninput="intakeUpdate()" placeholder="https://x.com/..."></div>
-            <div class="form-group"><label>WAV Download URL</label><input type="text" id="in-dlWav" oninput="intakeUpdate()" placeholder="https://drive.google.com/..."></div>
-            <div class="form-group"><label>MP3 Download URL</label><input type="text" id="in-dlMp3" oninput="intakeUpdate()" placeholder="https://drive.google.com/..."></div>
             <div class="form-group full-width"><label>Press Kit Download URL</label><input type="text" id="in-dlPressKit" oninput="intakeUpdate()" placeholder="https://drive.google.com/..."></div>
           </div>
         </div>
@@ -1452,7 +1450,7 @@
   <!-- CALENDAR -->
   <div class="panel" id="panel-calendar">
     <h2>30-Day Content Calendar</h2>
-    <p class="subtitle">April 3 - May 3, 2026 | 5 posts/week + daily Stories</p>
+    <p class="subtitle">30-day rollout plan | 5 posts/week + daily Stories</p>
     <div class="inline-ai-section">
       <div class="section-title">AI Content Generation</div>
       <div class="inline-ai-btn-row">
@@ -2188,32 +2186,7 @@ function inClearCover(e) {
   intakeUpdate();
 }
 
-function inHandleAudio(input, type) {
-  const file = input.files[0]; if (!file) return;
-  const cap = type.charAt(0).toUpperCase() + type.slice(1);
-  document.getElementById('in' + cap + 'Label').textContent = file.name;
-  document.getElementById('in' + cap + 'Name').textContent = file.name;
-  const reader = new FileReader();
-  reader.onload = e => {
-    document.getElementById('in' + cap + 'Audio').src = e.target.result;
-    document.getElementById('in' + cap + 'Preview').style.display = 'block';
-    document.getElementById('in' + cap + 'Zone').classList.add('has-file');
-    document.getElementById('in' + cap + 'Clear').style.display = 'inline-block';
-  };
-  reader.readAsDataURL(file);
-}
-
-function inClearAudio(e, type) {
-  e.stopPropagation();
-  const cap = type.charAt(0).toUpperCase() + type.slice(1);
-  document.getElementById('in' + cap + 'Input').value = '';
-  document.getElementById('in' + cap + 'Label').textContent = 'Click to upload ' + type.toUpperCase();
-  document.getElementById('in' + cap + 'Name').textContent = '';
-  document.getElementById('in' + cap + 'Audio').src = '';
-  document.getElementById('in' + cap + 'Preview').style.display = 'none';
-  document.getElementById('in' + cap + 'Zone').classList.remove('has-file');
-  document.getElementById('in' + cap + 'Clear').style.display = 'none';
-}
+// Audio upload functions removed — replaced with Google Drive link fields
 
 function intakeAddSongwriter() {
   const c = document.getElementById('in-songwriterRows');
@@ -2274,7 +2247,7 @@ function intakeGetData() {
     linkSpotify: v('in-linkSpotify'), linkApple: v('in-linkApple'), linkYTMusic: v('in-linkYTMusic'),
     linkYTVideo: v('in-linkYTVideo'), epk: v('in-epk'), website: v('in-website'),
     instagram: v('in-instagram'), facebook: v('in-facebook'), tiktok: v('in-tiktok'), twitter: v('in-twitter'),
-    dlWav: v('in-dlWav'), dlMp3: v('in-dlMp3'), dlPressKit: v('in-dlPressKit'),
+    dlWav: v('in-dlWavDirect'), dlMp3: v('in-dlMp3Direct'), dlPressKit: v('in-dlPressKit'),
     dlWavDirect: v('in-dlWavDirect'), dlMp3Direct: v('in-dlMp3Direct'),
     bio: v('in-bio'), emailIntro: v('in-emailIntro'),
     matRadioEdit: c('in-matRadioEdit'), matPressPhotos: c('in-matPressPhotos'), matBio: c('in-matBio'),
@@ -2681,8 +2654,8 @@ function intakeFillForm(d) {
   setVal('in-epk', d.epk); setVal('in-website', d.website);
   setVal('in-instagram', d.instagram); setVal('in-facebook', d.facebook);
   setVal('in-tiktok', d.tiktok); setVal('in-twitter', d.twitter);
-  setVal('in-dlWav', d.dlWav); setVal('in-dlMp3', d.dlMp3); setVal('in-dlPressKit', d.dlPressKit);
-  setVal('in-dlWavDirect', d.dlWavDirect); setVal('in-dlMp3Direct', d.dlMp3Direct);
+  setVal('in-dlPressKit', d.dlPressKit);
+  setVal('in-dlWavDirect', d.dlWavDirect || d.dlWav); setVal('in-dlMp3Direct', d.dlMp3Direct || d.dlMp3);
   setVal('in-bio', d.bio); setVal('in-emailIntro', d.emailIntro);
   document.getElementById('in-matRadioEdit').checked = !!d.matRadioEdit;
   document.getElementById('in-matPressPhotos').checked = !!d.matPressPhotos;
@@ -3158,8 +3131,7 @@ function renderChecklist(elId, items) {
 let egCurrentTheme = 'dark';
 let egGeneratedHTML = '';
 let egCoverArtData = null;
-let egMp3Data = null;
-let egWavData = null;
+// egMp3Data/egWavData removed — audio now shared via Google Drive links
 
 const egThemes = {
   dark: { bg:'#080b1e',containerBg:'#0f1332',containerBorder:'#1a1f4a',accent:'#7b2ff7',accentGrad:'linear-gradient(90deg,#7b2ff7,#00d4ff,#7b2ff7)',accentGradBtn:'linear-gradient(135deg,#7b2ff7,#00d4ff)',textPrimary:'#ffffff',textSecondary:'#cccccc',textMuted:'#6b7094',textDim:'#6b7094',cardBg:'#0f1332',cardBorder:'#1a1f4a',divider:'#1a1f4a',btnText:'#ffffff',footerText:'#6b7094' },
@@ -3218,52 +3190,7 @@ function egClearCoverArt(e) {
   document.getElementById('egCoverClearBtn').style.display = 'none';
 }
 
-function egHandleAudioFile(input, type) {
-  const file = input.files[0]; if(!file) return;
-  const cap = type.charAt(0).toUpperCase()+type.slice(1);
-  const zone = document.getElementById('eg'+cap+'Zone');
-  const nameEl = document.getElementById('eg'+cap+'Name');
-  const sizeEl = document.getElementById('eg'+cap+'Size');
-  const labelEl = document.getElementById('eg'+cap+'Label');
-  const progressEl = document.getElementById('eg'+cap+'Progress');
-  const progressFill = document.getElementById('eg'+cap+'ProgressFill');
-  const previewEl = document.getElementById('eg'+cap+'Preview');
-  const audioEl = document.getElementById('eg'+cap+'Audio');
-  const clearBtn = document.getElementById('eg'+cap+'ClearBtn');
-  nameEl.textContent = file.name; sizeEl.textContent = egFormatBytes(file.size);
-  labelEl.textContent = 'Processing...';
-  progressEl.classList.add('active'); progressFill.style.width = '0%';
-  const reader = new FileReader();
-  reader.onprogress = e => { if(e.lengthComputable) progressFill.style.width = Math.round(e.loaded/e.total*100)+'%'; };
-  reader.onload = e => {
-    const data = { name:file.name, size:file.size, base64:e.target.result };
-    if(type==='mp3') egMp3Data=data; else egWavData=data;
-    progressFill.style.width = '100%';
-    setTimeout(() => {
-      progressEl.classList.remove('active');
-      zone.classList.add('has-file');
-      labelEl.textContent = file.name;
-      clearBtn.style.display = 'inline-block';
-      audioEl.src = e.target.result;
-      previewEl.style.display = 'block';
-    }, 300);
-  };
-  reader.readAsDataURL(file);
-}
-
-function egClearAudioFile(e, type) {
-  e.stopPropagation();
-  if(type==='mp3') egMp3Data=null; else egWavData=null;
-  const cap = type.charAt(0).toUpperCase()+type.slice(1);
-  document.getElementById('eg'+cap+'Input').value = '';
-  document.getElementById('eg'+cap+'Name').textContent = '';
-  document.getElementById('eg'+cap+'Size').textContent = '';
-  document.getElementById('eg'+cap+'Label').textContent = 'Click to upload '+type.toUpperCase();
-  document.getElementById('eg'+cap+'Zone').classList.remove('has-file');
-  document.getElementById('eg'+cap+'Preview').style.display = 'none';
-  document.getElementById('eg'+cap+'Audio').src = '';
-  document.getElementById('eg'+cap+'ClearBtn').style.display = 'none';
-}
+// Audio upload functions removed — replaced with Google Drive link fields
 
 function egSetTheme(theme, btn) {
   egCurrentTheme = theme;
@@ -3358,7 +3285,7 @@ function egGatherFormData() {
     dlPressKit: document.getElementById('egDlPressKit').value.trim(),
     coverArt: egCoverArtData,
     musicVideo: document.getElementById('egLinkMusicVideo').value.trim(),
-    hasMp3: !!egMp3Data, hasWav: !!egWavData
+    hasMp3: false, hasWav: false
   };
 }
 
@@ -3543,7 +3470,7 @@ function egDownloadHTML() {
 
 function egGenerateDownloadPage() {
   const hasDlLinks = document.getElementById('egDlMp3').value.trim() || document.getElementById('egDlWav').value.trim();
-  if(!egMp3Data && !egWavData && !hasDlLinks) { showToast('Add Google Drive links for your audio files first!'); return; }
+  if(!hasDlLinks) { showToast('Add Google Drive links for your audio files first!'); return; }
   const t = egThemes[egCurrentTheme]; const data = egGatherFormData();
   let audioSection = '';
   if(egMp3Data) audioSection += `<div style="background:${t.cardBg};border:1px solid ${t.cardBorder};border-radius:12px;padding:24px;margin-bottom:16px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;"><div><div style="font-size:11px;letter-spacing:2px;color:${t.accent};text-transform:uppercase;font-weight:600;">MP3</div><div style="font-size:14px;color:${t.textPrimary};margin-top:4px;font-weight:600;">${egEscHtml(egMp3Data.name)}</div><div style="font-size:12px;color:${t.textMuted};margin-top:2px;">${egFormatBytes(egMp3Data.size)}</div></div><a href="${egMp3Data.base64}" download="${egEscHtml(egMp3Data.name)}" style="display:inline-block;padding:12px 28px;background:${t.accentGradBtn};color:${t.btnText};text-decoration:none;border-radius:8px;font-size:14px;font-weight:700;">&#11015; Download MP3</a></div><audio controls style="width:100%;border-radius:8px;" preload="metadata"><source src="${egMp3Data.base64}" type="audio/mpeg"></audio></div>`;
@@ -3612,18 +3539,14 @@ function egDeleteSavedRelease() {
 }
 
 function egInitDragDrop() {
-  ['egCoverArtZone','egMp3Zone','egWavZone'].forEach(zoneId => {
-    const zone = document.getElementById(zoneId); if(!zone) return;
-    zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor='#7b2ff7'; });
-    zone.addEventListener('dragleave', () => { if(!zone.classList.contains('has-file')) zone.style.borderColor='#2a2a2a'; });
-    zone.addEventListener('drop', e => {
-      e.preventDefault();
-      zone.style.borderColor = zone.classList.contains('has-file') ? '#7b2ff7' : '#1a1f4a';
-      const file = e.dataTransfer.files[0]; if(!file) return;
-      if(zoneId==='egCoverArtZone' && file.type.startsWith('image/')) { const input=document.getElementById('egCoverArtInput'); const dt=new DataTransfer(); dt.items.add(file); input.files=dt.files; egHandleCoverArt(input); }
-      else if(zoneId==='egMp3Zone' && (file.type==='audio/mpeg'||file.name.endsWith('.mp3'))) { const input=document.getElementById('egMp3Input'); const dt=new DataTransfer(); dt.items.add(file); input.files=dt.files; egHandleAudioFile(input,'mp3'); }
-      else if(zoneId==='egWavZone' && (file.type.includes('wav')||file.name.endsWith('.wav'))) { const input=document.getElementById('egWavInput'); const dt=new DataTransfer(); dt.items.add(file); input.files=dt.files; egHandleAudioFile(input,'wav'); }
-    });
+  const zone = document.getElementById('egCoverArtZone'); if(!zone) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor='#7b2ff7'; });
+  zone.addEventListener('dragleave', () => { if(!zone.classList.contains('has-file')) zone.style.borderColor='#2a2a2a'; });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.style.borderColor = zone.classList.contains('has-file') ? '#7b2ff7' : '#1a1f4a';
+    const file = e.dataTransfer.files[0]; if(!file) return;
+    if(file.type.startsWith('image/')) { const input=document.getElementById('egCoverArtInput'); const dt=new DataTransfer(); dt.items.add(file); input.files=dt.files; egHandleCoverArt(input); }
   });
 }
 
