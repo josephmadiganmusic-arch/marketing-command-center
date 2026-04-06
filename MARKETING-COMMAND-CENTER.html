@@ -74,10 +74,11 @@
   .checklist li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(26,31,74,0.5); font-size: 14px; color: #ccc; transition: background 0.2s; }
   .checklist li:hover { background: rgba(123,47,247,0.03); }
   .checklist li:last-child { border-bottom: none; }
-  .check { width: 22px; height: 22px; border: 2px solid var(--border); border-radius: 6px; flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; }
-  .check:hover { border-color: var(--accent-1); box-shadow: var(--glow-purple); }
+  .check { width: 22px; height: 22px; border: 2px solid #7b2ff7; border-radius: 6px; flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; background: rgba(123,47,247,0.1); box-shadow: 0 0 8px rgba(123,47,247,0.35); }
+  .check::after { content: ''; width: 10px; height: 10px; border-radius: 3px; background: transparent; transition: all 0.3s ease; }
+  .check:hover { border-color: var(--accent-2); box-shadow: 0 0 14px rgba(123,47,247,0.5), 0 0 20px rgba(0,212,255,0.2); background: rgba(123,47,247,0.18); }
   .check.done { background: var(--gradient-primary); border-color: var(--accent-1); box-shadow: var(--glow-purple); }
-  .check.done::after { content: '\2713'; color: #fff; font-size: 14px; font-weight: 700; }
+  .check.done::after { content: '\2713'; width: auto; height: auto; border-radius: 0; background: transparent; color: #fff; font-size: 14px; font-weight: 700; }
   .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
   .stat-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 20px; text-align: center; transition: all 0.3s ease; }
   .stat-card:hover { border-color: var(--accent-1); transform: translateY(-3px); box-shadow: var(--glow-purple); }
@@ -1543,11 +1544,16 @@
         </div>
       </div>
     </div>
-    <div class="tabs" style="margin:16px 0;">
-      <button class="tab active" id="calWeekTab1" onclick="showWeek(1,this)">Week 1: Pre-Release</button>
-      <button class="tab" id="calWeekTab2" onclick="showWeek(2,this)">Week 2: Release</button>
-      <button class="tab" id="calWeekTab3" onclick="showWeek(3,this)">Week 3: Growth</button>
-      <button class="tab" id="calWeekTab4" onclick="showWeek(4,this)">Week 4: Momentum</button>
+    <div style="display:flex;align-items:center;gap:12px;margin:16px 0;flex-wrap:wrap;">
+      <div class="tabs" style="margin:0;flex:1;">
+        <button class="tab active" id="calWeekTab1" onclick="showWeek(1,this)">Week 1: Pre-Release</button>
+        <button class="tab" id="calWeekTab2" onclick="showWeek(2,this)">Week 2: Release</button>
+        <button class="tab" id="calWeekTab3" onclick="showWeek(3,this)">Week 3: Growth</button>
+        <button class="tab" id="calWeekTab4" onclick="showWeek(4,this)">Week 4: Momentum</button>
+      </div>
+      <button class="btn-save" onclick="exportCalendarICS()" title="Download .ics file to import into Google Calendar, Outlook, or Apple Calendar" style="padding:10px 18px;white-space:nowrap;border-color:#4a5080;">
+        &#128197; Export to Google Calendar
+      </button>
     </div>
     <div id="calendar-content"></div>
   </div><!-- end panel-calendar -->
@@ -3043,16 +3049,88 @@ function showWeek(num, btn) {
 function renderCalendar(week) {
   const data = calendarData[week];
   const el = document.getElementById('calendar-content');
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    el.innerHTML = '<p style="color:var(--text-dim);padding:24px;text-align:center;">No calendar data for this week yet. Generate your campaign to populate the calendar.</p>';
+    return;
+  }
   el.innerHTML = `<table class="calendar-table">
     <thead><tr><th>Day</th><th>Platform</th><th>Type</th><th>Content</th><th>CTA</th></tr></thead>
     <tbody>${data.map(d => `<tr>
-      <td class="day-label">${d.day}</td>
-      <td>${d.platform}</td>
-      <td><strong>${d.type}</strong></td>
-      <td>${d.content}</td>
-      <td style="color:#00d4ff;">${d.cta}</td>
+      <td class="day-label">${esc(d.day || '')}</td>
+      <td>${esc(d.platform || '')}</td>
+      <td><strong>${esc(d.type || '')}</strong></td>
+      <td>${esc(d.content || '')}</td>
+      <td style="color:#00d4ff;">${esc(d.cta || '')}</td>
     </tr>`).join('')}</tbody>
   </table>`;
+}
+
+function exportCalendarICS() {
+  // Collect all calendar entries across all weeks
+  const allEvents = [];
+  const d = intakeGetData();
+  const releaseDate = d.releaseDate ? new Date(d.releaseDate + 'T00:00:00') : new Date();
+  // Week 1 starts 7 days before release, or at release if no date
+  const calStart = new Date(releaseDate);
+  calStart.setDate(calStart.getDate() - 7);
+
+  for (let week = 1; week <= 4; week++) {
+    const weekData = calendarData[week];
+    if (!weekData || !Array.isArray(weekData)) continue;
+    weekData.forEach((entry, idx) => {
+      // Parse the day label to figure out the date offset
+      const weekOffset = (week - 1) * 7;
+      const dayOffset = weekOffset + idx;
+      const eventDate = new Date(calStart);
+      eventDate.setDate(eventDate.getDate() + dayOffset);
+      allEvents.push({
+        date: eventDate,
+        summary: `[${entry.platform}] ${entry.type}`,
+        description: `${entry.content}${entry.cta ? '\\n\\nCTA: ' + entry.cta : ''}`,
+        platform: entry.platform
+      });
+    });
+  }
+
+  if (allEvents.length === 0) {
+    showToast('Generate your campaign first to export calendar');
+    return;
+  }
+
+  // Build ICS file
+  function icsDate(d) {
+    return d.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'').slice(0,8);
+  }
+  function icsEscape(s) {
+    return (s || '').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+  }
+  const now = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');
+  let ics = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Rollout Heaven//Content Calendar//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:${icsEscape(d.songTitle || 'Release')} - Rollout Calendar\r\n`;
+
+  allEvents.forEach((ev, i) => {
+    ics += `BEGIN:VEVENT\r\n`;
+    ics += `DTSTART;VALUE=DATE:${icsDate(ev.date)}\r\n`;
+    ics += `DTEND;VALUE=DATE:${icsDate(ev.date)}\r\n`;
+    ics += `SUMMARY:${icsEscape(ev.summary)}\r\n`;
+    ics += `DESCRIPTION:${icsEscape(ev.description)}\r\n`;
+    ics += `UID:rollout-heaven-${icsDate(ev.date)}-${i}@rolloutheaven.com\r\n`;
+    ics += `DTSTAMP:${now}\r\n`;
+    ics += `END:VEVENT\r\n`;
+  });
+
+  ics += `END:VCALENDAR\r\n`;
+
+  // Download the file
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(d.songTitle || 'rollout').replace(/[^a-zA-Z0-9]/g,'-')}-content-calendar.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Calendar downloaded! Import the .ics file into Google Calendar, Outlook, or Apple Calendar.');
 }
 
 function renderOutreach() {
@@ -3092,8 +3170,13 @@ function renderPlaylists() {
 }
 
 function renderChecklist(elId, items) {
-  document.getElementById(elId).innerHTML = items.map(item =>
-    `<li><div class="check" onclick="toggleCheck(this)"></div>${item}</li>`).join('');
+  const el = document.getElementById(elId);
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    el.innerHTML = '<li style="color:var(--text-dim);padding:8px 0;">No items yet. Generate your campaign to populate action items.</li>';
+    return;
+  }
+  el.innerHTML = items.map(item =>
+    `<li><div class="check" onclick="toggleCheck(this)"></div><span>${esc(item)}</span></li>`).join('');
 }
 
 // ============================
@@ -3681,7 +3764,7 @@ async function callClaude(userMessage) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, max_tokens:4096, system:buildSystemPrompt(), messages:[{role:'user',content:userMessage}] })
   });
-  if(!response.ok) { const err = await response.text(); throw new Error('Server error — please try again in a moment'); }
+  if(!response.ok) { const err = await response.text(); throw new Error('Server error (' + response.status + ') — please try again in a moment'); }
   const data = await response.json();
   if (!data.content || !data.content[0]) throw new Error('Empty response — please try again');
   return data.content[0].text;
@@ -4045,7 +4128,7 @@ async function callClaudeWithRetry(prompt, retries = 2) {
     try {
       return await callClaude(prompt);
     } catch(err) {
-      const is502 = err.message && (err.message.includes('502') || err.message.includes('503') || err.message.includes('failed to respond'));
+      const is502 = err.message && (err.message.includes('502') || err.message.includes('503') || err.message.includes('500') || err.message.includes('Server error') || err.message.includes('failed to respond'));
       if (is502 && attempt < retries) {
         const wait = (attempt + 1) * 5000;
         clSetLiveStatus('Server busy — retrying in ' + ((wait/1000)|0) + 's...', 'Attempt ' + (attempt+2) + ' of ' + (retries+1));
