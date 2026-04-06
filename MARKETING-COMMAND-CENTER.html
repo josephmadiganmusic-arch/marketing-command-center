@@ -4274,6 +4274,26 @@ if (aiScanZone) {
 }
 
 // ============================
+// ONE-TIME MIGRATION: copy old un-prefixed localStorage to user-scoped keys
+// ============================
+function migrateOldStorage() {
+  if (localStorage.getItem('_migrated_' + USER_ID)) return; // already done
+  const oldKeys = ['release_data','release_data_all','mcc_campaign_data','mcc_campaign_song',
+    'mcc_campaign_generated','mcc-checklist','registration_progress','bab_releases','claude_api_key'];
+  let found = false;
+  for (const k of oldKeys) {
+    const val = localStorage.getItem(k);
+    if (val) {
+      localStorage.setItem(ukey(k), val);
+      localStorage.removeItem(k);
+      found = true;
+    }
+  }
+  localStorage.setItem('_migrated_' + USER_ID, '1');
+  if (found) location.reload(); // reload so init() picks up the migrated data
+}
+
+// ============================
 // TRIAL BANNER & SUBSCRIPTION GATE
 // ============================
 function setupTrialBanner() {
@@ -4319,6 +4339,7 @@ function showSubscriptionGate() {
   document.body.appendChild(overlay);
 }
 
+migrateOldStorage();
 init();
 setupTrialBanner();
 </script>
