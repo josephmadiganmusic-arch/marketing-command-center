@@ -375,6 +375,7 @@
     <button class="tab" onclick="showPanel('calendar')">Calendar</button>
     <button class="tab" onclick="showPanel('checklist')">Action Items</button>
     <button class="tab" onclick="showPanel('claudeai')">Music Agent Pro</button>
+    <button class="tab" id="adminTab" style="display:none;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;font-weight:700;" onclick="showPanel('admin')">Master Admin</button>
   </div>
 
   <div class="site-layout">
@@ -1231,6 +1232,46 @@ This track is a powerful declaration of faith. I would be honored if you would c
     <div id="aiResultsArea"></div>
   </div><!-- end panel-claudeai -->
 
+  <!-- MASTER ADMIN TAB (admin only) -->
+  <div class="panel" id="panel-admin">
+    <h2>Master Admin</h2>
+    <p class="subtitle">Platform analytics, user management, and support tickets.</p>
+
+    <!-- Analytics Stats -->
+    <div class="section">
+      <div class="section-title">Platform Analytics</div>
+      <div class="stat-grid" id="adminStats">
+        <div class="stat-card"><div class="num" id="stat-total">—</div><div class="label">Total Users</div></div>
+        <div class="stat-card"><div class="num" id="stat-active">—</div><div class="label">Active Subs</div></div>
+        <div class="stat-card"><div class="num" id="stat-trialing">—</div><div class="label">In Trial</div></div>
+        <div class="stat-card"><div class="num" id="stat-expired">—</div><div class="label">Expired / Inactive</div></div>
+      </div>
+    </div>
+
+    <!-- User List -->
+    <div class="section">
+      <div class="section-title">All Users</div>
+      <div style="overflow-x:auto;">
+        <table class="calendar-table" style="width:100%;">
+          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Trial Ends</th><th>Joined</th></tr></thead>
+          <tbody id="adminUserList"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Support Tickets -->
+    <div class="section">
+      <div class="section-title">Support Tickets</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button class="btn-action" onclick="adminLoadTickets('all')" style="font-size:12px;padding:6px 14px;">All</button>
+        <button class="btn-action" onclick="adminLoadTickets('open')" style="font-size:12px;padding:6px 14px;">Open</button>
+        <button class="btn-action" onclick="adminLoadTickets('escalated')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#ff4444,#ff6b6b);color:#fff;">Escalated</button>
+        <button class="btn-action" onclick="adminLoadTickets('resolved')" style="font-size:12px;padding:6px 14px;">Resolved</button>
+      </div>
+      <div id="adminTicketList" style="display:flex;flex-direction:column;gap:12px;"></div>
+    </div>
+  </div><!-- end panel-admin -->
+
   </div><!-- end site-panels -->
 
   <!-- GLOBAL METADATA SIDEBAR — visible on every tab -->
@@ -1687,7 +1728,7 @@ const regPlatforms = [
 // ============================
 // CORE UI
 // ============================
-const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai'];
+const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','admin'];
 let campaignGenerated = false;
 
 function lockTabs() {
@@ -1703,8 +1744,8 @@ function unlockTabs() {
 }
 
 function showPanel(id) {
-  // Block locked tabs (except intake)
-  if (id !== 'intake' && !campaignGenerated) {
+  // Block locked tabs (except intake and admin)
+  if (id !== 'intake' && id !== 'admin' && !campaignGenerated) {
     showToast('Generate your campaign first to unlock all tabs');
     return;
   }
@@ -1715,6 +1756,7 @@ function showPanel(id) {
   });
   if (id === 'registration') renderRegCards();
   if (id === 'emailgen') egLoadFromIntake(true);
+  if (id === 'admin') adminLoadData();
 }
 
 function showToast(msg) {
@@ -4318,6 +4360,129 @@ if (aiScanZone) {
 }
 
 // ============================
+// MASTER ADMIN FUNCTIONS
+// ============================
+let _adminTicketsCache = [];
+
+function adminInit() {
+  if (USER_ROLE !== 'admin') return;
+  document.getElementById('adminTab').style.display = '';
+  // Auto-load data when admin tab is shown
+}
+
+async function adminLoadData() {
+  try {
+    const resp = await fetch('/api/admin/users');
+    if (!resp.ok) return;
+    const { users, stats } = await resp.json();
+
+    // Stats
+    document.getElementById('stat-total').textContent = stats.total;
+    document.getElementById('stat-active').textContent = stats.active;
+    document.getElementById('stat-trialing').textContent = stats.trialing;
+    document.getElementById('stat-expired').textContent = stats.expired;
+
+    // User table
+    const tbody = document.getElementById('adminUserList');
+    tbody.innerHTML = users.map(u => {
+      const statusColor = u.role === 'admin' ? '#ffd700' :
+        u.subscription_status === 'active' ? '#4ade80' :
+        u.subscription_status === 'trialing' ? '#00d4ff' : '#ff4444';
+      const statusLabel = u.role === 'admin' ? 'Admin' :
+        u.subscription_status === 'active' ? 'Active' :
+        u.subscription_status === 'trialing' ? 'Trial' :
+        u.subscription_status === 'canceled' ? 'Canceled' : 'Inactive';
+      let trialInfo = '—';
+      if (u.trial_ends_at) {
+        const d = new Date(u.trial_ends_at);
+        const days = Math.ceil((d - new Date()) / (1000*60*60*24));
+        trialInfo = days > 0 ? days + ' days left' : 'Expired';
+      }
+      const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : '—';
+      return '<tr>' +
+        '<td style="color:#fff;font-weight:500;">' + u.email + '</td>' +
+        '<td><span style="color:' + statusColor + ';font-weight:600;">' + u.role + '</span></td>' +
+        '<td><span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:600;background:' + statusColor + '20;color:' + statusColor + ';">' + statusLabel + '</span></td>' +
+        '<td style="color:#6b7094;">' + trialInfo + '</td>' +
+        '<td style="color:#6b7094;">' + joined + '</td>' +
+        '</tr>';
+    }).join('');
+  } catch(e) { console.error('Admin load error:', e); }
+
+  adminLoadTickets('all');
+}
+
+async function adminLoadTickets(filter) {
+  try {
+    const resp = await fetch('/api/admin/tickets');
+    if (!resp.ok) return;
+    const { tickets } = await resp.json();
+    _adminTicketsCache = tickets;
+
+    let filtered = tickets;
+    if (filter === 'open') filtered = tickets.filter(t => t.status === 'open' && !t.escalated);
+    else if (filter === 'escalated') filtered = tickets.filter(t => t.escalated && t.status === 'open');
+    else if (filter === 'resolved') filtered = tickets.filter(t => t.status === 'resolved');
+
+    const container = document.getElementById('adminTicketList');
+    if (!filtered.length) {
+      container.innerHTML = '<div style="color:#6b7094;text-align:center;padding:32px;">No tickets found</div>';
+      return;
+    }
+
+    container.innerHTML = filtered.map(t => {
+      const borderColor = t.escalated && t.status === 'open' ? '#ff4444' : t.status === 'open' ? '#ffd700' : '#4ade80';
+      const statusBadge = t.escalated && t.status === 'open'
+        ? '<span style="background:#ff444420;color:#ff4444;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">ESCALATED</span>'
+        : t.status === 'open'
+        ? '<span style="background:#ffd70020;color:#ffd700;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">OPEN</span>'
+        : '<span style="background:#4ade8020;color:#4ade80;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">RESOLVED</span>';
+      const date = new Date(t.created_at).toLocaleString();
+
+      return '<div style="background:var(--bg-input);border:1px solid ' + borderColor + '30;border-radius:10px;padding:16px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<div style="display:flex;align-items:center;gap:10px;">' +
+            statusBadge +
+            '<span style="color:#fff;font-weight:600;font-size:14px;">' + t.subject + '</span>' +
+          '</div>' +
+          '<span style="color:#6b7094;font-size:11px;">' + date + '</span>' +
+        '</div>' +
+        '<div style="color:#6b7094;font-size:12px;margin-bottom:8px;">From: <span style="color:#00d4ff;">' + t.user_email + '</span></div>' +
+        '<div style="color:#ccc;font-size:13px;line-height:1.6;margin-bottom:12px;white-space:pre-wrap;">' + t.message + '</div>' +
+        (t.ai_response ? '<div style="background:rgba(123,47,247,0.08);border:1px solid rgba(123,47,247,0.2);border-radius:8px;padding:12px;margin-bottom:12px;"><div style="color:#7b2ff7;font-size:11px;font-weight:600;margin-bottom:4px;">AI RESPONSE</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + t.ai_response + '</div></div>' : '') +
+        (t.admin_notes ? '<div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.2);border-radius:8px;padding:12px;margin-bottom:12px;"><div style="color:#ffd700;font-size:11px;font-weight:600;margin-bottom:4px;">ADMIN NOTES</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + t.admin_notes + '</div></div>' : '') +
+        '<div style="display:flex;gap:8px;margin-top:8px;">' +
+          (t.status === 'open' ? '<button onclick="adminResolveTicket(' + t.id + ')" style="padding:5px 12px;font-size:11px;background:linear-gradient(135deg,#4ade80,#22c55e);border:none;border-radius:6px;color:#080b1e;font-weight:600;cursor:pointer;">Mark Resolved</button>' : '') +
+          '<button onclick="adminAddNote(' + t.id + ')" style="padding:5px 12px;font-size:11px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);cursor:pointer;">Add Note</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) { console.error('Tickets load error:', e); }
+}
+
+async function adminResolveTicket(id) {
+  await fetch('/api/admin/tickets/' + id, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'resolved' })
+  });
+  showToast('Ticket resolved');
+  adminLoadTickets('all');
+}
+
+function adminAddNote(id) {
+  const ticket = _adminTicketsCache.find(t => t.id === id);
+  const existing = ticket?.admin_notes || '';
+  const note = prompt('Add admin note:', existing);
+  if (note === null) return;
+  fetch('/api/admin/tickets/' + id, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ admin_notes: note })
+  }).then(() => { showToast('Note saved'); adminLoadTickets('all'); });
+}
+
+// ============================
 // ONE-TIME MIGRATION: copy old un-prefixed localStorage to user-scoped keys
 // ============================
 function migrateOldStorage() {
@@ -4385,6 +4550,7 @@ function showSubscriptionGate() {
 
 migrateOldStorage();
 init();
+adminInit();
 setupTrialBanner();
 </script>
 </body>

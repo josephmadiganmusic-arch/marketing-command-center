@@ -30,6 +30,23 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS support_tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    user_email TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'open',
+    ai_response TEXT,
+    admin_notes TEXT,
+    escalated INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`);
+
 // --- Seed Admin Accounts ---
 const ADMINS = [
   { email: 'josephmadiganmusic@gmail.com', password: 'Bornagainbold123!' },
@@ -472,6 +489,117 @@ app.get('/api/research/status', requireAccess, (req, res) => {
   res.json({
     search: !!SERPER_API_KEY
   });
+});
+
+// --- Admin Middleware ---
+function requireAdmin(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  req.user = user;
+  next();
+}
+
+// --- Admin API ---
+
+// Analytics & user list
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const users = db.prepare(`
+    SELECT id, email, role, subscription_status, trial_ends_at, created_at
+    FROM users ORDER BY created_at DESC
+  `).all();
+  const total = users.length;
+  const active = users.filter(u => u.subscription_status === 'active').length;
+  const trialing = users.filter(u => u.subscription_status === 'trialing').length;
+  const admins = users.filter(u => u.role === 'admin').length;
+  const expired = users.filter(u => {
+    if (u.role === 'admin' || u.subscription_status === 'active') return false;
+    if (u.subscription_status === 'trialing' && u.trial_ends_at) {
+      return new Date(u.trial_ends_at) <= new Date();
+    }
+    return u.subscription_status === 'none' || u.subscription_status === 'canceled';
+  }).length;
+  res.json({ users, stats: { total, active, trialing, admins, expired } });
+});
+
+// Support tickets — list all
+app.get('/api/admin/tickets', requireAdmin, (req, res) => {
+  const tickets = db.prepare(`
+    SELECT * FROM support_tickets ORDER BY
+      CASE WHEN status = 'open' AND escalated = 1 THEN 0
+           WHEN status = 'open' THEN 1
+           ELSE 2 END,
+      created_at DESC
+  `).all();
+  res.json({ tickets });
+});
+
+// Support tickets — update (admin notes, status, etc.)
+app.post('/api/admin/tickets/:id', requireAdmin, (req, res) => {
+  const { status, admin_notes } = req.body;
+  const ticket = db.prepare('SELECT * FROM support_tickets WHERE id = ?').get(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+  if (status) db.prepare('UPDATE support_tickets SET status = ?, updated_at = datetime("now") WHERE id = ?').run(status, req.params.id);
+  if (admin_notes !== undefined) db.prepare('UPDATE support_tickets SET admin_notes = ?, updated_at = datetime("now") WHERE id = ?').run(admin_notes, req.params.id);
+  res.json({ success: true });
+});
+
+// Support tickets — user submits a ticket
+app.post('/api/support/submit', requireAuth, async (req, res) => {
+  const { subject, message } = req.body;
+  if (!subject || !message) return res.status(400).json({ error: 'Subject and message required' });
+
+  // AI auto-response attempt using Claude
+  let aiResponse = null;
+  let escalated = 0;
+  const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
+
+  if (CLAUDE_KEY) {
+    try {
+      const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': CLAUDE_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 500,
+          system: `You are Rollout Heaven's support assistant. Rollout Heaven is a music release management SaaS tool. Answer the user's question helpfully and concisely. If you cannot confidently answer (billing issues, account problems, bugs, feature requests, or anything requiring human judgment), respond with exactly "ESCALATE" and nothing else.`,
+          messages: [{ role: 'user', content: `Subject: ${subject}\n\n${message}` }]
+        })
+      });
+      if (aiResp.ok) {
+        const data = await aiResp.json();
+        const text = data.content?.[0]?.text || '';
+        if (text.trim() === 'ESCALATE') {
+          escalated = 1;
+        } else {
+          aiResponse = text;
+        }
+      } else {
+        escalated = 1;
+      }
+    } catch(e) {
+      escalated = 1;
+    }
+  } else {
+    escalated = 1;
+  }
+
+  db.prepare(`
+    INSERT INTO support_tickets (user_id, user_email, subject, message, ai_response, escalated)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(req.user.id, req.user.email, subject, message, aiResponse, escalated);
+
+  res.json({ success: true, aiResponse, escalated });
+});
+
+// User's own tickets
+app.get('/api/support/my-tickets', requireAuth, (req, res) => {
+  const tickets = db.prepare('SELECT * FROM support_tickets WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
+  res.json({ tickets });
 });
 
 // --- Main App (protected — allows expired trial to see upgrade prompt) ---
