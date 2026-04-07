@@ -256,6 +256,19 @@ app.set('trust proxy', 1);
 // Health check endpoint (must respond before any redirects)
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
+// SMTP test endpoint (temporary — remove after debugging)
+app.get('/api/smtp-test', async (req, res) => {
+  try {
+    await Promise.race([
+      emailTransporter.verify(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP verify timeout (10s)')), 10000))
+    ]);
+    res.json({ smtp: 'OK', user: process.env.SMTP_USER, host: process.env.SMTP_HOST || 'smtp.gmail.com' });
+  } catch (err) {
+    res.json({ smtp: 'FAIL', error: err.message, user: process.env.SMTP_USER, host: process.env.SMTP_HOST || 'smtp.gmail.com' });
+  }
+});
+
 // Redirect Railway URL to custom domain
 const CUSTOM_DOMAIN = process.env.CUSTOM_DOMAIN || 'rolloutheaven.com';
 app.use((req, res, next) => {
