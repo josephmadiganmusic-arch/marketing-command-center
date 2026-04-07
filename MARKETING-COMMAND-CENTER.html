@@ -771,6 +771,11 @@
   </div>
   <div class="cl-progress-bar"><div class="cl-progress-fill" id="clProgressFill"></div></div>
   <div class="cl-live-status" id="clLiveStatus"></div>
+  <div id="clTimer" style="margin-top:14px;font-size:13px;color:#8b8fb0;font-weight:500;letter-spacing:0.3px;text-align:center;">
+    <span style="opacity:0.7;">Estimated time remaining:</span>
+    <span id="clTimerValue" style="color:#00d4ff;font-variant-numeric:tabular-nums;font-weight:700;margin-left:6px;">—</span>
+    <span style="opacity:0.5;margin-left:10px;font-size:12px;">Elapsed: <span id="clTimerElapsed" style="font-variant-numeric:tabular-nums;">0:00</span></span>
+  </div>
   <div class="cl-error-state" id="clErrorState">
     <div class="cl-error-msg" id="clErrorMsg"></div>
     <button class="cl-retry-btn" onclick="retryCampaignGeneration()">Retry</button>
@@ -4141,6 +4146,7 @@ function closeCampaignLoader() {
   btn.textContent = 'RETRY GENERATE CAMPAIGN';
   btn.style.background = '';
   btn.style.color = '';
+  clTimerStop();
 }
 
 function retryCampaignGeneration() {
@@ -4156,6 +4162,72 @@ function retryCampaignGeneration() {
 function clSetLiveStatus(main, detail) {
   const el = document.getElementById('clLiveStatus');
   if (el) el.innerHTML = main + (detail ? `<span class="cl-detail">${detail}</span>` : '');
+}
+
+// ---------- Campaign timer (estimated time remaining) ----------
+// Per-step weights in seconds — derived from observed Claude latency at 8k tokens
+// (sonnet ~30s/big step, opus ~60s/big step). Used for both initial total and
+// per-step decrement. Order matches _runCampaignSteps.
+const CL_STEP_WEIGHTS = {
+  research: 12,
+  trends: 8,
+  content: 45,
+  calendar: 45,
+  outreach: 50,
+  playlists: 25,
+  checklist: 25
+};
+let _clTimerInterval = null;
+let _clTimerStart = 0;
+let _clTimerRemaining = 0; // seconds
+let _clCompletedSeconds = 0; // sum of weights for steps already done
+
+function clTimerStart() {
+  clTimerStop();
+  // Multiplier based on selected model — opus is roughly 1.6x slower than sonnet
+  const model = (document.getElementById('claudeModel')?.value || '').toLowerCase();
+  const mult = model.includes('opus') ? 1.6 : 1.0;
+  _clTimerRemaining = Math.round(Object.values(CL_STEP_WEIGHTS).reduce((a,b)=>a+b,0) * mult);
+  _clCompletedSeconds = 0;
+  _clTimerStart = Date.now();
+  clTimerRender();
+  _clTimerInterval = setInterval(() => {
+    if (_clTimerRemaining > 0) _clTimerRemaining--;
+    clTimerRender();
+  }, 1000);
+}
+function clTimerStop() {
+  if (_clTimerInterval) { clearInterval(_clTimerInterval); _clTimerInterval = null; }
+}
+function clTimerStepDone(stepKey) {
+  // When a step finishes, snap remaining estimate to (total - elapsed_weight)
+  // so the displayed countdown stays honest with reality.
+  const model = (document.getElementById('claudeModel')?.value || '').toLowerCase();
+  const mult = model.includes('opus') ? 1.6 : 1.0;
+  const total = Math.round(Object.values(CL_STEP_WEIGHTS).reduce((a,b)=>a+b,0) * mult);
+  if (CL_STEP_WEIGHTS[stepKey]) _clCompletedSeconds += Math.round(CL_STEP_WEIGHTS[stepKey] * mult);
+  _clTimerRemaining = Math.max(3, total - _clCompletedSeconds);
+  clTimerRender();
+}
+function clTimerFinish() {
+  clTimerStop();
+  const v = document.getElementById('clTimerValue');
+  if (v) v.textContent = 'Done';
+}
+function clTimerRender() {
+  const v = document.getElementById('clTimerValue');
+  const e = document.getElementById('clTimerElapsed');
+  if (v) v.textContent = clFormatSecs(_clTimerRemaining);
+  if (e) {
+    const elapsed = Math.floor((Date.now() - _clTimerStart) / 1000);
+    e.textContent = clFormatSecs(elapsed);
+  }
+}
+function clFormatSecs(s) {
+  s = Math.max(0, s|0);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m + ':' + (r < 10 ? '0' : '') + r;
 }
 
 async function generateCampaign() {
@@ -4182,6 +4254,7 @@ async function generateCampaign() {
   });
   progressFill.style.width = '0%';
   clSetLiveStatus('Initializing campaign engine...', '');
+  clTimerStart();
 
   const steps = [
     { id: 'content', label: 'Content Bank (hooks, captions, hashtags, CTAs)' },
@@ -4240,6 +4313,7 @@ COLLAB PARTNERS/NETWORK: ${targetCollabs.join(', ') || 'N/A'}`;
   // Fetch live trend data once for all campaign prompts (cached 1hr)
   clSetLiveStatus('Searching trends in your niche...', `Scanning TikTok & Instagram for ${genre} trends`);
   const trends = await getTrendContext();
+  clTimerStepDone('trends');
   if (trends) {
     clSetLiveStatus('Trends loaded — building your campaign...', 'Using live trend data to personalize content');
   } else {
@@ -4253,6 +4327,7 @@ COLLAB PARTNERS/NETWORK: ${targetCollabs.join(', ') || 'N/A'}`;
   let realWorldCtx = '';
   try {
     const research = await fetchCampaignResearch(genre);
+    clTimerStepDone('research');
     if (research) {
       realWorldCtx = research.contextBlock;
       // Auto-populate empty target fields with discovered targets
@@ -4378,6 +4453,7 @@ async function _runCampaignSteps(startStep, ctx, trends, d) {
     document.getElementById('clErrorMsg').textContent = errMsg + ' — your progress is saved. Hit Retry to continue.';
     errorState.classList.add('active');
     clSetLiveStatus('', '');
+    clTimerStop();
   }
 
   try {
@@ -4411,7 +4487,7 @@ Requirements:
       if (Array.isArray(c.ctas)) ctas = c.ctas;
       renderHooks(); renderCaptions(); renderHashtags(); renderCTAs();
     } catch(e) { console.error('Content parse error:', e, '\nRaw:', contentResult); window._lastContentRaw = contentResult; }
-    markStep('content', 'done'); clMarkStep('content', 'done'); clProgress(20);
+    markStep('content', 'done'); clMarkStep('content', 'done'); clProgress(20); clTimerStepDone('content');
     } // end startStep <= 0
 
     // --- 2. Calendar ---
@@ -4454,7 +4530,7 @@ Requirements:
       window._lastCalendarRaw = calResult;
       showToast('Calendar parse failed — raw saved to window._lastCalendarRaw');
     }
-    markStep('calendar', 'done'); clMarkStep('calendar', 'done'); clProgress(40);
+    markStep('calendar', 'done'); clMarkStep('calendar', 'done'); clProgress(40); clTimerStepDone('calendar');
     } // end startStep <= 1
 
     // --- 3. Outreach ---
@@ -4517,7 +4593,7 @@ Requirements:
       window._lastOutreachRaw = outreachResult;
       showToast('Outreach parse failed — raw saved to window._lastOutreachRaw');
     }
-    markStep('outreach', 'done'); clMarkStep('outreach', 'done'); clProgress(60);
+    markStep('outreach', 'done'); clMarkStep('outreach', 'done'); clProgress(60); clTimerStepDone('outreach');
     } // end startStep <= 2
 
     // --- 4. Playlists ---
@@ -4544,7 +4620,7 @@ Requirements:
       if (Array.isArray(p.searchKeywords)) searchKeywords = p.searchKeywords;
       renderPlaylists();
     } catch(e) { console.error('Playlist parse error:', e, '\nRaw:', playlistResult); window._lastPlaylistRaw = playlistResult; }
-    markStep('playlists', 'done'); clMarkStep('playlists', 'done'); clProgress(80);
+    markStep('playlists', 'done'); clMarkStep('playlists', 'done'); clProgress(80); clTimerStepDone('playlists');
     } // end startStep <= 3
 
     // --- 5. Action Items ---
@@ -4585,7 +4661,7 @@ Requirements:
       renderChecklist('checklist-recurring', checklistRecurring);
       renderChecklist('checklist-month', checklistMonth);
     } catch(e) { console.error('Checklist parse error:', e, '\nRaw:', checklistResult); window._lastChecklistRaw = checklistResult; }
-    markStep('checklist', 'done'); clMarkStep('checklist', 'done'); clProgress(100);
+    markStep('checklist', 'done'); clMarkStep('checklist', 'done'); clProgress(100); clTimerStepDone('checklist'); clTimerFinish();
     } // end startStep <= 4
 
     clSetLiveStatus('Campaign complete!', '');
