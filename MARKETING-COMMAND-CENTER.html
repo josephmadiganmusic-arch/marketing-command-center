@@ -4701,6 +4701,18 @@ async function generateCampaign() {
     return;
   }
 
+  // Trial users get ONE generation per release. Re-generating an already-
+  // generated campaign is a paid feature — prompt to upgrade instead.
+  try {
+    const allReleases = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+    const existing = allReleases[d.songTitle];
+    const releaseAlreadyHasCampaign = (existing && existing._campaignGenerated === true) || campaignGenerated;
+    if (releaseAlreadyHasCampaign && isTrialUser()) {
+      showUpgradeNudge('Re-generating a campaign for the same release is a Pro feature. Subscribe to unlock unlimited regenerations and keep iterating until it\'s perfect.');
+      return;
+    }
+  } catch(e) { /* fall through — never block on a check error */ }
+
   const btn = document.getElementById('btnGenerateCampaign');
   const statusEl = document.getElementById('generateStatus');
   btn.disabled = true;
