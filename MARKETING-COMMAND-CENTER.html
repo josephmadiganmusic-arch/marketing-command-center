@@ -4246,8 +4246,96 @@ COLLAB PARTNERS/NETWORK: ${targetCollabs.join(', ') || 'N/A'}`;
     clSetLiveStatus('Starting campaign generation...', 'Trend data unavailable — using genre best practices');
   }
 
-  _campaignRetryState = { stepIndex: 0, ctx, trends, d };
-  _runCampaignSteps(0, ctx, trends, d);
+  // Serper-powered real-world enrichment: find real curators, playlists, blogs,
+  // podcasts in this genre. Results are injected into prompts AND auto-fill
+  // any target fields the user left blank.
+  clSetLiveStatus('Searching for real curators, blogs & podcasts...', `Querying Google for ${genre} targets`);
+  let realWorldCtx = '';
+  try {
+    const research = await fetchCampaignResearch(genre);
+    if (research) {
+      realWorldCtx = research.contextBlock;
+      // Auto-populate empty target fields with discovered targets
+      if (targetPlaylists.length === 0 && research.playlists.length) {
+        targetPlaylists.push(...research.playlists.slice(0, 5).map(p => p.title));
+        document.getElementById('gen-playlists').value = targetPlaylists.join(', ');
+      }
+      if (targetBlogs.length === 0 && research.blogs.length) {
+        targetBlogs.push(...research.blogs.slice(0, 5).map(b => b.title));
+        document.getElementById('gen-blogs').value = targetBlogs.join(', ');
+      }
+      if (targetPodcasts.length === 0 && research.podcasts.length) {
+        targetPodcasts.push(...research.podcasts.slice(0, 5).map(p => p.title));
+        document.getElementById('gen-podcasts').value = targetPodcasts.join(', ');
+      }
+      clSetLiveStatus('Real targets loaded — building campaign...', `Found ${research.playlists.length} playlists, ${research.blogs.length} blogs, ${research.podcasts.length} podcasts`);
+    }
+  } catch(e) {
+    console.error('Campaign research enrichment failed:', e);
+    // Non-fatal — continue without real-world data
+  }
+
+  // Rebuild ctx with any newly populated targets + real-world data block
+  const enrichedCtx = ctx
+    .replace(/TARGET PLAYLISTS: .*/, `TARGET PLAYLISTS: ${targetPlaylists.join(', ') || 'N/A'}`)
+    .replace(/TARGET BLOGS\/MEDIA: .*/, `TARGET BLOGS/MEDIA: ${targetBlogs.join(', ') || 'N/A'}`)
+    .replace(/TARGET PODCASTS: .*/, `TARGET PODCASTS: ${targetPodcasts.join(', ') || 'N/A'}`)
+    + (realWorldCtx ? '\n\n' + realWorldCtx : '');
+
+  _campaignRetryState = { stepIndex: 0, ctx: enrichedCtx, trends, d };
+  _runCampaignSteps(0, enrichedCtx, trends, d);
+}
+
+// Calls the existing /api/research endpoint to pull real curators, playlists,
+// blogs, podcasts, and social accounts via Serper. Returns a context block
+// (string) ready to inject into Claude prompts plus the parsed lists.
+async function fetchCampaignResearch(genre) {
+  if (!genre) return null;
+  async function tryAction(action, body) {
+    try {
+      const r = await fetch('/api/research', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...body })
+      });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch(_) { return null; }
+  }
+
+  const [pl, bl, pd, sc] = await Promise.all([
+    tryAction('findPlaylists', { genre }),
+    tryAction('findBlogs', { genre }),
+    tryAction('findPodcasts', { genre }),
+    tryAction('socialScout', { genre })
+  ]);
+
+  const playlists = (pl?.playlists || []).slice(0, 8);
+  const blogs = (bl?.blogs || []).slice(0, 8);
+  const podcasts = (pd?.podcasts || []).slice(0, 6);
+  const accounts = (sc?.accounts || []).slice(0, 6);
+
+  if (!playlists.length && !blogs.length && !podcasts.length && !accounts.length) return null;
+
+  const fmt = (arr) => arr.map(x => `- ${x.title} (${x.link})${x.snippet ? ' — ' + x.snippet.slice(0, 120) : ''}`).join('\n');
+
+  const contextBlock = `REAL-WORLD TARGETS (from live Google search — use these specific names and links in outreach messages and content references):
+
+PLAYLISTS / CURATORS FOUND:
+${fmt(playlists) || '(none found)'}
+
+MUSIC BLOGS FOUND:
+${fmt(blogs) || '(none found)'}
+
+PODCASTS FOUND:
+${fmt(podcasts) || '(none found)'}
+
+SOCIAL PROMO ACCOUNTS FOUND:
+${fmt(accounts) || '(none found)'}
+
+When writing outreach, prefer these REAL names and reference their actual URL/snippet. Do not invent fake curators when real ones are listed above.`;
+
+  return { contextBlock, playlists, blogs, podcasts, accounts };
 }
 
 function clMarkStep(id, state) {
