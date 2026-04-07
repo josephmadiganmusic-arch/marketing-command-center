@@ -582,6 +582,43 @@
     input, textarea, select { font-size: 16px !important; }
   }
 
+  /* ===== Tabs Unlocked Celebration Banner ===== */
+  .unlock-celebration {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+    z-index: 100000;
+    padding: 18px 38px;
+    background: linear-gradient(135deg, #7b2ff7 0%, #f107a3 100%);
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-radius: 14px;
+    box-shadow: 0 12px 48px rgba(123,47,247,0.6), 0 0 0 2px rgba(255,255,255,0.15) inset;
+    display: none;
+    pointer-events: none;
+    white-space: nowrap;
+    animation: unlockBlink 0.7s ease-in-out infinite alternate;
+  }
+  .unlock-celebration.active { display: block; }
+  .unlock-celebration .uc-release {
+    display: inline-block; margin-left: 10px;
+    background: #fff;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-image: linear-gradient(135deg, #fff5b0 0%, #fff 50%, #ffd1f7 100%);
+    font-size: 22px;
+  }
+  @keyframes unlockBlink {
+    0%   { opacity: 1;   transform: translateX(-50%) scale(1);     box-shadow: 0 12px 48px rgba(123,47,247,0.6), 0 0 0 2px rgba(255,255,255,0.15) inset; }
+    100% { opacity: 0.55; transform: translateX(-50%) scale(1.04); box-shadow: 0 18px 64px rgba(241,7,163,0.85), 0 0 0 2px rgba(255,255,255,0.4)  inset; }
+  }
+  @media (max-width: 720px) {
+    .unlock-celebration { font-size: 14px; padding: 14px 22px; letter-spacing: 1.2px; }
+    .unlock-celebration .uc-release { font-size: 16px; }
+  }
+
   /* ===== Campaign Generation Loading Overlay ===== */
   .campaign-loader-overlay {
     display: none;
@@ -2072,6 +2109,28 @@ function unlockTabs() {
   try { localStorage.setItem(ukey('mcc_campaign_generated'), 'true'); } catch(e) {}
   // Award XP for campaign generation
   awardXP('campaign_generate');
+}
+
+function showUnlockCelebration() {
+  // Scroll to the very top so the banner is centered in view
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0, 0); }
+
+  // Create the banner once and reuse it on subsequent generations
+  let banner = document.getElementById('unlockCelebration');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'unlockCelebration';
+    banner.className = 'unlock-celebration';
+    banner.innerHTML = 'Tabs Unlocked: <span class="uc-release">RELEASE IT!</span>';
+    document.body.appendChild(banner);
+  }
+  banner.classList.add('active');
+
+  // Auto-dismiss after 5 seconds
+  clearTimeout(window._unlockBannerTimer);
+  window._unlockBannerTimer = setTimeout(() => {
+    banner.classList.remove('active');
+  }, 5000);
 }
 
 function toggleSidebarMinimize(minimize) {
@@ -4900,8 +4959,11 @@ Requirements:
     showToast('Campaign generated! All tabs are now unlocked.');
     _campaignRetryState = null;
 
-    // Hide loader after a brief moment to show 100%
-    setTimeout(() => loader.classList.remove('active'), 1200);
+    // Hide loader after a brief moment to show 100%, then scroll up + flash banner
+    setTimeout(() => {
+      loader.classList.remove('active');
+      showUnlockCelebration();
+    }, 1200);
 
     // Nudge trial users toward subscription after they see the value
     if (isTrialUser()) {
