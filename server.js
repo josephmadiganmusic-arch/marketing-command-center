@@ -6,7 +6,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const initSqlJs = require('sql.js');
 const Stripe = require('stripe');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -192,24 +192,15 @@ const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SEC
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
-// --- Email Setup ---
-const emailTransporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true',
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
+// --- Email Setup (Resend — HTTPS API, works on Railway) ---
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const EMAIL_FROM = process.env.EMAIL_FROM || 'Rollout Heaven <onboarding@resend.dev>';
 
 async function sendVerificationEmail(email, token) {
+  if (!resend) throw new Error('RESEND_API_KEY not configured');
   const verifyUrl = `https://${CUSTOM_DOMAIN}/api/verify-email?token=${token}`;
-  await emailTransporter.sendMail({
-    from: process.env.SMTP_FROM || `"Rollout Heaven" <${process.env.SMTP_USER}>`,
+  await resend.emails.send({
+    from: EMAIL_FROM,
     to: email,
     subject: 'Verify Your Email - Rollout Heaven',
     html: `
@@ -258,16 +249,19 @@ app.set('trust proxy', 1);
 // Health check endpoint (must respond before any redirects)
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// SMTP test endpoint (temporary — remove after debugging)
-app.get('/api/smtp-test', async (req, res) => {
+// Email test endpoint (temporary — remove after debugging)
+app.get('/api/email-test', async (req, res) => {
+  if (!resend) return res.json({ email: 'FAIL', error: 'RESEND_API_KEY not set' });
   try {
-    await Promise.race([
-      emailTransporter.verify(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP verify timeout (10s)')), 10000))
-    ]);
-    res.json({ smtp: 'OK', user: process.env.SMTP_USER, host: process.env.SMTP_HOST || 'smtp.gmail.com' });
+    const result = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: 'josephmadiganmusic@gmail.com',
+      subject: 'Rollout Heaven - Email Test',
+      html: '<p>Email is working!</p>'
+    });
+    res.json({ email: 'OK', id: result.data?.id });
   } catch (err) {
-    res.json({ smtp: 'FAIL', error: err.message, user: process.env.SMTP_USER, host: process.env.SMTP_HOST || 'smtp.gmail.com' });
+    res.json({ email: 'FAIL', error: err.message });
   }
 });
 
@@ -325,8 +319,8 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
-  // Only enforce verification if SMTP is configured
-  if (process.env.SMTP_USER && !user.email_verified && user.role !== 'admin') {
+  // Only enforce verification if Resend is configured
+  if (resend && !user.email_verified && user.role !== 'admin') {
     return res.status(403).json({ error: 'Please verify your email before logging in. Check your inbox for a verification link.', needsVerification: true, email: user.email });
   }
 
@@ -360,14 +354,13 @@ app.post('/api/signup', async (req, res) => {
   ).run(cleanEmail, hash, 'trialing', trialEnd, token, tokenExpires);
 
   // Respond immediately, send email in background (don't block the request)
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    // Fire and forget — don't await
+  if (resend) {
     sendVerificationEmail(cleanEmail, token).catch(err => {
       console.error('[SIGNUP] Email send error:', err.message);
     });
     res.json({ success: true, needsVerification: true });
   } else {
-    console.log('[SIGNUP] SMTP not configured, skipping verification email for', cleanEmail);
+    console.log('[SIGNUP] Resend not configured, auto-verifying', cleanEmail);
     dbHelpers.prepare('UPDATE users SET email_verified = 1 WHERE email = ?').run(cleanEmail);
     res.json({ success: true, needsVerification: false });
   }
