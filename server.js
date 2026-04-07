@@ -1182,9 +1182,9 @@ app.post('/api/claude', requireAccess, async (req, res) => {
   const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
   if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured' });
 
-  // Extend request timeout to 120s to prevent Railway proxy 502s on long AI generations
-  req.setTimeout(120000);
-  res.setTimeout(120000);
+  // Extend request timeout to 240s — Opus + 8k tokens can take 2+ minutes
+  req.setTimeout(240000);
+  res.setTimeout(240000);
 
   try {
     const { model, max_tokens, system, messages } = req.body;
@@ -1201,7 +1201,7 @@ app.post('/api/claude', requireAccess, async (req, res) => {
         system: system || '',
         messages: messages || []
       }),
-      signal: AbortSignal.timeout(90000)
+      signal: AbortSignal.timeout(220000)
     });
     if (!aiResp.ok) {
       const errText = await aiResp.text();
