@@ -3063,12 +3063,50 @@ function intakeFillForm(d) {
 }
 
 function intakeDelete() {
-  const sel = document.getElementById('intakeReleaseSelect');
-  const title = sel.value;
-  if (!title) { showToast('Select a release to delete'); return; }
+  // Source of truth: the currently-loaded form data (what the user is looking
+  // at). The hidden #intakeReleaseSelect is vestigial from the old dropdown
+  // UI and is not kept in sync across page reloads, so relying on its value
+  // made Delete a no-op after the modal+reload switch flow. Fall back to the
+  // hidden select only if the form has no title yet.
+  const current = (typeof intakeGetData === 'function') ? intakeGetData() : {};
+  let title = (current.songTitle || '').trim();
+  if (!title) {
+    const sel = document.getElementById('intakeReleaseSelect');
+    title = sel ? sel.value : '';
+  }
+  if (!title) { showToast('No release loaded to delete'); return; }
+
   const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+  if (!saved[title]) { showToast('Release not saved yet — nothing to delete'); return; }
+
+  if (!confirm('Delete "' + title + '"? This cannot be undone.')) return;
+
   delete saved[title];
   localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
+  try { serverSave('release_data_all', saved); } catch(e) {}
+
+  // If the deleted release was the active one, clear it so a page reload
+  // doesn't immediately re-save the form back into release_data_all.
+  try {
+    const activeRaw = localStorage.getItem(ukey('release_data'));
+    if (activeRaw) {
+      const active = JSON.parse(activeRaw);
+      if ((active.songTitle || '').trim() === title) {
+        localStorage.removeItem(ukey('release_data'));
+        localStorage.removeItem(ukey('mcc_campaign_data'));
+        localStorage.removeItem(ukey('mcc_campaign_song'));
+        // Cancel pending autosaves that would resurrect the deleted record.
+        try { clearTimeout(_autosaveTimer); } catch(e) {}
+        try { clearTimeout(_namedSaveTimer); } catch(e) {}
+        try { window.removeEventListener('beforeunload', intakeForceFlush); } catch(e) {}
+        intakeLoadList();
+        showToast('Release deleted — reloading');
+        setTimeout(() => window.location.reload(), 500);
+        return;
+      }
+    }
+  } catch(e) { console.error('intakeDelete cleanup error:', e); }
+
   intakeLoadList();
   showToast('Release deleted');
 }
