@@ -317,6 +317,14 @@ function requireAccess(req, res, next) {
   next();
 }
 
+// --- Public legal pages (no auth required) ---
+app.get(['/privacy', '/privacy-policy', '/privacy.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'privacy.html'));
+});
+app.get(['/terms', '/terms-of-service', '/terms.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'terms.html'));
+});
+
 // --- Auth Routes ---
 app.get('/login', (req, res) => {
   if (req.session.userId) return res.redirect('/');
