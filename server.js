@@ -424,12 +424,45 @@ function requireAuth(req, res, next) {
 }
 
 function requireAccess(req, res, next) {
-  if (!req.session.userId) return res.redirect('/login');
+  const isApi = req.path.startsWith('/api/');
+  if (!req.session.userId) {
+    if (isApi) return res.status(401).json({ error: 'Not logged in' });
+    return res.redirect('/login');
+  }
   const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
-  if (!user) { req.session.destroy(); return res.redirect('/login'); }
+  if (!user) {
+    req.session.destroy();
+    if (isApi) return res.status(401).json({ error: 'Session invalid' });
+    return res.redirect('/login');
+  }
   req.user = user;
-  if (!hasAccess(user)) return res.redirect('/subscribe');
+  if (!hasAccess(user)) {
+    if (isApi) return res.status(402).json({ error: 'Subscription required', redirect: '/subscribe' });
+    return res.redirect('/subscribe');
+  }
   next();
+}
+
+// Pro-only guard. Trial users are blocked — only paid (active) and admins
+// can hit endpoints that proxy paid third-party APIs (Anthropic, Serper).
+// (C-1 fix: previously trialing users got Music Agent Pro features for free
+// for 7 days, bypassing the paywall.)
+function requireActive(req, res, next) {
+  const isApi = req.path.startsWith('/api/');
+  if (!req.session.userId) {
+    if (isApi) return res.status(401).json({ error: 'Not logged in' });
+    return res.redirect('/login');
+  }
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  if (!user) {
+    req.session.destroy();
+    if (isApi) return res.status(401).json({ error: 'Session invalid' });
+    return res.redirect('/login');
+  }
+  req.user = user;
+  if (user.role === 'admin' || user.subscription_status === 'active') return next();
+  if (isApi) return res.status(402).json({ error: 'Pro subscription required', upgrade: '/subscribe', reason: 'pro_only' });
+  return res.redirect('/subscribe');
 }
 
 // --- Favicon (public, no auth) ---
@@ -777,7 +810,7 @@ function cacheSet(key, data, ttlMs = 3600000) {
   }
 }
 
-app.post('/api/research', requireAccess, rlResearch, async (req, res) => {
+app.post('/api/research', requireActive, rlResearch, async (req, res) => {
   const { action, genre, artistName, query, similarArtists } = req.body;
   if (!action) return res.status(400).json({ error: 'Missing action' });
 
@@ -1387,8 +1420,10 @@ app.post('/api/gamification/award', requireAuth, (req, res) => {
   });
 });
 
-// GET leaderboard (admin)
-app.get('/api/gamification/leaderboard', requireAuth, (req, res) => {
+// GET leaderboard — admin only. (H-2 fix: previously requireAuth, which let
+// any logged-in trial user pull the top-50 customer email list. Emails are
+// PII and a phishing target; restricted to admins.)
+app.get('/api/gamification/leaderboard', requireAdmin, (req, res) => {
   const leaders = dbHelpers.prepare(`
     SELECT u.email, x.total_xp, x.level, x.current_streak, x.tasks_completed, x.campaigns_generated
     FROM user_xp x JOIN users u ON u.id = x.user_id
@@ -1444,7 +1479,7 @@ function claudeQuotaForUser(user) {
   return 0;
 }
 
-app.post('/api/claude', requireAccess, rlClaude, async (req, res) => {
+app.post('/api/claude', requireActive, rlClaude, async (req, res) => {
   const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
   if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured' });
 

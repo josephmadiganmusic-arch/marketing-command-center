@@ -2,3 +2,8 @@ node_modules/
 data/
 .env
 rotate-admin-password.js
+
+# Claude local context (auto-maintained, single-machine)
+claude-memory.md
+primer.md
+task/
