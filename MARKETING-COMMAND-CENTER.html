@@ -1843,7 +1843,7 @@
       <div class="section-title">All Users</div>
       <div style="overflow-x:auto;">
         <table class="calendar-table" style="width:100%;">
-          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Trial Ends</th><th>Joined</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Tier</th><th>Trial Ends</th><th>Joined</th><th>Actions</th></tr></thead>
           <tbody id="adminUserList"></tbody>
         </table>
       </div>
@@ -1985,6 +1985,8 @@ const USER_ROLE = '%%USER_ROLE%%';
 const TRIAL_DAYS = parseInt('%%TRIAL_DAYS%%', 10) || 0;
 const SUB_STATUS = '%%SUB_STATUS%%';
 const USER_EMAIL = '%%USER_EMAIL%%';
+const USER_TIER = '%%USER_TIER%%'; // 'pro' | 'elite' | 'elite_plus'
+const ONBOARDING_COMPLETED = '%%ONBOARDING_COMPLETED%%' === '1';
 
 // HTML-escape utility — safe for use inside both element content and HTML attributes.
 // Escapes single quotes too, so values can be embedded in attributes that use either quote style.
@@ -6207,10 +6209,18 @@ async function adminLoadData() {
       const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : '—';
       const deleteBtn = u.role === 'admin' ? '<span style="color:#6b7094;font-size:11px;">—</span>' :
         '<button data-delete-user-id="' + Number(u.id) + '" data-delete-user-email="' + escAdmin(u.email) + '" style="background:#ff444420;color:#ff4444;border:1px solid #ff444440;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Delete</button>';
+      // Tier badge: highlight Elite/Plus customers; show onboarding warning if pending.
+      var tier = u.subscription_tier || 'pro';
+      var tierColor = tier === 'elite_plus' ? '#ffd700' : (tier === 'elite' ? '#c084fc' : '#6b7094');
+      var tierLabel = tier === 'elite_plus' ? 'Elite+' : (tier === 'elite' ? 'Elite' : 'Pro');
+      var onbWarn = (tier === 'elite' || tier === 'elite_plus') && !u.onboarding_completed
+        ? ' <span title="Onboarding not completed" style="color:#ff4444;font-size:10px;">\u26A0</span>' : '';
+      var tierCell = '<span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;background:' + tierColor + '20;color:' + tierColor + ';">' + tierLabel + '</span>' + onbWarn;
       return '<tr>' +
         '<td style="color:#fff;font-weight:500;">' + escAdmin(u.email) + '</td>' +
         '<td><span style="color:' + statusColor + ';font-weight:600;">' + escAdmin(u.role) + '</span></td>' +
         '<td><span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:600;background:' + statusColor + '20;color:' + statusColor + ';">' + statusLabel + '</span></td>' +
+        '<td>' + tierCell + '</td>' +
         '<td style="color:#6b7094;">' + trialInfo + '</td>' +
         '<td style="color:#6b7094;">' + joined + '</td>' +
         '<td>' + deleteBtn + '</td>' +
@@ -6427,12 +6437,36 @@ function showSubscriptionGate() {
   document.body.appendChild(overlay);
 }
 
+// ============================
+// ELITE ONBOARDING NUDGE
+// ============================
+// Paid Elite/Plus users who skipped the onboarding form get a persistent
+// top-of-page banner reminding them. Joseph can't start manual work until
+// they complete it.
+function setupEliteOnboardingNudge() {
+  if (USER_ROLE === 'admin') return;
+  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus') return;
+  if (ONBOARDING_COMPLETED) return;
+
+  var bar = document.createElement('div');
+  bar.id = 'eliteOnboardingNudge';
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#ffd700,#ff9f1a);color:#080b1e;padding:10px 16px;text-align:center;font-size:13px;font-weight:700;font-family:Inter,sans-serif;box-shadow:0 2px 12px rgba(255,215,0,0.3);display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;';
+  var label = USER_TIER === 'elite_plus' ? 'Elite Plus' : 'Elite';
+  bar.innerHTML =
+    '<span>\u26A1 Welcome to ' + label + '! Complete your onboarding so Joseph can start your manual distribution and concierge work.</span>' +
+    '<a href="/elite-onboarding" style="background:#080b1e;color:#ffd700;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:800;font-size:12px;letter-spacing:0.5px;">COMPLETE ONBOARDING</a>';
+  document.body.appendChild(bar);
+  // Push body content down so the banner doesn't overlap the header
+  document.body.style.paddingTop = (bar.offsetHeight + 'px');
+}
+
 // Load data from server DB first, then initialize
 serverLoad().then(() => {
   migrateOldStorage();
   init();
   adminInit();
   setupTrialBanner();
+  setupEliteOnboardingNudge();
   loadGamification();
 });
 </script>

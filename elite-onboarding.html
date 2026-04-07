@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elite Onboarding - Rollout Heaven</title>
+<link rel="icon" type="image/jpeg" href="/favicon.jpg">
+<link rel="apple-touch-icon" href="/favicon.jpg">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+  :root {
+    --bg-deep: #080b1e;
+    --bg-card: #0f1332;
+    --bg-input: #0a0d24;
+    --border: #1a1f4a;
+    --accent-1: #7b2ff7;
+    --accent-2: #00d4ff;
+    --gold: #ffd700;
+    --text-dim: #6b7094;
+    --gradient-primary: linear-gradient(135deg, #7b2ff7, #00d4ff);
+    --gradient-gold: linear-gradient(135deg, #ffd700, #ff9f1a);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg-deep); color: #e0e0e0; min-height: 100vh; padding: 32px 16px; }
+  body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 20%, rgba(123,47,247,0.08) 0%, transparent 50%), radial-gradient(circle at 70% 80%, rgba(0,212,255,0.05) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+  .ob-container { max-width: 760px; margin: 0 auto; position: relative; z-index: 1; }
+  .ob-logo { text-align: center; margin-bottom: 24px; }
+  .ob-logo img { width: 140px; filter: drop-shadow(0 0 12px rgba(123,47,247,0.3)); }
+  .ob-logo p { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-top: 6px; }
+  .ob-header { text-align: center; margin-bottom: 28px; }
+  .ob-header h1 { font-size: 28px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+  .ob-header .tier-badge { display: inline-block; background: var(--gradient-gold); color: #080b1e; font-size: 12px; font-weight: 800; letter-spacing: 1px; padding: 5px 14px; border-radius: 20px; text-transform: uppercase; margin-bottom: 12px; }
+  .ob-header p { color: var(--text-dim); font-size: 14px; line-height: 1.6; max-width: 580px; margin: 0 auto; }
+  .ob-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  .ob-section { margin-bottom: 32px; }
+  .ob-section:last-child { margin-bottom: 0; }
+  .ob-section h2 { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .ob-section .section-desc { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.5; }
+  .ob-section h2::before { content: ''; display: inline-block; width: 4px; height: 16px; background: var(--gradient-primary); border-radius: 2px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .form-row.single { grid-template-columns: 1fr; }
+  .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .form-field label { font-size: 12px; color: var(--text-dim); font-weight: 500; }
+  .form-field input, .form-field textarea, .form-field select { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 11px 12px; color: #fff; font-family: 'Inter', sans-serif; font-size: 13px; transition: border-color 0.2s; }
+  .form-field input:focus, .form-field textarea:focus, .form-field select:focus { outline: none; border-color: var(--accent-1); }
+  .form-field textarea { min-height: 80px; resize: vertical; }
+  .security-note { background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.18); border-radius: 8px; padding: 12px 14px; font-size: 12px; color: #b0c4d8; line-height: 1.6; margin-bottom: 24px; }
+  .security-note strong { color: var(--accent-2); }
+  .elite-plus-only { display: none; }
+  body[data-tier="elite_plus"] .elite-plus-only { display: block; }
+  .submit-row { display: flex; gap: 12px; align-items: center; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+  .btn-submit { flex: 1; padding: 16px; background: var(--gradient-gold); color: #080b1e; border: none; border-radius: 8px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; }
+  .btn-submit:hover { box-shadow: 0 4px 24px rgba(255,215,0,0.4); transform: translateY(-1px); }
+  .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-skip { padding: 16px 20px; background: transparent; color: var(--text-dim); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.2s; }
+  .btn-skip:hover { color: #fff; border-color: var(--accent-1); }
+  #statusMsg { padding: 12px; border-radius: 8px; font-size: 13px; margin-top: 16px; display: none; text-align: center; }
+  #statusMsg.error { background: rgba(255,68,68,0.1); border: 1px solid rgba(255,68,68,0.2); color: #ff6b6b; display: block; }
+  #statusMsg.success { background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.2); color: var(--accent-2); display: block; }
+  @media (max-width: 600px) {
+    .ob-card { padding: 24px 18px; }
+    .form-row { grid-template-columns: 1fr; }
+    .ob-header h1 { font-size: 22px; }
+    .submit-row { flex-direction: column-reverse; }
+    .btn-skip, .btn-submit { width: 100%; }
+  }
+</style>
+</head>
+<body data-tier="elite">
+<div class="ob-container">
+  <div class="ob-logo">
+    <img src="/logo.png" alt="Rollout Heaven">
+    <p>Release Management Platform</p>
+  </div>
+
+  <div class="ob-header">
+    <span class="tier-badge" id="tierBadge">Elite</span>
+    <h1>Welcome &mdash; Let's Get You Set Up</h1>
+    <p>To handle your distribution, registration, and outreach, Joseph needs access to your distribution and social accounts. Everything you submit is encrypted at rest and only viewable by Joseph through an audit-logged admin route.</p>
+  </div>
+
+  <div class="ob-card">
+    <div class="security-note">
+      <strong>How your credentials are stored:</strong> AES-256-GCM encryption with a server-only key. Never logged, never exposed to the frontend after submission, never sent to third parties. Joseph is the only person who can decrypt them, and every access is audit-logged.
+    </div>
+
+    <form id="onboardingForm">
+      <!-- ─── DISTRIBUTION ─── -->
+      <div class="ob-section">
+        <h2>Distribution Account</h2>
+        <p class="section-desc">Where you upload your music for streaming services. Joseph will use this to handle uploads and metadata QA.</p>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Provider</label>
+            <select name="distribution_provider">
+              <option value="">Select...</option>
+              <option value="DistroKid">DistroKid</option>
+              <option value="TuneCore">TuneCore</option>
+              <option value="CD Baby">CD Baby</option>
+              <option value="UnitedMasters">UnitedMasters</option>
+              <option value="Amuse">Amuse</option>
+              <option value="Ditto">Ditto</option>
+              <option value="LANDR">LANDR</option>
+              <option value="Symphonic">Symphonic</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Account Email / Username</label>
+            <input type="text" name="distribution_username" maxlength="200" autocomplete="off">
+          </div>
+        </div>
+        <div class="form-row single">
+          <div class="form-field">
+            <label>Password</label>
+            <input type="password" name="distribution_password" maxlength="200" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="form-row single">
+          <div class="form-field">
+            <label>Notes (2FA backup codes, special instructions)</label>
+            <textarea name="distribution_notes" maxlength="1000"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── REGISTRATION ─── -->
+      <div class="ob-section">
+        <h2>Performing Rights &amp; Royalty Registration</h2>
+        <p class="section-desc">PRO and SoundExchange accounts so Joseph can register your works for royalty collection.</p>
+        <div class="form-row">
+          <div class="form-field">
+            <label>PRO Organization</label>
+            <select name="registration_pro">
+              <option value="">Select...</option>
+              <option value="ASCAP">ASCAP</option>
+              <option value="BMI">BMI</option>
+              <option value="SESAC">SESAC</option>
+              <option value="GMR">GMR</option>
+              <option value="Other">Other / Not registered yet</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>IPI / CAE Number (optional)</label>
+            <input type="text" name="registration_ipi" maxlength="80">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>PRO Account Username</label>
+            <input type="text" name="registration_username" maxlength="200" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label>PRO Account Password</label>
+            <input type="password" name="registration_password" maxlength="200" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>SoundExchange Username (optional)</label>
+            <input type="text" name="soundexchange_username" maxlength="200" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label>SoundExchange Password (optional)</label>
+            <input type="password" name="soundexchange_password" maxlength="200" autocomplete="new-password">
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── SOCIAL ─── -->
+      <div class="ob-section">
+        <h2>Social Accounts</h2>
+        <p class="section-desc">For posting release announcements, engagement, and promotion. Skip any platform you don't use.</p>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Instagram Username</label>
+            <input type="text" name="instagram_username" maxlength="200" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label>Instagram Password</label>
+            <input type="password" name="instagram_password" maxlength="200" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>TikTok Username</label>
+            <input type="text" name="tiktok_username" maxlength="200" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label>TikTok Password</label>
+            <input type="password" name="tiktok_password" maxlength="200" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>YouTube / Google Username</label>
+            <input type="text" name="youtube_username" maxlength="200" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label>YouTube / Google Password</label>
+            <input type="password" name="youtube_password" maxlength="200" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Twitter / X Username</label>
+            <input type="text" name="twitter_username" maxlength="200" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label>Twitter / X Password</label>
+            <input type="password" name="twitter_password" maxlength="200" autocomplete="new-password">
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── RELEASE CADENCE ─── -->
+      <div class="ob-section">
+        <h2>Release Plan</h2>
+        <p class="section-desc">So Joseph knows what's coming and when.</p>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Genre</label>
+            <input type="text" name="genre" maxlength="100" placeholder="e.g. Christian Hip Hop">
+          </div>
+          <div class="form-field">
+            <label>Release Frequency</label>
+            <input type="text" name="release_frequency" maxlength="200" placeholder="e.g. Monthly singles, quarterly EPs">
+          </div>
+        </div>
+        <div class="form-row single">
+          <div class="form-field">
+            <label>Next Planned Release Date</label>
+            <input type="date" name="next_release_date">
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── ELITE PLUS ONLY ─── -->
+      <div class="ob-section elite-plus-only">
+        <h2>Outreach &amp; Playlist Strategy <span style="font-size:11px;color:var(--gold);font-weight:600;margin-left:6px;">ELITE PLUS</span></h2>
+        <p class="section-desc">Joseph will pitch your music to radio, podcasts, and playlist curators. The more direction here, the better the targeting.</p>
+        <div class="form-row single">
+          <div class="form-field">
+            <label>Target radio stations / podcasts (one per line if you have a list)</label>
+            <textarea name="target_stations" maxlength="2000" placeholder="e.g. WDPR 88.5, Reach Records Podcast, The Rapzilla Show..."></textarea>
+          </div>
+        </div>
+        <div class="form-row single">
+          <div class="form-field">
+            <label>Stations / podcasts to AVOID</label>
+            <textarea name="avoid_stations" maxlength="2000"></textarea>
+          </div>
+        </div>
+        <div class="form-row single">
+          <div class="form-field">
+            <label>Target playlists or curators</label>
+            <textarea name="target_playlists" maxlength="2000" placeholder="Spotify playlists, curator names, blog contacts..."></textarea>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Playlist mood / vibe</label>
+            <input type="text" name="playlist_mood" maxlength="500" placeholder="e.g. uplifting, faith-based, late-night vibes">
+          </div>
+          <div class="form-field">
+            <label>Submission strategy preferences</label>
+            <input type="text" name="submission_strategy" maxlength="1000" placeholder="e.g. focus on niche curators first">
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── EXTRA NOTES ─── -->
+      <div class="ob-section">
+        <h2>Anything Else?</h2>
+        <p class="section-desc">Special instructions, deadlines, brand guidelines, or anything Joseph should know.</p>
+        <div class="form-row single">
+          <div class="form-field">
+            <label>Notes</label>
+            <textarea name="extra_notes" maxlength="3000" style="min-height:100px;"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <button type="button" class="btn-skip" onclick="skipForNow()">Skip for now</button>
+        <button type="submit" class="btn-submit" id="submitBtn">Submit &amp; Launch My Account</button>
+      </div>
+      <div id="statusMsg"></div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Set tier from /api/me so the Elite Plus section appears for Plus customers.
+fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
+  if (!data || !data.loggedIn) { window.location.href = '/login'; return; }
+  if (data.subscription_tier !== 'elite' && data.subscription_tier !== 'elite_plus') {
+    window.location.href = '/';
+    return;
+  }
+  document.body.setAttribute('data-tier', data.subscription_tier);
+  document.getElementById('tierBadge').textContent = data.subscription_tier === 'elite_plus' ? 'Elite Plus' : 'Elite';
+});
+
+document.getElementById('onboardingForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var btn = document.getElementById('submitBtn');
+  var status = document.getElementById('statusMsg');
+  status.className = '';
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  var formData = new FormData(e.target);
+  var payload = {};
+  formData.forEach(function(v, k) { payload[k] = v; });
+
+  try {
+    var res = await fetch('/api/elite/onboarding', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    var data = await res.json();
+    if (data.success) {
+      status.className = 'success';
+      status.textContent = 'Onboarding complete! Joseph will reach out shortly. Redirecting to your app...';
+      setTimeout(function() { window.location.href = '/'; }, 2000);
+    } else {
+      status.className = 'error';
+      status.textContent = data.error || 'Failed to save. Please try again.';
+      btn.disabled = false;
+      btn.textContent = 'Submit & Launch My Account';
+    }
+  } catch (err) {
+    status.className = 'error';
+    status.textContent = 'Network error. Please try again.';
+    btn.disabled = false;
+    btn.textContent = 'Submit & Launch My Account';
+  }
+});
+
+function skipForNow() {
+  if (!confirm('Skip onboarding for now? You can complete it later from the banner in your app, but Joseph cannot start manual work until you do.')) return;
+  window.location.href = '/';
+}
+</script>
+</body>
+</html>

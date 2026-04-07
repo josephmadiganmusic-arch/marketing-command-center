@@ -111,6 +111,13 @@ function initDb() {
   try { db.run("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0"); } catch(e) { if (!isDupColErr(e)) throw e; }
   try { db.run("ALTER TABLE users ADD COLUMN verification_token TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
   try { db.run("ALTER TABLE users ADD COLUMN verification_expires TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  // Elite tier columns. subscription_tier is orthogonal to subscription_status —
+  // 'pro' for monthly, 'elite' / 'elite_plus' for annual concierge tiers.
+  // onboarding_completed gates the manual-work flow: paid Elite users get app
+  // access immediately but Joseph can't start distribution/registration/outreach
+  // until they submit the credential form.
+  try { db.run("ALTER TABLE users ADD COLUMN subscription_tier TEXT DEFAULT 'pro'"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE users ADD COLUMN onboarding_completed INTEGER DEFAULT 0"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
   // Mark existing admin accounts as verified
   db.run("UPDATE users SET email_verified = 1 WHERE role = 'admin'");
@@ -220,6 +227,36 @@ function initDb() {
     )
   `);
 
+  // Encrypted credential storage for Elite/Elite Plus customers. Joseph needs
+  // distribution-account logins (DistroKid/TuneCore/etc) and social-account
+  // creds to do the manual concierge work. Stored as AES-256-GCM blobs;
+  // decryption only happens via the admin-only route. data_encrypted, iv, and
+  // auth_tag are all hex-encoded.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS elite_onboarding (
+      user_id INTEGER PRIMARY KEY,
+      tier TEXT NOT NULL,
+      data_encrypted TEXT NOT NULL,
+      iv TEXT NOT NULL,
+      auth_tag TEXT NOT NULL,
+      submitted_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+
+  // Audit log for credential decrypts. Every admin view of the plaintext
+  // creds is recorded so we have a paper trail if anything is ever disputed.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS elite_onboarding_access_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      admin_id INTEGER NOT NULL,
+      admin_email TEXT,
+      accessed_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
   // a known-literal password from ever being seeded into the DB.
@@ -245,7 +282,70 @@ function initDb() {
 // --- Stripe Setup ---
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
+const STRIPE_ELITE_PRICE_ID = process.env.STRIPE_ELITE_PRICE_ID || '';
+const STRIPE_ELITE_PLUS_PRICE_ID = process.env.STRIPE_ELITE_PLUS_PRICE_ID || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+
+// Map Stripe price IDs to internal subscription tiers. Used by both checkout
+// (validate requested tier → resolve price) and webhook (resolve incoming
+// price ID → tier to persist on the user row).
+const TIER_PRICE_MAP = {
+  pro: STRIPE_PRICE_ID,
+  elite: STRIPE_ELITE_PRICE_ID,
+  elite_plus: STRIPE_ELITE_PLUS_PRICE_ID
+};
+function tierFromPriceId(priceId) {
+  if (!priceId) return null;
+  if (STRIPE_ELITE_PLUS_PRICE_ID && priceId === STRIPE_ELITE_PLUS_PRICE_ID) return 'elite_plus';
+  if (STRIPE_ELITE_PRICE_ID && priceId === STRIPE_ELITE_PRICE_ID) return 'elite';
+  if (STRIPE_PRICE_ID && priceId === STRIPE_PRICE_ID) return 'pro';
+  return null;
+}
+function isEliteTier(tier) { return tier === 'elite' || tier === 'elite_plus'; }
+
+// --- Onboarding credential encryption (AES-256-GCM) ---
+// Elite/Elite Plus customers submit distribution + social credentials so
+// Joseph can do manual concierge work. We store these encrypted at rest with
+// a server-only key, decryption restricted to admin route + audit logged.
+// Boot fatal if Elite price IDs are configured but the encryption key is missing —
+// we never want a misconfigured deploy to silently store plaintext creds.
+const ONBOARDING_ENCRYPTION_KEY_HEX = process.env.ONBOARDING_ENCRYPTION_KEY || '';
+let ONBOARDING_KEY_BUF = null;
+if (STRIPE_ELITE_PRICE_ID || STRIPE_ELITE_PLUS_PRICE_ID) {
+  if (!ONBOARDING_ENCRYPTION_KEY_HEX) {
+    console.error('[BOOT] FATAL: STRIPE_ELITE_PRICE_ID or STRIPE_ELITE_PLUS_PRICE_ID set but ONBOARDING_ENCRYPTION_KEY missing. Aborting boot.');
+    process.exit(1);
+  }
+  try {
+    ONBOARDING_KEY_BUF = Buffer.from(ONBOARDING_ENCRYPTION_KEY_HEX, 'hex');
+    if (ONBOARDING_KEY_BUF.length !== 32) throw new Error('must be 32 bytes (64 hex chars)');
+  } catch (e) {
+    console.error('[BOOT] FATAL: ONBOARDING_ENCRYPTION_KEY invalid:', e.message, '— generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+    process.exit(1);
+  }
+}
+function encryptOnboarding(obj) {
+  if (!ONBOARDING_KEY_BUF) throw new Error('Onboarding encryption not configured');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ONBOARDING_KEY_BUF, iv);
+  const plaintext = Buffer.from(JSON.stringify(obj), 'utf8');
+  const enc = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return {
+    data_encrypted: enc.toString('hex'),
+    iv: iv.toString('hex'),
+    auth_tag: cipher.getAuthTag().toString('hex')
+  };
+}
+function decryptOnboarding(row) {
+  if (!ONBOARDING_KEY_BUF) throw new Error('Onboarding encryption not configured');
+  const iv = Buffer.from(row.iv, 'hex');
+  const tag = Buffer.from(row.auth_tag, 'hex');
+  const enc = Buffer.from(row.data_encrypted, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', ONBOARDING_KEY_BUF, iv);
+  decipher.setAuthTag(tag);
+  const dec = Buffer.concat([decipher.update(enc), decipher.final()]);
+  return JSON.parse(dec.toString('utf8'));
+}
 
 // --- Email Setup (Resend — HTTPS API, works on Railway) ---
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
@@ -617,7 +717,7 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   if (!req.session.userId) return res.json({ loggedIn: false });
-  const user = dbHelpers.prepare('SELECT id, email, role, subscription_status, trial_ends_at FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT id, email, role, subscription_status, subscription_tier, onboarding_completed, trial_ends_at FROM users WHERE id = ?').get(req.session.userId);
   if (!user) return res.json({ loggedIn: false });
 
   let daysLeft = null;
@@ -667,8 +767,19 @@ app.get('/api/data/load', requireAuth, (req, res) => {
 
 // --- Stripe Routes ---
 app.post('/api/create-checkout', requireAuth, async (req, res) => {
-  if (!stripe || !STRIPE_PRICE_ID) {
-    return res.status(503).json({ error: 'Payments not configured yet' });
+  if (!stripe) return res.status(503).json({ error: 'Payments not configured yet' });
+
+  // Tier selection: 'pro' (monthly $14.99, 7-day trial), 'elite' ($1200/yr,
+  // immediate charge, manual distribution + registration), 'elite_plus'
+  // ($3000/yr, immediate charge, everything in elite + outreach + playlist
+  // curation). Default to 'pro' for backwards compat with old subscribe.html.
+  const requestedTier = (req.body && typeof req.body.tier === 'string') ? req.body.tier : 'pro';
+  if (!['pro', 'elite', 'elite_plus'].includes(requestedTier)) {
+    return res.status(400).json({ error: 'Invalid tier' });
+  }
+  const priceId = TIER_PRICE_MAP[requestedTier];
+  if (!priceId) {
+    return res.status(503).json({ error: 'This tier is not available yet' });
   }
 
   try {
@@ -682,15 +793,26 @@ app.post('/api/create-checkout', requireAuth, async (req, res) => {
     // Always use the trusted custom domain — never req.get('host'), which
     // is attacker-controllable via the Host header. (H7)
     const baseUrl = `https://${CUSTOM_DOMAIN}`;
+    // Elite tiers go straight to the credential onboarding form on success.
+    // Pro stays on the existing subscribe?success=1 → main app flow.
+    const successUrl = isEliteTier(requestedTier)
+      ? `${baseUrl}/elite-onboarding?session_id={CHECKOUT_SESSION_ID}`
+      : `${baseUrl}/subscribe?success=1`;
+    const subscriptionData = {
+      metadata: { tier: requestedTier }
+    };
+    // Only Pro gets the 7-day free trial. Elite tiers are immediate annual
+    // charge — Joseph is doing manual labor per order, no free trial.
+    if (requestedTier === 'pro') subscriptionData.trial_period_days = 7;
+
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: 'subscription',
       payment_method_types: ['card'],
-      line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
-      subscription_data: {
-        trial_period_days: 7
-      },
-      success_url: `${baseUrl}/subscribe?success=1`,
+      line_items: [{ price: priceId, quantity: 1 }],
+      subscription_data: subscriptionData,
+      metadata: { tier: requestedTier },
+      success_url: successUrl,
       cancel_url: `${baseUrl}/subscribe?canceled=1`,
     });
 
@@ -730,13 +852,24 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
       case 'customer.subscription.updated': {
         const status = obj.status === 'trialing' ? 'trialing' : (obj.status === 'active' ? 'active' : obj.status);
         const trialEnd = obj.trial_end ? new Date(obj.trial_end * 1000).toISOString() : null;
-        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ? WHERE stripe_customer_id = ?')
-          .run(status, obj.id, trialEnd, obj.customer);
+        // Resolve tier from the price ID on the subscription. Falls back to
+        // the metadata.tier we attached at checkout if the price ID lookup
+        // misses (e.g., env var not set on this instance).
+        const priceId = obj.items && obj.items.data && obj.items.data[0] && obj.items.data[0].price && obj.items.data[0].price.id;
+        let tier = tierFromPriceId(priceId);
+        if (!tier && obj.metadata && obj.metadata.tier && ['pro','elite','elite_plus'].includes(obj.metadata.tier)) {
+          tier = obj.metadata.tier;
+        }
+        if (!tier) tier = 'pro';
+        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ?, subscription_tier = ? WHERE stripe_customer_id = ?')
+          .run(status, obj.id, trialEnd, tier, obj.customer);
         break;
       }
       case 'customer.subscription.deleted': {
-        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = NULL WHERE stripe_customer_id = ?')
-          .run('canceled', obj.customer);
+        // Reset tier back to 'pro' so a future re-subscribe at the monthly
+        // tier doesn't inherit a stale 'elite' flag.
+        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = NULL, subscription_tier = ? WHERE stripe_customer_id = ?')
+          .run('canceled', 'pro', obj.customer);
         break;
       }
       case 'invoice.payment_failed': {
@@ -772,6 +905,123 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
 // --- Subscribe Page ---
 app.get('/subscribe', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'subscribe.html'));
+});
+
+// --- Elite Onboarding Page ---
+// Served to Elite/Elite Plus customers post-checkout to collect distribution
+// + social account credentials. Pro/admin users get bounced back to the app.
+app.get('/elite-onboarding', requireAuth, (req, res) => {
+  if (req.user.role === 'admin') return res.redirect('/');
+  if (!isEliteTier(req.user.subscription_tier)) return res.redirect('/');
+  res.sendFile(path.join(__dirname, 'elite-onboarding.html'));
+});
+
+// Submit credentials. Encrypts everything at rest, marks the user as
+// onboarded, and creates an escalated admin support ticket so Joseph sees
+// the new order in the admin queue.
+app.post('/api/elite/onboarding', requireAuth, (req, res) => {
+  if (!isEliteTier(req.user.subscription_tier)) {
+    return res.status(403).json({ error: 'Elite subscription required' });
+  }
+  const body = req.body || {};
+  // Whitelist + length-cap every field. We never want a malicious or buggy
+  // client to dump arbitrary blobs into the encrypted store.
+  const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n);
+  const data = {
+    distribution: {
+      provider: cap(body.distribution_provider, 80),
+      username: cap(body.distribution_username, 200),
+      password: cap(body.distribution_password, 200),
+      notes: cap(body.distribution_notes, 1000)
+    },
+    registration: {
+      pro_org: cap(body.registration_pro, 80),         // ASCAP/BMI/SESAC
+      username: cap(body.registration_username, 200),
+      password: cap(body.registration_password, 200),
+      ipi_number: cap(body.registration_ipi, 80),
+      soundexchange_username: cap(body.soundexchange_username, 200),
+      soundexchange_password: cap(body.soundexchange_password, 200)
+    },
+    social: {
+      instagram_username: cap(body.instagram_username, 200),
+      instagram_password: cap(body.instagram_password, 200),
+      tiktok_username: cap(body.tiktok_username, 200),
+      tiktok_password: cap(body.tiktok_password, 200),
+      youtube_username: cap(body.youtube_username, 200),
+      youtube_password: cap(body.youtube_password, 200),
+      twitter_username: cap(body.twitter_username, 200),
+      twitter_password: cap(body.twitter_password, 200)
+    },
+    cadence: {
+      release_frequency: cap(body.release_frequency, 200),
+      next_release_date: cap(body.next_release_date, 50),
+      genre: cap(body.genre, 100)
+    },
+    elite_plus: {
+      target_stations: cap(body.target_stations, 2000),
+      avoid_stations: cap(body.avoid_stations, 2000),
+      target_playlists: cap(body.target_playlists, 2000),
+      playlist_mood: cap(body.playlist_mood, 500),
+      submission_strategy: cap(body.submission_strategy, 1000)
+    },
+    extra_notes: cap(body.extra_notes, 3000)
+  };
+
+  let enc;
+  try { enc = encryptOnboarding(data); }
+  catch (e) {
+    console.error('[ELITE] encrypt error:', e.message);
+    return res.status(500).json({ error: 'Failed to save onboarding' });
+  }
+
+  // Upsert: a user can re-submit to update creds (e.g., password change).
+  const existing = dbHelpers.prepare('SELECT user_id FROM elite_onboarding WHERE user_id = ?').get(req.user.id);
+  if (existing) {
+    dbHelpers.prepare(`
+      UPDATE elite_onboarding
+      SET tier = ?, data_encrypted = ?, iv = ?, auth_tag = ?, updated_at = datetime('now')
+      WHERE user_id = ?
+    `).run(req.user.subscription_tier, enc.data_encrypted, enc.iv, enc.auth_tag, req.user.id);
+  } else {
+    dbHelpers.prepare(`
+      INSERT INTO elite_onboarding (user_id, tier, data_encrypted, iv, auth_tag)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(req.user.id, req.user.subscription_tier, enc.data_encrypted, enc.iv, enc.auth_tag);
+  }
+  dbHelpers.prepare('UPDATE users SET onboarding_completed = 1 WHERE id = ?').run(req.user.id);
+
+  // Auto-create escalated admin ticket as the notification mechanism. Joseph
+  // already monitors the admin ticket queue, so this surfaces new Elite
+  // orders without a separate notification system.
+  const tierLabel = req.user.subscription_tier === 'elite_plus' ? 'Elite Plus' : 'Elite';
+  const subject = `${tierLabel} onboarding submitted: ${req.user.email}`;
+  const message = [
+    `New ${tierLabel} customer completed onboarding.`,
+    ``,
+    `Email: ${req.user.email}`,
+    `User ID: ${req.user.id}`,
+    `Tier: ${req.user.subscription_tier}`,
+    ``,
+    `View encrypted credentials in Master Admin → Elite Onboarding.`,
+    `Or fetch via: GET /api/admin/elite-onboarding/${req.user.id}`,
+    ``,
+    `Manual work to start:`,
+    req.user.subscription_tier === 'elite_plus'
+      ? `- Distribution + registration\n- Outreach emails (radio, podcasts)\n- Playlist curation`
+      : `- Distribution + registration`
+  ].join('\n');
+  try {
+    dbHelpers.prepare(`
+      INSERT INTO support_tickets (user_id, user_email, subject, message, status, escalated)
+      VALUES (?, ?, ?, ?, 'open', 1)
+    `).run(req.user.id, req.user.email, subject, message);
+  } catch (e) {
+    console.error('[ELITE] ticket create error:', e.message);
+    // Don't fail the request — onboarding is saved, ticket is best-effort.
+  }
+
+  flushDbNow();
+  res.json({ success: true });
 });
 
 // --- Research API (Serper web search) ---
@@ -1038,7 +1288,7 @@ function requireAdmin(req, res, next) {
 // Analytics & user list
 app.get('/api/admin/users', requireAdmin, (req, res) => {
   const users = dbHelpers.prepare(`
-    SELECT id, email, role, subscription_status, trial_ends_at, created_at
+    SELECT id, email, role, subscription_status, subscription_tier, onboarding_completed, trial_ends_at, created_at
     FROM users ORDER BY created_at DESC
   `).all();
   const total = users.length;
@@ -1068,8 +1318,57 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   dbHelpers.prepare('DELETE FROM xp_log WHERE user_id = ?').run(id);
   dbHelpers.prepare('DELETE FROM support_tickets WHERE user_id = ?').run(id);
   dbHelpers.prepare('DELETE FROM api_usage WHERE user_id = ?').run(id);
+  dbHelpers.prepare('DELETE FROM elite_onboarding WHERE user_id = ?').run(id);
+  dbHelpers.prepare('DELETE FROM elite_onboarding_access_log WHERE user_id = ?').run(id);
   dbHelpers.prepare('DELETE FROM users WHERE id = ?').run(id);
   res.json({ success: true, deleted: user.email });
+});
+
+// List all Elite/Elite Plus users with onboarding status, for the admin
+// Elite Onboarding view. Doesn't decrypt anything — that's a separate
+// audited route.
+app.get('/api/admin/elite-onboarding', requireAdmin, (req, res) => {
+  const rows = dbHelpers.prepare(`
+    SELECT u.id, u.email, u.subscription_tier, u.subscription_status, u.onboarding_completed,
+           u.created_at, eo.submitted_at, eo.updated_at
+    FROM users u
+    LEFT JOIN elite_onboarding eo ON eo.user_id = u.id
+    WHERE u.subscription_tier IN ('elite', 'elite_plus')
+    ORDER BY u.created_at DESC
+  `).all();
+  res.json({ users: rows });
+});
+
+// Decrypt an Elite user's stored credentials. Audit-logged on every access.
+// Admin-only — never expose to the user themselves (they already have the
+// credentials they entered; this route exists for Joseph to do manual work).
+app.get('/api/admin/elite-onboarding/:userId', requireAdmin, (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const row = dbHelpers.prepare('SELECT * FROM elite_onboarding WHERE user_id = ?').get(userId);
+  if (!row) return res.status(404).json({ error: 'No onboarding record' });
+  let plaintext;
+  try { plaintext = decryptOnboarding(row); }
+  catch (e) {
+    console.error('[ELITE] decrypt error for user', userId, ':', e.message);
+    return res.status(500).json({ error: 'Failed to decrypt' });
+  }
+  // Audit log — every plaintext view recorded with the admin who did it.
+  try {
+    dbHelpers.prepare(`
+      INSERT INTO elite_onboarding_access_log (user_id, admin_id, admin_email)
+      VALUES (?, ?, ?)
+    `).run(userId, req.user.id, req.user.email);
+  } catch (e) { console.error('[ELITE] access log write failed:', e.message); }
+  const userRow = dbHelpers.prepare('SELECT email, subscription_tier FROM users WHERE id = ?').get(userId);
+  res.json({
+    user_id: userId,
+    user_email: userRow ? userRow.email : null,
+    tier: row.tier,
+    submitted_at: row.submitted_at,
+    updated_at: row.updated_at,
+    data: plaintext
+  });
 });
 
 // Support tickets — list all
@@ -1585,7 +1884,9 @@ app.get('/', requireAuth, (req, res) => {
     .replace('%%USER_ROLE%%', escHtml(req.user.role || 'user'))
     .replace('%%TRIAL_DAYS%%', String(trialDays))
     .replace('%%SUB_STATUS%%', escHtml(req.user.subscription_status || 'none'))
-    .replace('%%USER_EMAIL%%', escHtml(req.user.email || ''));
+    .replace('%%USER_EMAIL%%', escHtml(req.user.email || ''))
+    .replace('%%USER_TIER%%', escHtml(req.user.subscription_tier || 'pro'))
+    .replace('%%ONBOARDING_COMPLETED%%', req.user.onboarding_completed ? '1' : '0');
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.set('Pragma', 'no-cache');
   res.type('html').send(html);
