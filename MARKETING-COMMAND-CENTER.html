@@ -5896,7 +5896,8 @@ function handleAiScanFiles(input) {
 
         const div = document.createElement('div');
         div.style.cssText = 'display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:#1a1a1a;border:1px solid #222;border-radius:6px;font-size:12px;color:#ccc;margin:4px;';
-        div.innerHTML = `<span>📄</span><span>${file.name}</span><span style="color:#666;">(${(file.size/1024).toFixed(0)}KB)</span>`;
+        div.innerHTML = `<span>📄</span><span></span><span style="color:#666;">(${(file.size/1024).toFixed(0)}KB)</span>`;
+        div.querySelector('span:nth-child(2)').textContent = file.name;
         listEl.appendChild(div);
 
         if (processed === files.length) {
@@ -6124,6 +6125,10 @@ async function adminLoadData() {
     document.getElementById('stat-expired').textContent = stats.expired;
 
     // User table
+    // Escape user-controlled fields (email is user-supplied at signup, role is server-controlled
+    // but escape anyway for defense in depth). Wire delete buttons via dataset + delegation
+    // instead of string-concatenated onclick — that avoids quote-escape bugs and is XSS-safe.
+    const escAdmin = s => (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     const tbody = document.getElementById('adminUserList');
     tbody.innerHTML = users.map(u => {
       const statusColor = u.role === 'admin' ? '#ffd700' :
@@ -6141,16 +6146,24 @@ async function adminLoadData() {
       }
       const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : '—';
       const deleteBtn = u.role === 'admin' ? '<span style="color:#6b7094;font-size:11px;">—</span>' :
-        '<button onclick="adminDeleteUser(' + u.id + ',\'' + u.email.replace(/'/g, "\\'") + '\')" style="background:#ff444420;color:#ff4444;border:1px solid #ff444440;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Delete</button>';
+        '<button data-delete-user-id="' + Number(u.id) + '" data-delete-user-email="' + escAdmin(u.email) + '" style="background:#ff444420;color:#ff4444;border:1px solid #ff444440;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Delete</button>';
       return '<tr>' +
-        '<td style="color:#fff;font-weight:500;">' + u.email + '</td>' +
-        '<td><span style="color:' + statusColor + ';font-weight:600;">' + u.role + '</span></td>' +
+        '<td style="color:#fff;font-weight:500;">' + escAdmin(u.email) + '</td>' +
+        '<td><span style="color:' + statusColor + ';font-weight:600;">' + escAdmin(u.role) + '</span></td>' +
         '<td><span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:600;background:' + statusColor + '20;color:' + statusColor + ';">' + statusLabel + '</span></td>' +
         '<td style="color:#6b7094;">' + trialInfo + '</td>' +
         '<td style="color:#6b7094;">' + joined + '</td>' +
         '<td>' + deleteBtn + '</td>' +
         '</tr>';
     }).join('');
+    // Delegated click handler — bound once per render. Reads dataset, never eval()s strings.
+    tbody.querySelectorAll('button[data-delete-user-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.dataset.deleteUserId, 10);
+        const email = btn.dataset.deleteUserEmail || '';
+        if (Number.isInteger(id) && id > 0) adminDeleteUser(id, email);
+      });
+    });
   } catch(e) { console.error('Admin load error:', e); }
 
   adminLoadTickets('all');

@@ -62,17 +62,29 @@ const dbHelpers = {
 };
 
 let _saveTimer = null;
+function flushDbNow() {
+  if (!db) return;
+  try {
+    const data = db.export();
+    const tmpPath = DB_PATH + '.tmp';
+    fs.writeFileSync(tmpPath, Buffer.from(data));
+    fs.renameSync(tmpPath, DB_PATH);
+  } catch(e) { console.error('DB save error:', e.message); }
+}
 function saveDb() {
   clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(() => {
-    try {
-      const data = db.export();
-      const tmpPath = DB_PATH + '.tmp';
-      fs.writeFileSync(tmpPath, Buffer.from(data));
-      fs.renameSync(tmpPath, DB_PATH);
-    } catch(e) { console.error('DB save error:', e.message); }
-  }, 100);
+  _saveTimer = setTimeout(flushDbNow, 100);
 }
+// Flush pending writes on graceful shutdown so the 100ms debounce window
+// can never silently drop a batch of saves on SIGTERM (Railway redeploy). (H9)
+function shutdown(signal) {
+  console.log('[SHUTDOWN] Received', signal, '— flushing DB');
+  clearTimeout(_saveTimer);
+  flushDbNow();
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 function initDb() {
   db.run(`
@@ -172,18 +184,57 @@ function initDb() {
     )
   `);
 
-  // --- Seed Admin Accounts (passwords from env vars, with fallback) ---
-  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Bornagainbold123!';
+  // Per-user, per-day API usage tracking. Prevents the Claude proxy from
+  // becoming a free Anthropic-credit faucet for trial users (or compromised
+  // paying ones). One row per (user, UTC day, provider).
+  // Indexes for hot paths — keep query plans cheap as the tables grow. (M6)
+  db.run('CREATE INDEX IF NOT EXISTS idx_xp_log_user ON xp_log(user_id, created_at DESC)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_user_data_user ON user_data(user_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_tickets_user ON support_tickets(user_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_user_xp_user ON user_xp(user_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_user_ach_user ON user_achievements(user_id)');
+
+  // Stripe webhook idempotency: Stripe retries webhooks on transient errors,
+  // so we record every processed event ID and bail early on duplicates. (H5)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS stripe_events (
+      id TEXT PRIMARY KEY,
+      type TEXT,
+      processed_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS api_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      provider TEXT NOT NULL,
+      day TEXT NOT NULL,
+      input_tokens INTEGER DEFAULT 0,
+      output_tokens INTEGER DEFAULT 0,
+      requests INTEGER DEFAULT 0,
+      UNIQUE(user_id, provider, day)
+    )
+  `);
+
+  // --- Seed Admin Accounts ---
+  // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
+  // a known-literal password from ever being seeded into the DB.
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
   const ADMINS = [
     { email: 'josephmadiganmusic@gmail.com' },
     { email: 'official.stevenperez@gmail.com' }
   ];
 
-  for (const admin of ADMINS) {
-    const exists = dbHelpers.prepare('SELECT id FROM users WHERE email = ?').get(admin.email);
-    if (!exists) {
-      const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
-      dbHelpers.prepare('INSERT INTO users (email, password, role, subscription_status) VALUES (?, ?, ?, ?)').run(admin.email, hash, 'admin', 'admin');
+  if (!ADMIN_PASSWORD) {
+    console.warn('[BOOT] ADMIN_PASSWORD not set — skipping admin seeding. Existing admin accounts are unaffected.');
+  } else {
+    for (const admin of ADMINS) {
+      const exists = dbHelpers.prepare('SELECT id FROM users WHERE email = ?').get(admin.email);
+      if (!exists) {
+        const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+        dbHelpers.prepare('INSERT INTO users (email, password, role, subscription_status) VALUES (?, ?, ?, ?)').run(admin.email, hash, 'admin', 'active');
+      }
     }
   }
 }
@@ -196,6 +247,19 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 // --- Email Setup (Resend — HTTPS API, works on Railway) ---
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const EMAIL_FROM = process.env.EMAIL_FROM || 'Rollout Heaven <onboarding@resend.dev>';
+
+// Independent control over verification enforcement. Defaults to ON in
+// production so a missing/expired RESEND_API_KEY can never silently disable
+// verification (which would let attackers spin up unlimited free trials).
+// Set REQUIRE_EMAIL_VERIFICATION=false explicitly to opt out (e.g., local dev).
+const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION
+  ? process.env.REQUIRE_EMAIL_VERIFICATION !== 'false'
+  : process.env.NODE_ENV === 'production';
+
+if (REQUIRE_EMAIL_VERIFICATION && !resend) {
+  console.error('[BOOT] FATAL: REQUIRE_EMAIL_VERIFICATION is on but RESEND_API_KEY is not set. Aborting boot.');
+  process.exit(1);
+}
 
 async function sendVerificationEmail(email, token) {
   if (!resend) throw new Error('RESEND_API_KEY not configured');
@@ -236,6 +300,14 @@ app.use(express.urlencoded({ extended: true }));
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
+// Session secret MUST come from env in production. In dev, generate a
+// random per-process secret so sessions still work locally but cannot be
+// forged with a known literal.
+const SESSION_SECRET = process.env.SESSION_SECRET
+  || (process.env.NODE_ENV === 'production'
+      ? (() => { throw new Error('SESSION_SECRET env var required in production'); })()
+      : crypto.randomBytes(32).toString('hex'));
+
 app.use(session({
   store: new FileStore({
     path: SESSIONS_DIR,
@@ -244,11 +316,14 @@ app.use(session({
     reapInterval: 60 * 60,  // sweep expired sessions hourly
     logFn: () => {}         // silence noisy info logs
   }),
-  secret: process.env.SESSION_SECRET || 'mcc-secret-change-me-in-production',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production' && process.env.RAILWAY_ENVIRONMENT ? true : false,
+    // Always secure in production. Previously this required BOTH NODE_ENV
+    // and RAILWAY_ENVIRONMENT — a missing env var silently downgraded
+    // cookies to plaintext over HTTP. (H2)
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     sameSite: 'lax'
     // maxAge set per-login based on "Remember Me" checkbox
@@ -259,24 +334,58 @@ app.use(session({
 // Trust Railway proxy
 app.set('trust proxy', 1);
 
+// --- Security headers (inline; avoids adding helmet as a dependency) (M2) ---
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// --- Rate limiting (in-memory; single-instance only — see M4) ---
+// Bucket key is `${routeName}:${userId || ip}`. Each bucket holds an array of
+// timestamps within the window. Cheaper than pulling in express-rate-limit
+// for ~5 routes, and works fine because the app already cannot scale beyond
+// one process (sql.js + session-file-store).
+const _rlBuckets = new Map();
+function rateLimit({ name, windowMs, max }) {
+  return (req, res, next) => {
+    const id = (req.session && req.session.userId) || req.ip || 'anon';
+    const key = name + ':' + id;
+    const now = Date.now();
+    let arr = _rlBuckets.get(key);
+    if (!arr) { arr = []; _rlBuckets.set(key, arr); }
+    // Drop expired entries.
+    while (arr.length && arr[0] <= now - windowMs) arr.shift();
+    if (arr.length >= max) {
+      const retryAfter = Math.ceil((arr[0] + windowMs - now) / 1000);
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({ error: 'Too many requests. Try again shortly.' });
+    }
+    arr.push(now);
+    next();
+  };
+}
+// Sweep stale buckets every 5 minutes so the Map doesn't grow forever.
+setInterval(() => {
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  for (const [k, arr] of _rlBuckets) {
+    if (!arr.length || arr[arr.length - 1] < cutoff) _rlBuckets.delete(k);
+  }
+}, 5 * 60 * 1000).unref();
+
+const rlAuth = rateLimit({ name: 'auth', windowMs: 15 * 60 * 1000, max: 10 });
+const rlSignup = rateLimit({ name: 'signup', windowMs: 60 * 60 * 1000, max: 5 });
+const rlClaude = rateLimit({ name: 'claude', windowMs: 60 * 60 * 1000, max: 60 });
+const rlResearch = rateLimit({ name: 'research', windowMs: 60 * 60 * 1000, max: 100 });
+const rlSupport = rateLimit({ name: 'support', windowMs: 60 * 60 * 1000, max: 5 });
+
 // Health check endpoint (must respond before any redirects)
 app.get('/health', (req, res) => res.status(200).send('OK'));
-
-// Email test endpoint (temporary — remove after debugging)
-app.get('/api/email-test', async (req, res) => {
-  if (!resend) return res.json({ email: 'FAIL', error: 'RESEND_API_KEY not set' });
-  try {
-    const result = await resend.emails.send({
-      from: EMAIL_FROM,
-      to: 'josephmadiganmusic@gmail.com',
-      subject: 'Rollout Heaven - Email Test',
-      html: '<p>Email is working!</p>'
-    });
-    res.json({ email: 'OK', id: result.data?.id });
-  } catch (err) {
-    res.json({ email: 'FAIL', error: err.message });
-  }
-});
 
 // Redirect Railway URL to custom domain
 const CUSTOM_DOMAIN = process.env.CUSTOM_DOMAIN || 'rolloutheaven.com';
@@ -337,17 +446,29 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'login.html'));
 });
 
-app.post('/api/login', (req, res) => {
-  const { email, password, rememberMe } = req.body;
+// Pre-computed dummy hash so misses do equivalent CPU work to hits.
+// Generated once at boot so we don't burn ~50ms on every cold login miss.
+const DUMMY_BCRYPT_HASH = bcrypt.hashSync('dummy-password-for-timing-equalization', 10);
+
+app.post('/api/login', rlAuth, (req, res) => {
+  const { email, password, rememberMe } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  if (typeof email !== 'string' || typeof password !== 'string') return res.status(400).json({ error: 'Invalid input' });
+  if (email.length > 254 || password.length > 200) return res.status(400).json({ error: 'Invalid input' });
 
   const user = dbHelpers.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
-  if (!user || !bcrypt.compareSync(password, user.password)) {
+  // Always run a bcrypt compare — even on miss — to flatten the timing
+  // signal. Without this, attackers can enumerate registered emails by
+  // measuring response time. (H1)
+  const valid = user
+    ? bcrypt.compareSync(password, user.password)
+    : (bcrypt.compareSync(password, DUMMY_BCRYPT_HASH), false);
+  if (!user || !valid) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
-  // Only enforce verification if Resend is configured
-  if (resend && !user.email_verified && user.role !== 'admin') {
+  // Enforce verification independent of Resend availability — see C7.
+  if (REQUIRE_EMAIL_VERIFICATION && !user.email_verified && user.role !== 'admin') {
     return res.status(403).json({ error: 'Please verify your email before logging in. Check your inbox for a verification link.', needsVerification: true, email: user.email });
   }
 
@@ -362,10 +483,17 @@ app.post('/api/login', (req, res) => {
   res.json({ success: true, hasAccess: hasAccess(user) });
 });
 
-app.post('/api/signup', async (req, res) => {
+// RFC-5321-ish: local 64, domain 255, total 254. Plus a strict-ish format
+// check. Conservative deny set blocks angle brackets / quotes that would
+// otherwise enable HTML injection in admin UIs that ever forget to escape.
+const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+
+app.post('/api/signup', rlSignup, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (typeof email !== 'string' || typeof password !== 'string') return res.status(400).json({ error: 'Invalid input' });
+  if (password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Password must be 8–200 characters' });
+  if (email.length > 254 || !EMAIL_RE.test(email.trim())) return res.status(400).json({ error: 'Invalid email address' });
 
   const cleanEmail = email.toLowerCase().trim();
   const existing = dbHelpers.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
@@ -380,14 +508,18 @@ app.post('/api/signup', async (req, res) => {
     'INSERT INTO users (email, password, subscription_status, trial_ends_at, verification_token, verification_expires) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(cleanEmail, hash, 'trialing', trialEnd, token, tokenExpires);
 
-  // Respond immediately, send email in background (don't block the request)
-  if (resend) {
-    sendVerificationEmail(cleanEmail, token).catch(err => {
-      console.error('[SIGNUP] Email send error:', err.message);
-    });
+  // Respond immediately, send email in background (don't block the request).
+  // Auto-verification only happens when verification is explicitly disabled —
+  // never as a silent fallback when Resend is missing (see C7).
+  if (REQUIRE_EMAIL_VERIFICATION) {
+    if (resend) {
+      sendVerificationEmail(cleanEmail, token).catch(err => {
+        console.error('[SIGNUP] Email send error:', err.message);
+      });
+    }
     res.json({ success: true, needsVerification: true });
   } else {
-    console.log('[SIGNUP] Resend not configured, auto-verifying', cleanEmail);
+    console.log('[SIGNUP] Verification disabled, auto-verifying', cleanEmail);
     dbHelpers.prepare('UPDATE users SET email_verified = 1 WHERE email = ?').run(cleanEmail);
     res.json({ success: true, needsVerification: false });
   }
@@ -407,13 +539,15 @@ app.get('/api/verify-email', (req, res) => {
 
   dbHelpers.prepare('UPDATE users SET email_verified = 1, verification_token = NULL, verification_expires = NULL WHERE id = ?').run(user.id);
 
-  // Auto-login after verification
-  req.session.userId = user.id;
+  // Do NOT auto-login here. Auto-login on a GET request is a login-fixation
+  // vector: an attacker could phish a victim with their own verification link
+  // and have the victim's browser silently signed in to the attacker's account.
+  // The user types credentials on the next screen — small UX cost, big security win.
   res.redirect('/login?verified=1');
 });
 
 // --- Resend Verification Email ---
-app.post('/api/resend-verification', async (req, res) => {
+app.post('/api/resend-verification', rlAuth, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
 
@@ -506,7 +640,9 @@ app.post('/api/create-checkout', requireAuth, async (req, res) => {
       dbHelpers.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?').run(customerId, req.user.id);
     }
 
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    // Always use the trusted custom domain — never req.get('host'), which
+    // is attacker-controllable via the Host header. (H7)
+    const baseUrl = `https://${CUSTOM_DOMAIN}`;
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: 'subscription',
@@ -538,22 +674,52 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
     return res.sendStatus(400);
   }
 
-  const sub = event.data.object;
+  // Idempotency: Stripe retries on any non-2xx, so the same event.id can
+  // arrive multiple times. Bail early on duplicates so we never double-fire
+  // future side effects (welcome emails, XP grants, etc.). (H5)
+  const dup = dbHelpers.prepare('SELECT id FROM stripe_events WHERE id = ?').get(event.id);
+  if (dup) return res.sendStatus(200);
+  try {
+    dbHelpers.prepare('INSERT INTO stripe_events (id, type) VALUES (?, ?)').run(event.id, event.type);
+  } catch(_) { /* race: another worker processed it — treat as duplicate */ return res.sendStatus(200); }
 
-  switch (event.type) {
-    case 'customer.subscription.created':
-    case 'customer.subscription.updated': {
-      const status = sub.status === 'trialing' ? 'trialing' : (sub.status === 'active' ? 'active' : sub.status);
-      const trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
-      dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ? WHERE stripe_customer_id = ?')
-        .run(status, sub.id, trialEnd, sub.customer);
-      break;
+  const obj = event.data.object;
+
+  try {
+    switch (event.type) {
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const status = obj.status === 'trialing' ? 'trialing' : (obj.status === 'active' ? 'active' : obj.status);
+        const trialEnd = obj.trial_end ? new Date(obj.trial_end * 1000).toISOString() : null;
+        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ? WHERE stripe_customer_id = ?')
+          .run(status, obj.id, trialEnd, obj.customer);
+        break;
+      }
+      case 'customer.subscription.deleted': {
+        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = NULL WHERE stripe_customer_id = ?')
+          .run('canceled', obj.customer);
+        break;
+      }
+      case 'invoice.payment_failed': {
+        // Mark as past_due so the UI can prompt the user to update billing.
+        dbHelpers.prepare('UPDATE users SET subscription_status = ? WHERE stripe_customer_id = ?')
+          .run('past_due', obj.customer);
+        break;
+      }
+      case 'checkout.session.completed': {
+        // Defensive: tie the customer ID back to the user if it's somehow not set yet.
+        if (obj.customer && obj.customer_email) {
+          dbHelpers.prepare('UPDATE users SET stripe_customer_id = ? WHERE email = ? AND (stripe_customer_id IS NULL OR stripe_customer_id = "")')
+            .run(obj.customer, obj.customer_email.toLowerCase());
+        }
+        break;
+      }
     }
-    case 'customer.subscription.deleted': {
-      dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = NULL WHERE stripe_customer_id = ?')
-        .run('canceled', sub.customer);
-      break;
-    }
+  } catch (err) {
+    console.error('[STRIPE] Handler error for', event.type, err.message);
+    // Roll back the dedupe row so Stripe will retry.
+    dbHelpers.prepare('DELETE FROM stripe_events WHERE id = ?').run(event.id);
+    return res.sendStatus(500);
   }
 
   res.sendStatus(200);
@@ -588,14 +754,16 @@ function cacheGet(key) {
 }
 function cacheSet(key, data, ttlMs = 3600000) {
   researchCache.set(key, { data, expires: Date.now() + ttlMs });
-  // Evict old entries if cache grows too large
-  if (researchCache.size > 200) {
-    const now = Date.now();
-    for (const [k, v] of researchCache) { if (now > v.expires) researchCache.delete(k); }
+  // True LRU eviction. Map iteration order is insertion order, so the
+  // first key is the oldest. Previously this only removed expired entries
+  // and let fresh entries grow unbounded — a memory leak. (H8)
+  while (researchCache.size > 200) {
+    const oldest = researchCache.keys().next().value;
+    researchCache.delete(oldest);
   }
 }
 
-app.post('/api/research', requireAccess, async (req, res) => {
+app.post('/api/research', requireAccess, rlResearch, async (req, res) => {
   const { action, genre, artistName, query, similarArtists } = req.body;
   if (!action) return res.status(400).json({ error: 'Missing action' });
 
@@ -842,15 +1010,18 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
 
 // Delete user (admin only, can't delete admins)
 app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.role === 'admin') return res.status(403).json({ error: 'Cannot delete admin accounts' });
-  dbHelpers.prepare('DELETE FROM user_data WHERE user_id = ?').run(req.params.id);
-  dbHelpers.prepare('DELETE FROM user_xp WHERE user_id = ?').run(req.params.id);
-  dbHelpers.prepare('DELETE FROM user_achievements WHERE user_id = ?').run(req.params.id);
-  dbHelpers.prepare('DELETE FROM xp_log WHERE user_id = ?').run(req.params.id);
-  dbHelpers.prepare('DELETE FROM support_tickets WHERE user_id = ?').run(req.params.id);
-  dbHelpers.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  dbHelpers.prepare('DELETE FROM user_data WHERE user_id = ?').run(id);
+  dbHelpers.prepare('DELETE FROM user_xp WHERE user_id = ?').run(id);
+  dbHelpers.prepare('DELETE FROM user_achievements WHERE user_id = ?').run(id);
+  dbHelpers.prepare('DELETE FROM xp_log WHERE user_id = ?').run(id);
+  dbHelpers.prepare('DELETE FROM support_tickets WHERE user_id = ?').run(id);
+  dbHelpers.prepare('DELETE FROM api_usage WHERE user_id = ?').run(id);
+  dbHelpers.prepare('DELETE FROM users WHERE id = ?').run(id);
   res.json({ success: true, deleted: user.email });
 });
 
@@ -868,16 +1039,22 @@ app.get('/api/admin/tickets', requireAdmin, (req, res) => {
 
 // Support tickets — update (admin notes, status, etc.)
 app.post('/api/admin/tickets/:id', requireAdmin, (req, res) => {
-  const { status, admin_notes } = req.body;
-  const ticket = dbHelpers.prepare('SELECT * FROM support_tickets WHERE id = ?').get(req.params.id);
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const { status, admin_notes } = req.body || {};
+  const ticket = dbHelpers.prepare('SELECT * FROM support_tickets WHERE id = ?').get(id);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-  if (status) dbHelpers.prepare('UPDATE support_tickets SET status = ?, updated_at = datetime("now") WHERE id = ?').run(status, req.params.id);
-  if (admin_notes !== undefined) dbHelpers.prepare('UPDATE support_tickets SET admin_notes = ?, updated_at = datetime("now") WHERE id = ?').run(admin_notes, req.params.id);
+  if (status && ['open','resolved','closed'].includes(status)) {
+    dbHelpers.prepare('UPDATE support_tickets SET status = ?, updated_at = datetime("now") WHERE id = ?').run(status, id);
+  }
+  if (admin_notes !== undefined) {
+    dbHelpers.prepare('UPDATE support_tickets SET admin_notes = ?, updated_at = datetime("now") WHERE id = ?').run(String(admin_notes).slice(0, 5000), id);
+  }
   res.json({ success: true });
 });
 
 // Support tickets — user submits a ticket
-app.post('/api/support/submit', requireAuth, async (req, res) => {
+app.post('/api/support/submit', requireAuth, rlSupport, async (req, res) => {
   const { subject, message } = req.body;
   if (!subject || !message) return res.status(400).json({ error: 'Subject and message required' });
 
@@ -1085,8 +1262,8 @@ app.get('/api/gamification', requireAuth, (req, res) => {
     let newStreak = xp.current_streak;
     if (xp.last_active_date === yesterday) {
       newStreak += 1;
-    } else if (xp.last_active_date !== today) {
-      newStreak = 1; // streak broken
+    } else {
+      newStreak = 1; // streak broken (M7: outer if guarantees not today)
     }
     const longest = Math.max(xp.longest_streak, newStreak);
     const loginXp = XP_VALUES.login + (newStreak >= 3 ? XP_VALUES.streak_bonus : 0);
@@ -1155,22 +1332,20 @@ app.post('/api/gamification/award', requireAuth, (req, res) => {
   const newLevel = getLevel(newTotal);
   const leveledUp = newLevel > xp.level;
 
-  // Update stat counters
-  const statMap = {
-    campaign_generate: 'campaigns_generated',
-    task_complete: 'tasks_completed',
-    email_generate: 'emails_generated',
-    research_run: 'research_runs',
-    playlist_submit: 'playlists_submitted',
-    content_copy: 'content_copied',
-    release_complete: 'releases_completed'
+  // Static SQL per action — no string interpolation of column names. Even
+  // though the previous version was safe-by-construction (statMap was a
+  // hardcoded object), the pattern was a future-SQLi trap. (M1)
+  const STAT_UPDATE_SQL = {
+    campaign_generate: 'UPDATE user_xp SET total_xp = ?, level = ?, campaigns_generated = campaigns_generated + 1 WHERE user_id = ?',
+    task_complete:     'UPDATE user_xp SET total_xp = ?, level = ?, tasks_completed = tasks_completed + 1 WHERE user_id = ?',
+    email_generate:    'UPDATE user_xp SET total_xp = ?, level = ?, emails_generated = emails_generated + 1 WHERE user_id = ?',
+    research_run:      'UPDATE user_xp SET total_xp = ?, level = ?, research_runs = research_runs + 1 WHERE user_id = ?',
+    playlist_submit:   'UPDATE user_xp SET total_xp = ?, level = ?, playlists_submitted = playlists_submitted + 1 WHERE user_id = ?',
+    content_copy:      'UPDATE user_xp SET total_xp = ?, level = ?, content_copied = content_copied + 1 WHERE user_id = ?',
+    release_complete:  'UPDATE user_xp SET total_xp = ?, level = ?, releases_completed = releases_completed + 1 WHERE user_id = ?'
   };
-  const statCol = statMap[action];
-  if (statCol) {
-    dbHelpers.prepare(`UPDATE user_xp SET total_xp = ?, level = ?, ${statCol} = ${statCol} + 1 WHERE user_id = ?`).run(newTotal, newLevel, req.user.id);
-  } else {
-    dbHelpers.prepare('UPDATE user_xp SET total_xp = ?, level = ? WHERE user_id = ?').run(newTotal, newLevel, req.user.id);
-  }
+  const sql = STAT_UPDATE_SQL[action] || 'UPDATE user_xp SET total_xp = ?, level = ? WHERE user_id = ?';
+  dbHelpers.prepare(sql).run(newTotal, newLevel, req.user.id);
 
   dbHelpers.prepare('INSERT INTO xp_log (user_id, action, xp_amount, description) VALUES (?, ?, ?, ?)').run(req.user.id, action, amount, action.replace(/_/g, ' '));
 
@@ -1205,16 +1380,90 @@ app.get('/api/gamification/leaderboard', requireAuth, (req, res) => {
 });
 
 // --- Claude API Proxy (keeps API key server-side) ---
-app.post('/api/claude', requireAccess, async (req, res) => {
+
+// Allowlist of models the proxy will forward to. Anything else is rejected
+// before we touch Anthropic. Add new models here as the app needs them.
+const ALLOWED_CLAUDE_MODELS = new Set([
+  'claude-sonnet-4-20250514',
+  'claude-3-5-sonnet-20241022',
+  'claude-3-5-haiku-20241022'
+]);
+const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+
+// Daily token caps per user role. Trial users get a small allowance to
+// evaluate the product; paid users get a generous cap that still bounds
+// catastrophic abuse (e.g. compromised credentials). Admins are unlimited.
+const CLAUDE_DAILY_TOKEN_CAP = {
+  trialing: 100000,   // ~30 generations
+  active:   2000000,  // ~600 generations — bounds runaway clients
+  admin:    Infinity
+};
+
+function todayUtc() { return new Date().toISOString().slice(0, 10); }
+
+function getClaudeUsageToday(userId) {
+  const row = dbHelpers.prepare(
+    'SELECT input_tokens, output_tokens, requests FROM api_usage WHERE user_id = ? AND provider = ? AND day = ?'
+  ).get(userId, 'claude', todayUtc());
+  return row || { input_tokens: 0, output_tokens: 0, requests: 0 };
+}
+
+function recordClaudeUsage(userId, inputTokens, outputTokens) {
+  dbHelpers.prepare(`
+    INSERT INTO api_usage (user_id, provider, day, input_tokens, output_tokens, requests)
+    VALUES (?, 'claude', ?, ?, ?, 1)
+    ON CONFLICT(user_id, provider, day) DO UPDATE SET
+      input_tokens = input_tokens + excluded.input_tokens,
+      output_tokens = output_tokens + excluded.output_tokens,
+      requests = requests + 1
+  `).run(userId, todayUtc(), inputTokens || 0, outputTokens || 0);
+}
+
+function claudeQuotaForUser(user) {
+  if (user.role === 'admin') return CLAUDE_DAILY_TOKEN_CAP.admin;
+  if (user.subscription_status === 'active') return CLAUDE_DAILY_TOKEN_CAP.active;
+  if (user.subscription_status === 'trialing') return CLAUDE_DAILY_TOKEN_CAP.trialing;
+  return 0;
+}
+
+app.post('/api/claude', requireAccess, rlClaude, async (req, res) => {
   const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
   if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured' });
+
+  // Validate request shape strictly. The previous version forwarded any
+  // user-supplied system/messages/model — turning the endpoint into an
+  // unmetered Anthropic proxy that any trial user could abuse.
+  const { model, max_tokens, system, messages } = req.body || {};
+  const chosenModel = model || DEFAULT_CLAUDE_MODEL;
+  if (!ALLOWED_CLAUDE_MODELS.has(chosenModel)) {
+    return res.status(400).json({ error: 'Model not allowed' });
+  }
+  if (!Array.isArray(messages) || messages.length === 0 || messages.length > 50) {
+    return res.status(400).json({ error: 'messages must be a non-empty array (max 50)' });
+  }
+  // Coarse payload guard — Anthropic will reject anything ridiculous anyway,
+  // but cheaper to bounce here before we burn tokens.
+  const bodyBytes = JSON.stringify({ system, messages }).length;
+  if (bodyBytes > 200000) return res.status(413).json({ error: 'Request too large' });
+
+  const cappedMaxTokens = Math.min(Math.max(parseInt(max_tokens, 10) || 1024, 1), 8192);
+
+  // Quota check — block before we forward.
+  const cap = claudeQuotaForUser(req.user);
+  if (cap === 0) return res.status(403).json({ error: 'No active subscription' });
+  if (cap !== Infinity) {
+    const usage = getClaudeUsageToday(req.user.id);
+    const used = (usage.input_tokens || 0) + (usage.output_tokens || 0);
+    if (used >= cap) {
+      return res.status(429).json({ error: 'Daily AI usage limit reached. Resets at 00:00 UTC.' });
+    }
+  }
 
   // Extend request timeout to 240s — Opus + 8k tokens can take 2+ minutes
   req.setTimeout(240000);
   res.setTimeout(240000);
 
   try {
-    const { model, max_tokens, system, messages } = req.body;
     const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -1223,22 +1472,23 @@ app.post('/api/claude', requireAccess, async (req, res) => {
         'content-type': 'application/json'
       },
       body: JSON.stringify({
-        model: model || 'claude-sonnet-4-20250514',
-        max_tokens: Math.min(max_tokens || 1024, 8192),
-        system: system || '',
-        messages: messages || []
+        model: chosenModel,
+        max_tokens: cappedMaxTokens,
+        system: typeof system === 'string' ? system : '',
+        messages
       }),
       signal: AbortSignal.timeout(220000)
     });
     if (!aiResp.ok) {
       const errText = await aiResp.text();
       console.error('Anthropic API error:', aiResp.status, errText);
-      // Surface the real Anthropic error so the client (and you) can see it
       let detail = errText;
       try { detail = JSON.parse(errText).error?.message || errText; } catch(_) {}
       return res.status(aiResp.status).json({ error: 'AI error ' + aiResp.status + ': ' + detail });
     }
     const data = await aiResp.json();
+    // Record usage from Anthropic's reported counts. Failed requests don't count.
+    recordClaudeUsage(req.user.id, data.usage?.input_tokens, data.usage?.output_tokens);
     res.json(data);
   } catch(err) {
     console.error('AI proxy error:', err.message, err.stack);
@@ -1247,20 +1497,30 @@ app.post('/api/claude', requireAccess, async (req, res) => {
 });
 
 // --- Main App (protected — allows expired trial to see upgrade prompt) ---
+// Cache the 408 KB HTML template at boot. Previously this read the file
+// synchronously on EVERY request, blocking the event loop. (H6)
+const APP_HTML_TEMPLATE = fs.readFileSync(path.join(__dirname, 'MARKETING-COMMAND-CENTER.html'), 'utf8');
+
+// Email is interpolated into the HTML template — escape it to prevent any
+// signup-time HTML injection from rendering as live markup.
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 app.get('/', requireAuth, (req, res) => {
-  let html = fs.readFileSync(path.join(__dirname, 'MARKETING-COMMAND-CENTER.html'), 'utf8');
-  html = html.replace('%%CLAUDE_API_KEY%%', ''); // API key no longer sent to client
-  html = html.replace('%%USER_ID%%', String(req.user.id));
-  html = html.replace('%%USER_ROLE%%', req.user.role || 'user');
-  // Calculate trial days left
   let trialDays = -1;
   if (req.user.role !== 'admin' && req.user.subscription_status === 'trialing' && req.user.trial_ends_at) {
     trialDays = Math.max(0, Math.ceil((new Date(req.user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)));
   }
-  const subStatus = req.user.subscription_status || 'none';
-  html = html.replace('%%TRIAL_DAYS%%', String(trialDays));
-  html = html.replace('%%SUB_STATUS%%', subStatus);
-  html = html.replace('%%USER_EMAIL%%', req.user.email || '');
+  const html = APP_HTML_TEMPLATE
+    .replace('%%CLAUDE_API_KEY%%', '') // API key no longer sent to client
+    .replace('%%USER_ID%%', String(req.user.id))
+    .replace('%%USER_ROLE%%', escHtml(req.user.role || 'user'))
+    .replace('%%TRIAL_DAYS%%', String(trialDays))
+    .replace('%%SUB_STATUS%%', escHtml(req.user.subscription_status || 'none'))
+    .replace('%%USER_EMAIL%%', escHtml(req.user.email || ''));
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.set('Pragma', 'no-cache');
   res.type('html').send(html);
@@ -1330,14 +1590,16 @@ async function startServer() {
   server.keepAliveTimeout = 120000;
 }
 
-// Catch uncaught errors so they show in logs instead of silent crash
+// Log uncaught errors loudly. Exit only on uncaughtException (state may be
+// corrupted); keep running on unhandledRejection (typically a single broken
+// promise chain that shouldn't take the whole process down).
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err);
+  try { flushDbNow(); } catch(_) {}
   process.exit(1);
 });
 process.on('unhandledRejection', (err) => {
-  console.error('[FATAL] Unhandled rejection:', err);
-  process.exit(1);
+  console.error('[WARN] Unhandled rejection:', err);
 });
 
 startServer().catch(err => {
