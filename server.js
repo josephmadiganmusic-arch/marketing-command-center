@@ -391,12 +391,15 @@ app.post('/api/resend-verification', async (req, res) => {
   dbHelpers.prepare('UPDATE users SET verification_token = ?, verification_expires = ? WHERE id = ?').run(token, tokenExpires, user.id);
 
   try {
-    await sendVerificationEmail(user.email, token);
+    await Promise.race([
+      sendVerificationEmail(user.email, token),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Email send timeout')), 12000))
+    ]);
+    res.json({ success: true, sent: true });
   } catch (err) {
     console.error('Resend email error:', err.message);
+    res.json({ success: true, sent: false });
   }
-
-  res.json({ success: true });
 });
 
 app.post('/api/logout', (req, res) => {

@@ -144,6 +144,8 @@
       <h3>Check Your Email</h3>
       <p>We sent a verification link to<br><span id="verifyEmail" class="email-highlight"></span></p>
       <p>Click the link to verify your email and start your free trial.</p>
+      <p id="resendHint" style="color: var(--text-dim); font-size: 12px; margin-top: 12px;">Didn't get it? Click below to resend.</p>
+      <div id="resendStatus" style="display:none; font-size: 13px; margin-top: 8px; margin-bottom: 8px;"></div>
       <button class="btn-secondary" id="resendBtn" onclick="resendVerification()">Resend Email</button>
     </div>
 
@@ -254,19 +256,36 @@ function showVerifyNotice(email) {
 
 async function resendVerification() {
   const btn = document.getElementById('resendBtn');
+  const status = document.getElementById('resendStatus');
   btn.disabled = true;
   btn.textContent = 'Sending...';
+  status.style.display = 'none';
 
   try {
-    await fetch('/api/resend-verification', {
+    const res = await fetch('/api/resend-verification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: pendingVerifyEmail })
     });
-    btn.textContent = 'Sent!';
-    setTimeout(() => { btn.textContent = 'Resend Email'; btn.disabled = false; }, 3000);
+    const data = await res.json();
+    if (data.sent === false) {
+      status.style.display = 'block';
+      status.style.color = '#ff6b6b';
+      status.textContent = 'Email failed to send. Please check back shortly or contact support.';
+      btn.textContent = 'Try Again';
+      btn.disabled = false;
+    } else {
+      status.style.display = 'block';
+      status.style.color = 'var(--accent-2)';
+      status.textContent = 'Verification email sent! Check your inbox and spam folder.';
+      btn.textContent = 'Sent!';
+      setTimeout(() => { btn.textContent = 'Resend Email'; btn.disabled = false; }, 5000);
+    }
   } catch {
-    btn.textContent = 'Resend Email';
+    status.style.display = 'block';
+    status.style.color = '#ff6b6b';
+    status.textContent = 'Something went wrong. Please try again.';
+    btn.textContent = 'Try Again';
     btn.disabled = false;
   }
 }
