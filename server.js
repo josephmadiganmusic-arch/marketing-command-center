@@ -1124,7 +1124,7 @@ app.post('/api/support/submit', requireAuth, rlSupport, async (req, res) => {
           'content-type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: DEFAULT_CLAUDE_MODEL,
           max_tokens: 500,
           system: `You are Rollout Heaven's support assistant. Rollout Heaven is a music release management SaaS tool. Answer the user's question helpfully and concisely. If you cannot confidently answer (billing issues, account problems, bugs, feature requests, or anything requiring human judgment), respond with exactly "ESCALATE" and nothing else.`,
           messages: [{ role: 'user', content: `Subject: ${subject}\n\n${message}` }]
@@ -1435,13 +1435,20 @@ app.get('/api/gamification/leaderboard', requireAdmin, (req, res) => {
 // --- Claude API Proxy (keeps API key server-side) ---
 
 // Allowlist of models the proxy will forward to. Anything else is rejected
-// before we touch Anthropic. Add new models here as the app needs them.
+// before we touch Anthropic. Keep this list in sync with the #claudeModel
+// dropdown in MARKETING-COMMAND-CENTER.html (~line 1702) — any option the
+// frontend offers MUST exist here or the user gets "Model not allowed".
 const ALLOWED_CLAUDE_MODELS = new Set([
+  // Current (Claude 4.6 family — matches frontend dropdown)
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
+  'claude-haiku-4-5-20251001',
+  // Legacy — keep for backward compatibility with any stored/cached requests
   'claude-sonnet-4-20250514',
   'claude-3-5-sonnet-20241022',
   'claude-3-5-haiku-20241022'
 ]);
-const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
 
 // Daily token caps per user role. Trial users get a small allowance to
 // evaluate the product; paid users get a generous cap that still bounds
