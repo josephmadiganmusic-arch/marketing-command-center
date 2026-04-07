@@ -582,6 +582,97 @@
     input, textarea, select { font-size: 16px !important; }
   }
 
+  /* ===== Load Releases Modal ===== */
+  .releases-modal-overlay {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(4,5,15,0.85);
+    backdrop-filter: blur(6px);
+    z-index: 99998;
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .releases-modal-overlay.active { display: flex; }
+  .releases-modal-card {
+    background: var(--bg-card, #14172e);
+    border: 1px solid var(--border, #2a2f55);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 560px;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  .releases-modal-header {
+    padding: 22px 26px;
+    border-bottom: 1px solid var(--border, #2a2f55);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(123,47,247,0.18) 0%, rgba(241,7,163,0.10) 100%);
+  }
+  .releases-modal-title {
+    font-size: 14px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+    background: var(--gradient-primary, linear-gradient(135deg,#7b2ff7,#f107a3));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .releases-modal-close {
+    background: none; border: none; color: var(--text-dim, #8b8fb0);
+    font-size: 26px; cursor: pointer; line-height: 1; padding: 4px 10px;
+    border-radius: 8px; transition: all 0.2s;
+  }
+  .releases-modal-close:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .releases-modal-body { padding: 16px; overflow-y: auto; flex: 1; }
+  .releases-modal-empty {
+    padding: 40px 20px; text-align: center; color: var(--text-dim, #8b8fb0);
+    font-size: 13px;
+  }
+  .release-item {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--bg-input, #0f1228);
+    border: 1px solid var(--border, #2a2f55);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .release-item:hover {
+    border-color: var(--accent-1, #7b2ff7);
+    transform: translateX(2px);
+    box-shadow: 0 4px 16px rgba(123,47,247,0.25);
+  }
+  .release-item-main { flex: 1; min-width: 0; }
+  .release-item-title {
+    font-size: 14px; font-weight: 700; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .release-item-meta {
+    font-size: 11px; color: var(--text-dim, #8b8fb0); margin-top: 4px;
+    display: flex; gap: 10px; align-items: center;
+  }
+  .release-item-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    background: linear-gradient(135deg, #2a6b2a, #3a8a3a);
+    color: #fff;
+    font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+    border-radius: 4px;
+  }
+  .release-item-arrow {
+    color: var(--accent-2, #f107a3); font-size: 18px; flex-shrink: 0;
+  }
+  .release-item.is-current {
+    border-color: var(--accent-2, #f107a3);
+    background: linear-gradient(135deg, rgba(241,7,163,0.10) 0%, rgba(123,47,247,0.06) 100%);
+  }
+  @media (max-width: 720px) {
+    .releases-modal-card { max-height: 90vh; }
+    .release-item { padding: 12px 14px; }
+  }
+
   /* ===== Tabs Unlocked Celebration Banner ===== */
   .unlock-celebration {
     position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
@@ -786,6 +877,19 @@
 </head>
 <body>
 
+<!-- Load Releases Modal -->
+<div class="releases-modal-overlay" id="releasesModal" onclick="if(event.target===this)intakeCloseLoadModal()">
+  <div class="releases-modal-card">
+    <div class="releases-modal-header">
+      <div class="releases-modal-title">Load Saved Release</div>
+      <button class="releases-modal-close" onclick="intakeCloseLoadModal()" aria-label="Close">&times;</button>
+    </div>
+    <div class="releases-modal-body" id="releasesModalBody">
+      <div class="releases-modal-empty">No saved releases yet.</div>
+    </div>
+  </div>
+</div>
+
 <!-- Campaign Generation Loading Overlay -->
 <div class="campaign-loader-overlay" id="campaignLoader">
   <div class="cl-logo-container">
@@ -885,7 +989,8 @@
     <div class="intake-save-bar">
       <button class="btn-intake-action primary" onclick="intakeSave()">Save Release</button>
       <button class="btn-intake-action primary" onclick="intakeStartNew()">Start New Release</button>
-      <select class="intake-releases" id="intakeReleaseSelect" onchange="intakeLoad(this.value)">
+      <button class="btn-intake-action primary" onclick="intakeOpenLoadModal()">Load Releases</button>
+      <select class="intake-releases" id="intakeReleaseSelect" style="display:none;" onchange="intakeLoad(this.value)">
         <option value="">-- Load Saved Release --</option>
       </select>
       <button class="btn-intake-action" onclick="intakeDelete()">Delete</button>
@@ -2664,11 +2769,116 @@ function intakeSave() {
 function intakeLoadList() {
   const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
   const sel = document.getElementById('intakeReleaseSelect');
-  sel.innerHTML = '<option value="">-- Load Saved Release --</option>';
-  Object.keys(saved).forEach(k => {
-    const o = document.createElement('option'); o.value = k; o.textContent = k;
-    sel.appendChild(o);
+  if (sel) {
+    sel.innerHTML = '<option value="">-- Load Saved Release --</option>';
+    Object.keys(saved).forEach(k => {
+      const o = document.createElement('option'); o.value = k; o.textContent = k;
+      sel.appendChild(o);
+    });
+  }
+  // If the load-releases modal is open, refresh its body too
+  const modal = document.getElementById('releasesModal');
+  if (modal && modal.classList.contains('active')) intakeRenderModalList();
+}
+
+function intakeOpenLoadModal() {
+  intakeRenderModalList();
+  const m = document.getElementById('releasesModal');
+  if (m) m.classList.add('active');
+}
+
+function intakeCloseLoadModal() {
+  const m = document.getElementById('releasesModal');
+  if (m) m.classList.remove('active');
+}
+
+function intakeRenderModalList() {
+  const body = document.getElementById('releasesModalBody');
+  if (!body) return;
+  const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+  const titles = Object.keys(saved);
+  if (!titles.length) {
+    body.innerHTML = '<div class="releases-modal-empty">No saved releases yet.<br><br>Fill the form and click <b>Save Release</b> to add one.</div>';
+    return;
+  }
+  // Current loaded release (so we can mark it)
+  const currentTitle = (() => {
+    try { return (JSON.parse(localStorage.getItem(ukey('release_data')) || '{}') || {}).songTitle || ''; }
+    catch(e) { return ''; }
+  })();
+
+  // Sort: most recently touched first by release date, fall back to alpha
+  titles.sort((a, b) => {
+    const ad = saved[a].releaseDate || ''; const bd = saved[b].releaseDate || '';
+    if (ad && bd && ad !== bd) return bd.localeCompare(ad);
+    return a.localeCompare(b);
   });
+
+  body.innerHTML = titles.map(title => {
+    const d = saved[title] || {};
+    const artist = [d.primaryArtist, d.featArtist ? 'ft. ' + d.featArtist : ''].filter(Boolean).join(' ');
+    const date = d.releaseDate || '';
+    const hasCampaign = d._campaignGenerated === true;
+    const isCurrent = title === currentTitle;
+    const safeTitle = title.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return `
+      <div class="release-item ${isCurrent ? 'is-current' : ''}" onclick="intakeSwitchTo('${safeTitle}')">
+        <div class="release-item-main">
+          <div class="release-item-title">${esc(title)}</div>
+          <div class="release-item-meta">
+            ${artist ? '<span>' + esc(artist) + '</span>' : ''}
+            ${date ? '<span>&middot; ' + esc(date) + '</span>' : ''}
+            ${hasCampaign ? '<span class="release-item-badge">Campaign</span>' : ''}
+            ${isCurrent ? '<span style="color:var(--accent-2);font-weight:700;">&middot; Current</span>' : ''}
+          </div>
+        </div>
+        <div class="release-item-arrow">&rarr;</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function intakeSwitchTo(title) {
+  if (!title) return;
+  // 1. Save current release (with its campaign) so we don't lose it
+  try {
+    const current = intakeGetData();
+    if (current.songTitle && current.songTitle.length >= 3) {
+      if (campaignGenerated) {
+        saveCampaignToRelease(current.songTitle, getCampaignSnapshot());
+      }
+      const allNow = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+      const ex = allNow[current.songTitle] || {};
+      const slim = Object.assign({}, current, { coverArt: null });
+      allNow[current.songTitle] = Object.assign({}, slim, {
+        _campaign: ex._campaign,
+        _campaignGenerated: ex._campaignGenerated,
+        _checklistState: ex._checklistState,
+      });
+      localStorage.setItem(ukey('release_data_all'), JSON.stringify(allNow));
+      serverSave('release_data_all', allNow);
+    }
+  } catch(e) { console.error('intakeSwitchTo save error:', e); }
+
+  // 2. Promote the picked release to release_data so init() picks it up after reload
+  try {
+    const all = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+    const target = all[title];
+    if (!target) { showToast('Release not found'); return; }
+    // Strip the underscore-prefixed campaign keys from the slim record
+    const slim = Object.assign({}, target);
+    delete slim._campaign;
+    delete slim._campaignGenerated;
+    delete slim._checklistState;
+    localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
+    // Sync hidden select so functions like intakeDelete still know what's active
+    const sel = document.getElementById('intakeReleaseSelect');
+    if (sel) sel.value = title;
+  } catch(e) { console.error('intakeSwitchTo set error:', e); showToast('Switch failed'); return; }
+
+  // 3. Force-flush anything pending and reload the page
+  try { intakeForceFlush && intakeForceFlush(); } catch(e) {}
+  window.location.reload();
 }
 
 function intakeLoad(title) {
