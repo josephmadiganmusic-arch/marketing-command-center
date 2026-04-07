@@ -3074,6 +3074,89 @@ function exportCalendarICS() {
   showToast('Calendar downloaded! Import the .ics file into Google Calendar, Outlook, or Apple Calendar.');
 }
 
+// Premade outreach templates built from intake data. Used as a guaranteed
+// baseline so the Outreach panel is never empty even if the AI step fails or
+// returns no targeted messages. d = intakeGetData() result.
+function buildFallbackOutreach(d, curators, playlists, blogs, podcasts, collabs) {
+  const song = d.songTitle || '[Song Title]';
+  const artist = d.primaryArtist || '[Artist Name]';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || '[Genre]';
+  const spotify = d.linkSpotify || '[Spotify Link]';
+  const epk = d.epk || '[EPK Link]';
+  const email = d.email || '[Your Email]';
+  const releaseDate = d.releaseDate || 'soon';
+  const feat = d.featArtist ? ` feat. ${d.featArtist}` : '';
+  const fullTitle = `"${song}"${feat}`;
+
+  const cMsgs = [
+    {
+      title: 'Playlist Curator DM (Cold)',
+      type: 'Instagram DM',
+      body: `Hey [Curator Name] — big fan of what you're curating in the ${genre} space. I just dropped ${fullTitle} as ${artist} and think it would fit the vibe of your playlist perfectly.\n\nQuick listen: ${spotify}\n\nNo pressure either way — just wanted to share. Appreciate what you do for indie artists.\n\n— ${artist}`
+    },
+    {
+      title: 'Playlist Curator Email (Warmer)',
+      type: 'Email',
+      body: `Subject: ${genre} Submission — ${fullTitle}\n\nHi [Curator Name],\n\nMy name is ${artist} and I just released ${fullTitle}. I've been listening to your playlist work and would love to be considered for a placement.\n\nThe track is ${genre} and drops ${releaseDate}.\n\nSpotify: ${spotify}\nEPK / Press Kit: ${epk}\n\nThanks for your time — happy to send anything else you need (lyrics, alt mixes, etc.).\n\nBest,\n${artist}\n${email}`
+    },
+    {
+      title: 'Blog / Music Site Pitch',
+      type: 'Email',
+      body: `Subject: New ${genre} Release — ${fullTitle}\n\nHi [Editor Name],\n\nI'm ${artist}, an independent ${genre} artist, and I'd love to share my new release ${fullTitle} (out ${releaseDate}) with your readers.\n\nThe story behind the track: [1-2 sentences about the song's meaning].\n\nListen: ${spotify}\nFull press kit: ${epk}\n\nIf this resonates with what you cover, I'd be honored by a feature, review, or even a quick mention. Either way, thank you for what you do for indie music.\n\n${artist}\n${email}`
+    },
+    {
+      title: 'Podcast Guest Pitch',
+      type: 'Email',
+      body: `Subject: Guest Pitch — ${artist} (${genre} artist)\n\nHey [Host Name],\n\nLong-time listener of [Podcast Name]. I'm ${artist}, a ${genre} artist with a new single ${fullTitle} out ${releaseDate}, and I'd love to come on the show to talk about [angle: my story / the making of the song / the indie grind / faith and music].\n\nListen to the new track: ${spotify}\nMore about me: ${epk}\n\nHappy to record any time that works for you. Thanks for considering it.\n\n${artist}\n${email}`
+    },
+    {
+      title: 'Radio Station Submission',
+      type: 'Email',
+      body: `Subject: ${genre} Submission — ${fullTitle} (Clean Edit Available)\n\nHello,\n\nI'm submitting my new release ${fullTitle} by ${artist} for airplay consideration. Genre: ${genre}. Release date: ${releaseDate}.\n\nStream: ${spotify}\nClean radio edit + WAV + EPK available on request or via: ${epk}\n\nThank you for the consideration.\n\n${artist}\n${email}`
+    },
+    {
+      title: 'Friends, Family & Inner Circle DM',
+      type: 'Text / DM',
+      body: `Hey! Just dropped my new song ${fullTitle} 🎶 — would mean the world if you gave it a listen, saved it on Spotify, and shared it on your story.\n\n${spotify}\n\nLove you. Thanks for always rocking with me.\n— ${artist}`
+    }
+  ];
+
+  const fMsgs = [
+    {
+      title: 'Curator Follow-Up (1 week later)',
+      type: 'Follow-Up DM',
+      body: `Hey [Curator Name] — just circling back on ${fullTitle}. Totally understand if it's not the right fit, but wanted to make sure my message didn't get buried.\n\n${spotify}\n\nAppreciate you either way 🙏\n— ${artist}`
+    },
+    {
+      title: 'Blog Follow-Up (5 days later)',
+      type: 'Follow-Up Email',
+      body: `Subject: Re: New ${genre} Release — ${fullTitle}\n\nHi [Editor Name],\n\nJust a quick bump on my last email about ${fullTitle}. Know inboxes are wild — totally fine if it's a no, just wanted to make sure it landed.\n\n${spotify}\n\nThanks again,\n${artist}`
+    },
+    {
+      title: 'Podcast Follow-Up',
+      type: 'Follow-Up Email',
+      body: `Hi [Host Name],\n\nFollowing up on my pitch about coming on [Podcast Name] to talk about ${fullTitle} and my journey as a ${genre} artist. Happy to make it as easy as possible — flexible on timing and topic.\n\n${spotify}\n\nThanks!\n${artist}`
+    },
+    {
+      title: 'Collab Partner Ask',
+      type: 'DM / Email',
+      body: `Yo [Collab Name] — ${fullTitle} just dropped. Would love your support on this one. If you're feeling it, a story share, repost, or even just adding it to a personal playlist would go a LONG way.\n\n${spotify}\n\nLet me know how I can return the favor on your next release 🤝\n— ${artist}`
+    },
+    {
+      title: 'Church / Community Network Ask',
+      type: 'Group Message',
+      body: `Family — my new song ${fullTitle} just released. If God uses it for you, please share it with someone who needs to hear it, save it on Spotify, or play it in your space.\n\n${spotify}\n\nGrateful for this community 🙏\n— ${artist}`
+    },
+    {
+      title: 'Playlist Add Thank You',
+      type: 'DM',
+      body: `[Curator Name] — just saw you added ${fullTitle} to [Playlist Name]. Genuinely appreciate you. If there's anything I can do to support your work (share your playlist, tag you, send a shoutout), let me know.\n\n— ${artist}`
+    }
+  ];
+
+  return { curatorMessages: cMsgs, followupMessages: fMsgs };
+}
+
 function renderOutreach() {
   const cmEl = document.getElementById('curator-messages');
   if (curatorMessages.length === 0) {
@@ -4165,30 +4248,22 @@ function clSetLiveStatus(main, detail) {
 }
 
 // ---------- Campaign timer (estimated time remaining) ----------
-// Per-step weights in seconds — derived from observed Claude latency at 8k tokens
-// (sonnet ~30s/big step, opus ~60s/big step). Used for both initial total and
-// per-step decrement. Order matches _runCampaignSteps.
-const CL_STEP_WEIGHTS = {
-  research: 12,
-  trends: 8,
-  content: 45,
-  calendar: 45,
-  outreach: 50,
-  playlists: 25,
-  checklist: 25
-};
+// Estimate for parallelized campaign generation. Since the 5 AI steps now run
+// concurrently, total time ≈ slowest single step + research/trends overhead.
+const CL_TOTAL_ESTIMATE_SONNET = 90; // seconds — slowest step + serper + trends
+const CL_TOTAL_ESTIMATE_OPUS = 150;
 let _clTimerInterval = null;
 let _clTimerStart = 0;
 let _clTimerRemaining = 0; // seconds
-let _clCompletedSeconds = 0; // sum of weights for steps already done
+let _clTotalEstimate = 0;
+let _clCompletedCount = 0;
 
 function clTimerStart() {
   clTimerStop();
-  // Multiplier based on selected model — opus is roughly 1.6x slower than sonnet
   const model = (document.getElementById('claudeModel')?.value || '').toLowerCase();
-  const mult = model.includes('opus') ? 1.6 : 1.0;
-  _clTimerRemaining = Math.round(Object.values(CL_STEP_WEIGHTS).reduce((a,b)=>a+b,0) * mult);
-  _clCompletedSeconds = 0;
+  _clTotalEstimate = model.includes('opus') ? CL_TOTAL_ESTIMATE_OPUS : CL_TOTAL_ESTIMATE_SONNET;
+  _clTimerRemaining = _clTotalEstimate;
+  _clCompletedCount = 0;
   _clTimerStart = Date.now();
   clTimerRender();
   _clTimerInterval = setInterval(() => {
@@ -4200,13 +4275,14 @@ function clTimerStop() {
   if (_clTimerInterval) { clearInterval(_clTimerInterval); _clTimerInterval = null; }
 }
 function clTimerStepDone(stepKey) {
-  // When a step finishes, snap remaining estimate to (total - elapsed_weight)
-  // so the displayed countdown stays honest with reality.
-  const model = (document.getElementById('claudeModel')?.value || '').toLowerCase();
-  const mult = model.includes('opus') ? 1.6 : 1.0;
-  const total = Math.round(Object.values(CL_STEP_WEIGHTS).reduce((a,b)=>a+b,0) * mult);
-  if (CL_STEP_WEIGHTS[stepKey]) _clCompletedSeconds += Math.round(CL_STEP_WEIGHTS[stepKey] * mult);
-  _clTimerRemaining = Math.max(3, total - _clCompletedSeconds);
+  // Steps run in parallel, so finishing one doesn't shave a fixed amount.
+  // Instead, count step completions out of 7 (research + trends + 5 AI) and
+  // gently re-estimate remaining time based on elapsed proportion.
+  _clCompletedCount++;
+  const elapsed = Math.floor((Date.now() - _clTimerStart) / 1000);
+  const progressFrac = Math.min(0.95, _clCompletedCount / 7);
+  const projectedTotal = progressFrac > 0 ? Math.round(elapsed / progressFrac) : _clTotalEstimate;
+  _clTimerRemaining = Math.max(3, projectedTotal - elapsed);
   clTimerRender();
 }
 function clTimerFinish() {
@@ -4456,11 +4532,18 @@ async function _runCampaignSteps(startStep, ctx, trends, d) {
     clTimerStop();
   }
 
-  try {
-    // --- 1. Content Bank ---
-    if (startStep <= 0) {
-    markStep('content', 'active'); clMarkStep('content', 'active'); clProgress(5);
-    clSetLiveStatus('Crafting video hooks & captions...', `Analyzing ${genre} content patterns & viral formats`);
+  // ============================================================
+  // PARALLEL CAMPAIGN STEPS — all 5 AI calls run concurrently.
+  // Sequential previously took ~6 minutes; parallel cuts it to
+  // roughly the slowest single step (~60-90s).
+  // ============================================================
+  let _completedCount = 0;
+  const totalSteps = 5;
+  function bumpProgress() { _completedCount++; clProgress(Math.round((_completedCount/totalSteps)*100)); }
+
+  // ---- Step builders (each is self-contained) ----
+  async function stepContent() {
+    markStep('content', 'active'); clMarkStep('content', 'active');
     const contentResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate a complete content bank for this release. Return ONLY valid JSON (no markdown, no code fences) in this exact format:
@@ -4487,13 +4570,11 @@ Requirements:
       if (Array.isArray(c.ctas)) ctas = c.ctas;
       renderHooks(); renderCaptions(); renderHashtags(); renderCTAs();
     } catch(e) { console.error('Content parse error:', e, '\nRaw:', contentResult); window._lastContentRaw = contentResult; }
-    markStep('content', 'done'); clMarkStep('content', 'done'); clProgress(20); clTimerStepDone('content');
-    } // end startStep <= 0
+    markStep('content', 'done'); clMarkStep('content', 'done'); bumpProgress(); clTimerStepDone('content');
+  }
 
-    // --- 2. Calendar ---
-    if (startStep <= 1) {
+  async function stepCalendar() {
     markStep('calendar', 'active'); clMarkStep('calendar', 'active');
-    clSetLiveStatus('Building your 30-day rollout calendar...', `Mapping pre-release & post-release strategy for ${d.releaseDate || 'your launch'}`);
     const calResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate a 30-day marketing calendar. The calendar has 4 weeks. If the release date is in the future, the first 1-2 weeks should be PRE-RELEASE strategy (teasers, countdowns, snippet drops, hype building, pre-save campaigns). Post-release weeks focus on streaming growth, engagement, and outreach.
@@ -4530,13 +4611,11 @@ Requirements:
       window._lastCalendarRaw = calResult;
       showToast('Calendar parse failed — raw saved to window._lastCalendarRaw');
     }
-    markStep('calendar', 'done'); clMarkStep('calendar', 'done'); clProgress(40); clTimerStepDone('calendar');
-    } // end startStep <= 1
+    markStep('calendar', 'done'); clMarkStep('calendar', 'done'); bumpProgress(); clTimerStepDone('calendar');
+  }
 
-    // --- 3. Outreach ---
-    if (startStep <= 2) {
+  async function stepOutreach() {
     markStep('outreach', 'active'); clMarkStep('outreach', 'active');
-    clSetLiveStatus('Writing personalized outreach messages...', `Crafting pitches for ${targetCurators.length + targetBlogs.length + targetPodcasts.length || 'your'} targets`);
 
     // Build outreach target instructions
     let outreachTargetInstructions = '';
@@ -4582,24 +4661,23 @@ Requirements:
       const o = parseJSONLoose(outreachResult);
       if (Array.isArray(o.curatorMessages)) curatorMessages = o.curatorMessages;
       if (Array.isArray(o.followupMessages)) followupMessages = o.followupMessages;
-      if (curatorMessages.length === 0 && followupMessages.length === 0) {
-        console.error('Outreach: parsed but empty. Raw:', outreachResult);
-        window._lastOutreachRaw = outreachResult;
-        showToast('Outreach generation returned no messages — check console (window._lastOutreachRaw)');
-      }
-      renderOutreach();
     } catch(e) {
       console.error('Outreach parse error:', e, '\nRaw:', outreachResult);
       window._lastOutreachRaw = outreachResult;
-      showToast('Outreach parse failed — raw saved to window._lastOutreachRaw');
     }
-    markStep('outreach', 'done'); clMarkStep('outreach', 'done'); clProgress(60); clTimerStepDone('outreach');
-    } // end startStep <= 2
+    // ALWAYS supplement with premade fallback templates so the panel is
+    // never empty and the user always has DM/email starters from intake data.
+    const fb = buildFallbackOutreach(d, targetCurators, targetPlaylists, targetBlogs, targetPodcasts, targetCollabs);
+    if (curatorMessages.length === 0) curatorMessages = fb.curatorMessages;
+    else curatorMessages = curatorMessages.concat(fb.curatorMessages);
+    if (followupMessages.length === 0) followupMessages = fb.followupMessages;
+    else followupMessages = followupMessages.concat(fb.followupMessages);
+    renderOutreach();
+    markStep('outreach', 'done'); clMarkStep('outreach', 'done'); bumpProgress(); clTimerStepDone('outreach');
+  }
 
-    // --- 4. Playlists ---
-    if (startStep <= 3) {
+  async function stepPlaylists() {
     markStep('playlists', 'active'); clMarkStep('playlists', 'active');
-    clSetLiveStatus('Designing your playlist strategy...', `Finding curator keywords & playlist angles for ${genre}`);
     const playlistResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate a playlist strategy for this release. Return ONLY valid JSON (no markdown, no code fences):
@@ -4620,13 +4698,11 @@ Requirements:
       if (Array.isArray(p.searchKeywords)) searchKeywords = p.searchKeywords;
       renderPlaylists();
     } catch(e) { console.error('Playlist parse error:', e, '\nRaw:', playlistResult); window._lastPlaylistRaw = playlistResult; }
-    markStep('playlists', 'done'); clMarkStep('playlists', 'done'); clProgress(80); clTimerStepDone('playlists');
-    } // end startStep <= 3
+    markStep('playlists', 'done'); clMarkStep('playlists', 'done'); bumpProgress(); clTimerStepDone('playlists');
+  }
 
-    // --- 5. Action Items ---
-    if (startStep <= 4) {
+  async function stepChecklist() {
     markStep('checklist', 'active'); clMarkStep('checklist', 'active');
-    clSetLiveStatus('Creating your action item checklists...', 'Prioritizing tasks for today, this week & this month');
     const checklistResult = await callClaudeWithRetry(`${ctx}${trends}
 
 Generate action item checklists for this release campaign. Return ONLY valid JSON (no markdown, no code fences):
@@ -4661,9 +4737,37 @@ Requirements:
       renderChecklist('checklist-recurring', checklistRecurring);
       renderChecklist('checklist-month', checklistMonth);
     } catch(e) { console.error('Checklist parse error:', e, '\nRaw:', checklistResult); window._lastChecklistRaw = checklistResult; }
-    markStep('checklist', 'done'); clMarkStep('checklist', 'done'); clProgress(100); clTimerStepDone('checklist'); clTimerFinish();
-    } // end startStep <= 4
+    markStep('checklist', 'done'); clMarkStep('checklist', 'done'); bumpProgress(); clTimerStepDone('checklist');
+  }
 
+  // ---- Run all 5 steps in parallel ----
+  try {
+    clSetLiveStatus('Generating all sections in parallel...', `Content, calendar, outreach, playlists & action items running concurrently`);
+
+    // Each step has its own try/catch for parse errors but a network/API failure
+    // throws and we catch it at the Promise.all level so we can show retry UI.
+    const stepResults = await Promise.allSettled([
+      stepContent(),
+      stepCalendar(),
+      stepOutreach(),
+      stepPlaylists(),
+      stepChecklist()
+    ]);
+
+    // If any step failed at the network level, surface it but still let
+    // user see whatever did succeed.
+    const failures = stepResults.filter(r => r.status === 'rejected');
+    if (failures.length > 0) {
+      console.error('Some campaign steps failed:', failures);
+      const firstErr = failures[0].reason?.message || 'Unknown error';
+      // If ALL failed, treat as fatal; otherwise show partial-success warning
+      if (failures.length === stepResults.length) {
+        throw failures[0].reason || new Error(firstErr);
+      } else {
+        showToast(`${failures.length} of ${stepResults.length} steps failed — partial campaign saved`);
+      }
+    }
+    clTimerFinish();
     clSetLiveStatus('Campaign complete!', '');
 
     // Save campaign data with the release
@@ -4674,6 +4778,13 @@ Requirements:
       // Persist campaign inside the release record
       saveCampaignToRelease(d.songTitle, campaignData);
     } catch(e) {}
+
+    // Reset registration pipeline so the new release starts with nothing marked complete
+    try {
+      localStorage.removeItem(ukey('registration_progress'));
+      if (typeof renderRegCards === 'function') renderRegCards();
+      if (typeof renderRegProgressBar === 'function') renderRegProgressBar();
+    } catch(_) {}
 
     // Unlock all tabs
     unlockTabs();
