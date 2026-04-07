@@ -2820,9 +2820,8 @@ function intakeRenderModalList() {
     const date = d.releaseDate || '';
     const hasCampaign = d._campaignGenerated === true;
     const isCurrent = title === currentTitle;
-    const safeTitle = title.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     return `
-      <div class="release-item ${isCurrent ? 'is-current' : ''}" onclick="intakeSwitchTo('${safeTitle}')">
+      <div class="release-item ${isCurrent ? 'is-current' : ''}" data-release-title="${esc(title)}">
         <div class="release-item-main">
           <div class="release-item-title">${esc(title)}</div>
           <div class="release-item-meta">
@@ -2836,6 +2835,14 @@ function intakeRenderModalList() {
       </div>
     `;
   }).join('');
+
+  // Wire each row via JS instead of inline onclick so titles with quotes/apostrophes work
+  body.querySelectorAll('.release-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const t = el.getAttribute('data-release-title');
+      if (t) intakeSwitchTo(t);
+    });
+  });
 }
 
 function intakeSwitchTo(title) {
@@ -2876,8 +2883,14 @@ function intakeSwitchTo(title) {
     if (sel) sel.value = title;
   } catch(e) { console.error('intakeSwitchTo set error:', e); showToast('Switch failed'); return; }
 
-  // 3. Force-flush anything pending and reload the page
-  try { intakeForceFlush && intakeForceFlush(); } catch(e) {}
+  // 3. Cancel any pending debounced autosaves so they don't fire after we swap
+  //    release_data and clobber it with the OLD form data on the way out.
+  try { clearTimeout(_autosaveTimer); } catch(e) {}
+  try { clearTimeout(_namedSaveTimer); } catch(e) {}
+  // Detach beforeunload's intakeForceFlush — same reason; we already saved manually above.
+  try { window.removeEventListener('beforeunload', intakeForceFlush); } catch(e) {}
+
+  // 4. Reload the page so init() rehydrates everything from scratch
   window.location.reload();
 }
 
