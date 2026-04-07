@@ -1205,13 +1205,17 @@ app.post('/api/claude', requireAccess, async (req, res) => {
     });
     if (!aiResp.ok) {
       const errText = await aiResp.text();
-      return res.status(aiResp.status).json({ error: 'AI error: ' + aiResp.status });
+      console.error('Anthropic API error:', aiResp.status, errText);
+      // Surface the real Anthropic error so the client (and you) can see it
+      let detail = errText;
+      try { detail = JSON.parse(errText).error?.message || errText; } catch(_) {}
+      return res.status(aiResp.status).json({ error: 'AI error ' + aiResp.status + ': ' + detail });
     }
     const data = await aiResp.json();
     res.json(data);
   } catch(err) {
-    console.error('AI proxy error:', err.message);
-    res.status(500).json({ error: 'AI request failed' });
+    console.error('AI proxy error:', err.message, err.stack);
+    res.status(500).json({ error: 'AI request failed: ' + err.message });
   }
 });
 

@@ -3661,7 +3661,13 @@ async function callClaude(userMessage, maxTokens) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, max_tokens: maxTokens || 4096, system:buildSystemPrompt(), messages:[{role:'user',content:userMessage}] })
   });
-  if(!response.ok) { const err = await response.text(); throw new Error('Server error (' + response.status + ') — please try again in a moment'); }
+  if(!response.ok) {
+    let errMsg = 'Server error (' + response.status + ')';
+    try { const errBody = await response.json(); if (errBody.error) errMsg = errBody.error; } catch(_) {}
+    console.error('Claude API call failed:', response.status, errMsg);
+    window._lastClaudeError = errMsg;
+    throw new Error(errMsg);
+  }
   const data = await response.json();
   if (!data.content || !data.content[0]) throw new Error('Empty response — please try again');
   return data.content[0].text;
