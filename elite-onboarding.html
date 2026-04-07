@@ -76,19 +76,19 @@
   <div class="ob-header">
     <span class="tier-badge" id="tierBadge">Elite</span>
     <h1>Welcome &mdash; Let's Get You Set Up</h1>
-    <p>To handle your distribution, registration, and outreach, Joseph needs access to your distribution and social accounts. Everything you submit is encrypted at rest and only viewable by Joseph through an audit-logged admin route.</p>
+    <p>To handle your distribution, registration, and outreach, Rollout Heaven needs access to your distribution and social accounts. Everything you submit is encrypted at rest and only viewable by Rollout Heaven through an audit-logged admin route.</p>
   </div>
 
   <div class="ob-card">
     <div class="security-note">
-      <strong>How your credentials are stored:</strong> AES-256-GCM encryption with a server-only key. Never logged, never exposed to the frontend after submission, never sent to third parties. Joseph is the only person who can decrypt them, and every access is audit-logged.
+      <strong>How your credentials are stored:</strong> AES-256-GCM encryption with a server-only key. Never logged, never exposed to the frontend after submission, never sent to third parties. Only Rollout Heaven admins can decrypt them, and every access is audit-logged.
     </div>
 
     <form id="onboardingForm">
       <!-- ─── DISTRIBUTION ─── -->
       <div class="ob-section">
         <h2>Distribution Account</h2>
-        <p class="section-desc">Where you upload your music for streaming services. Joseph will use this to handle uploads and metadata QA.</p>
+        <p class="section-desc">Where you upload your music for streaming services. Rollout Heaven will use this to handle uploads and metadata QA.</p>
         <div class="form-row">
           <div class="form-field">
             <label>Provider</label>
@@ -127,7 +127,7 @@
       <!-- ─── REGISTRATION ─── -->
       <div class="ob-section">
         <h2>Performing Rights &amp; Royalty Registration</h2>
-        <p class="section-desc">PRO and SoundExchange accounts so Joseph can register your works for royalty collection.</p>
+        <p class="section-desc">PRO and SoundExchange accounts so Rollout Heaven can register your works for royalty collection.</p>
         <div class="form-row">
           <div class="form-field">
             <label>PRO Organization</label>
@@ -216,7 +216,7 @@
       <!-- ─── RELEASE CADENCE ─── -->
       <div class="ob-section">
         <h2>Release Plan</h2>
-        <p class="section-desc">So Joseph knows what's coming and when.</p>
+        <p class="section-desc">So Rollout Heaven knows what's coming and when.</p>
         <div class="form-row">
           <div class="form-field">
             <label>Genre</label>
@@ -238,7 +238,7 @@
       <!-- ─── ELITE PLUS ONLY ─── -->
       <div class="ob-section elite-plus-only">
         <h2>Outreach &amp; Playlist Strategy <span style="font-size:11px;color:var(--gold);font-weight:600;margin-left:6px;">ELITE PLUS</span></h2>
-        <p class="section-desc">Joseph will pitch your music to radio, podcasts, and playlist curators. The more direction here, the better the targeting.</p>
+        <p class="section-desc">Rollout Heaven will pitch your music to radio, podcasts, and playlist curators. The more direction here, the better the targeting.</p>
         <div class="form-row single">
           <div class="form-field">
             <label>Target radio stations / podcasts (one per line if you have a list)</label>
@@ -272,7 +272,7 @@
       <!-- ─── EXTRA NOTES ─── -->
       <div class="ob-section">
         <h2>Anything Else?</h2>
-        <p class="section-desc">Special instructions, deadlines, brand guidelines, or anything Joseph should know.</p>
+        <p class="section-desc">Special instructions, deadlines, brand guidelines, or anything Rollout Heaven should know.</p>
         <div class="form-row single">
           <div class="form-field">
             <label>Notes</label>
@@ -323,7 +323,7 @@ document.getElementById('onboardingForm').addEventListener('submit', async funct
     var data = await res.json();
     if (data.success) {
       status.className = 'success';
-      status.textContent = 'Onboarding complete! Joseph will reach out shortly. Redirecting to your app...';
+      status.textContent = 'Onboarding complete! Rollout Heaven will reach out shortly. Redirecting to your app...';
       setTimeout(function() { window.location.href = '/'; }, 2000);
     } else {
       status.className = 'error';
@@ -340,7 +340,7 @@ document.getElementById('onboardingForm').addEventListener('submit', async funct
 });
 
 function skipForNow() {
-  if (!confirm('Skip onboarding for now? You can complete it later from the banner in your app, but Joseph cannot start manual work until you do.')) return;
+  if (!confirm('Skip onboarding for now? You can complete it later from the banner in your app, but Rollout Heaven cannot start manual work until you do.')) return;
   window.location.href = '/';
 }
 </script>
