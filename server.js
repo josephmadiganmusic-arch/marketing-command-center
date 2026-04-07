@@ -1502,9 +1502,14 @@ app.post('/api/claude', requireActive, rlClaude, async (req, res) => {
     return res.status(400).json({ error: 'messages must be a non-empty array (max 50)' });
   }
   // Coarse payload guard — Anthropic will reject anything ridiculous anyway,
-  // but cheaper to bounce here before we burn tokens.
+  // but cheaper to bounce here before we burn tokens. 8MB matches the
+  // express.json() 10MB outer cap with headroom; the upload scanner sends
+  // base64-encoded cover art / screenshots which legitimately exceed any
+  // text-only ceiling. Trial users can't reach this endpoint at all
+  // (requireActive), and active users are bounded by daily token caps +
+  // rlClaude (60/hr), so the larger ceiling is safe.
   const bodyBytes = JSON.stringify({ system, messages }).length;
-  if (bodyBytes > 200000) return res.status(413).json({ error: 'Request too large' });
+  if (bodyBytes > 8 * 1024 * 1024) return res.status(413).json({ error: 'Request too large' });
 
   const cappedMaxTokens = Math.min(Math.max(parseInt(max_tokens, 10) || 1024, 1), 8192);
 
