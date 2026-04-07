@@ -2153,6 +2153,18 @@ function saveChecklistState() {
   document.querySelectorAll('.check').forEach((el, i) => { state[i] = el.classList.contains('done'); });
   localStorage.setItem(ukey('mcc-checklist'), JSON.stringify(state));
   serverSave('mcc-checklist', state);
+  // Also persist into the current release bundle so progress stays with the release
+  try {
+    const title = (JSON.parse(localStorage.getItem(ukey('release_data')) || '{}') || {}).songTitle;
+    if (title) {
+      const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+      if (saved[title]) {
+        saved[title]._checklistState = state;
+        localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
+        serverSave('release_data_all', saved);
+      }
+    }
+  } catch(e) {}
 }
 
 function loadChecklistState() {
@@ -2274,10 +2286,15 @@ function intakeForceFlush() {
     const slim = Object.assign({}, d, { coverArt: null });
     localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
     saveArtistProfile();
-    // Save to named releases if title is valid
+    // Save to named releases if title is valid — preserve existing campaign bundle
     if (d.songTitle && d.songTitle.length >= 3) {
       const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
-      saved[d.songTitle] = slim;
+      const existing = saved[d.songTitle] || {};
+      saved[d.songTitle] = Object.assign({}, slim, {
+        _campaign: existing._campaign,
+        _campaignGenerated: existing._campaignGenerated,
+        _checklistState: existing._checklistState,
+      });
       localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
     }
     // Flush everything to server DB
@@ -2496,7 +2513,14 @@ function intakeUpdate() {
     const data = intakeGetData();
     if (!data.songTitle || data.songTitle.length < 3) return;
     const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
-    const toSave = Object.assign({}, data, { coverArt: null });
+    const existing = saved[data.songTitle] || {};
+    const toSave = Object.assign({}, data, {
+      coverArt: null,
+      // Preserve campaign bundle so autosave never wipes a generated campaign
+      _campaign: existing._campaign,
+      _campaignGenerated: existing._campaignGenerated,
+      _checklistState: existing._checklistState,
+    });
     saved[data.songTitle] = toSave;
     try {
       localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
@@ -2550,10 +2574,15 @@ function intakeSave() {
     clearTimeout(_autosaveTimer);
     const slim = Object.assign({}, d, { coverArt: null });
     localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
-    // Save to named releases
+    // Save to named releases — preserve any existing campaign bundle
     const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
-    saved[d.songTitle] = slim;
-    // Bundle campaign data + progress with the release
+    const existingSaved = saved[d.songTitle] || {};
+    saved[d.songTitle] = Object.assign({}, slim, {
+      _campaign: existingSaved._campaign,
+      _campaignGenerated: existingSaved._campaignGenerated,
+      _checklistState: existingSaved._checklistState,
+    });
+    // Bundle fresh campaign data + progress when one is currently loaded
     if (campaignGenerated) {
       saved[d.songTitle]._campaign = getCampaignSnapshot();
       saved[d.songTitle]._campaignGenerated = true;
