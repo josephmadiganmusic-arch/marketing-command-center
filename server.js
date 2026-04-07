@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const session = require('express-session');
+const FileStore = require('session-file-store')(session);
 const bcrypt = require('bcryptjs');
 const initSqlJs = require('sql.js');
 const Stripe = require('stripe');
@@ -230,7 +231,19 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: true }));
 
+// Persistent session store — file-backed, lives on the same Railway volume
+// as the sqlite DB. Survives restarts and avoids the MemoryStore leak warning.
+const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
+if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+
 app.use(session({
+  store: new FileStore({
+    path: SESSIONS_DIR,
+    ttl: 30 * 24 * 60 * 60, // 30 days, matches Remember Me max
+    retries: 2,
+    reapInterval: 60 * 60,  // sweep expired sessions hourly
+    logFn: () => {}         // silence noisy info logs
+  }),
   secret: process.env.SESSION_SECRET || 'mcc-secret-change-me-in-production',
   resave: false,
   saveUninitialized: false,
