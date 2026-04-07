@@ -6426,7 +6426,8 @@ function showSubscriptionGate() {
   overlay.id = 'subscriptionGate';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(8,11,30,0.95);z-index:10000;display:flex;align-items:center;justify-content:center;';
   overlay.innerHTML = `
-    <div style="text-align:center;max-width:480px;padding:48px;background:#0f1332;border:1px solid #1a1f4a;border-radius:20px;box-shadow:0 0 60px rgba(123,47,247,0.2);">
+    <div style="position:relative;text-align:center;max-width:480px;padding:48px;background:#0f1332;border:1px solid #1a1f4a;border-radius:20px;box-shadow:0 0 60px rgba(123,47,247,0.2);">
+      <button aria-label="Close" id="subscriptionGateClose" style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;font-weight:700;transition:all 0.2s;font-family:inherit;">&times;</button>
       <img src="/logo.png" alt="Rollout Heaven" style="height:64px;margin-bottom:24px;filter:drop-shadow(0 0 12px rgba(123,47,247,0.4));">
       <h2 style="font-size:26px;font-weight:800;color:#fff;margin-bottom:12px;">Your Trial Has Ended</h2>
       <p style="color:#6b7094;font-size:15px;line-height:1.6;margin-bottom:32px;">Subscribe to Rollout Heaven to unlock Music Agent Pro, unlimited campaigns and storage, and all release management tools.</p>
@@ -6435,6 +6436,18 @@ function showSubscriptionGate() {
     </div>
   `;
   document.body.appendChild(overlay);
+  // Wire close: button, Escape key, and click on backdrop. Server-side
+  // gating still blocks Pro APIs for expired trials, so dismissing this
+  // overlay just lets the user browse the read-only side of the app
+  // (e.g., view past releases) without the modal in the way.
+  const closeGate = () => {
+    overlay.remove();
+    document.removeEventListener('keydown', escGateHandler);
+  };
+  const escGateHandler = (e) => { if (e.key === 'Escape') closeGate(); };
+  overlay.querySelector('#subscriptionGateClose').addEventListener('click', closeGate);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeGate(); });
+  document.addEventListener('keydown', escGateHandler);
 }
 
 // ============================
