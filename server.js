@@ -813,6 +813,20 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
   res.json({ users, stats: { total, active, trialing, admins, expired } });
 });
 
+// Delete user (admin only, can't delete admins)
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.role === 'admin') return res.status(403).json({ error: 'Cannot delete admin accounts' });
+  dbHelpers.prepare('DELETE FROM user_data WHERE user_id = ?').run(req.params.id);
+  dbHelpers.prepare('DELETE FROM user_xp WHERE user_id = ?').run(req.params.id);
+  dbHelpers.prepare('DELETE FROM user_achievements WHERE user_id = ?').run(req.params.id);
+  dbHelpers.prepare('DELETE FROM xp_log WHERE user_id = ?').run(req.params.id);
+  dbHelpers.prepare('DELETE FROM support_tickets WHERE user_id = ?').run(req.params.id);
+  dbHelpers.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  res.json({ success: true, deleted: user.email });
+});
+
 // Support tickets — list all
 app.get('/api/admin/tickets', requireAdmin, (req, res) => {
   const tickets = dbHelpers.prepare(`

@@ -1692,7 +1692,7 @@
       <div class="section-title">All Users</div>
       <div style="overflow-x:auto;">
         <table class="calendar-table" style="width:100%;">
-          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Trial Ends</th><th>Joined</th></tr></thead>
+          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Trial Ends</th><th>Joined</th><th>Actions</th></tr></thead>
           <tbody id="adminUserList"></tbody>
         </table>
       </div>
@@ -5307,17 +5307,33 @@ async function adminLoadData() {
         trialInfo = days > 0 ? days + ' days left' : 'Expired';
       }
       const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : '—';
+      const deleteBtn = u.role === 'admin' ? '<span style="color:#6b7094;font-size:11px;">—</span>' :
+        '<button onclick="adminDeleteUser(' + u.id + ',\'' + u.email.replace(/'/g, "\\'") + '\')" style="background:#ff444420;color:#ff4444;border:1px solid #ff444440;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Delete</button>';
       return '<tr>' +
         '<td style="color:#fff;font-weight:500;">' + u.email + '</td>' +
         '<td><span style="color:' + statusColor + ';font-weight:600;">' + u.role + '</span></td>' +
         '<td><span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:600;background:' + statusColor + '20;color:' + statusColor + ';">' + statusLabel + '</span></td>' +
         '<td style="color:#6b7094;">' + trialInfo + '</td>' +
         '<td style="color:#6b7094;">' + joined + '</td>' +
+        '<td>' + deleteBtn + '</td>' +
         '</tr>';
     }).join('');
   } catch(e) { console.error('Admin load error:', e); }
 
   adminLoadTickets('all');
+}
+
+async function adminDeleteUser(id, email) {
+  if (!confirm('Delete user ' + email + '? This cannot be undone.')) return;
+  try {
+    const resp = await fetch('/api/admin/users/' + id, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.success) {
+      adminLoadData();
+    } else {
+      alert(data.error || 'Failed to delete user');
+    }
+  } catch(e) { alert('Error deleting user'); }
 }
 
 async function adminLoadTickets(filter) {
