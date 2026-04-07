@@ -847,6 +847,7 @@
 
     <div class="intake-save-bar">
       <button class="btn-intake-action primary" onclick="intakeSave()">Save Release</button>
+      <button class="btn-intake-action primary" onclick="intakeStartNew()">Start New Release</button>
       <select class="intake-releases" id="intakeReleaseSelect" onchange="intakeLoad(this.value)">
         <option value="">-- Load Saved Release --</option>
       </select>
@@ -2764,6 +2765,82 @@ function intakeCleanupSaves() {
   localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
   intakeLoadList();
   showToast(removed > 0 ? `Cleaned up ${removed} junk entries` : 'No junk entries found');
+}
+
+function intakeStartNew() {
+  // Confirm so the user can't bump it accidentally
+  if (!confirm('Start a new release? Your current release and its campaign will be saved first.')) return;
+
+  // 1. Save the current release (and its campaign) so nothing is lost
+  try {
+    const current = intakeGetData();
+    if (current.songTitle && current.songTitle.length >= 3) {
+      if (campaignGenerated) {
+        saveCampaignToRelease(current.songTitle, getCampaignSnapshot());
+      }
+      const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+      const existing = saved[current.songTitle] || {};
+      const slim = Object.assign({}, current, { coverArt: null });
+      saved[current.songTitle] = Object.assign({}, slim, {
+        _campaign: existing._campaign,
+        _campaignGenerated: existing._campaignGenerated,
+        _checklistState: existing._checklistState,
+      });
+      localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
+      serverSave('release_data_all', saved);
+    }
+  } catch(e) { console.error('intakeStartNew save error:', e); }
+
+  // 2. Wipe ALL intake fields (full reset, not just the partial set intakeClear handles)
+  document.querySelectorAll('#panel-intake input, #panel-intake select, #panel-intake textarea').forEach(el => {
+    if (el.type === 'checkbox' || el.type === 'radio') el.checked = false;
+    else el.value = '';
+  });
+  // Re-apply select defaults
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  setVal('in-language', 'English');
+  setVal('in-workContent', 'Music and Lyrics');
+  setVal('in-explicit', 'No');
+  setVal('in-filmTV', 'No');
+
+  // 3. Clear cover art
+  inCoverData = null;
+  const ci = document.getElementById('inCoverInput'); if (ci) ci.value = '';
+  const cn = document.getElementById('inCoverName'); if (cn) cn.textContent = '';
+  const cimg = document.getElementById('inCoverImg'); if (cimg) cimg.src = '';
+  const cp = document.getElementById('inCoverPreview'); if (cp) cp.style.display = 'none';
+  const cz = document.getElementById('inCoverZone'); if (cz) cz.classList.remove('has-file');
+  const cc = document.getElementById('inCoverClear'); if (cc) cc.style.display = 'none';
+
+  // 4. Clear dynamic songwriter / publisher rows
+  const swRows = document.getElementById('in-songwriterRows'); if (swRows) swRows.innerHTML = '';
+  const pubRows = document.getElementById('in-publisherRows'); if (pubRows) pubRows.innerHTML = '';
+
+  // 5. Reset campaign state — lock tabs, clear in-memory campaign, reset button
+  applyCampaignData({});
+  renderAllCampaignTabs();
+  campaignGenerated = false;
+  try { lockTabs(); } catch(e) {}
+  localStorage.removeItem(ukey('mcc_campaign_data'));
+  localStorage.removeItem(ukey('mcc_campaign_song'));
+  localStorage.removeItem(ukey('release_data'));
+  const btn = document.getElementById('btnGenerateCampaign');
+  if (btn) {
+    btn.textContent = 'GENERATE CAMPAIGN';
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.disabled = false;
+  }
+
+  // 6. Deselect the dropdown
+  const sel = document.getElementById('intakeReleaseSelect');
+  if (sel) sel.value = '';
+
+  // 7. Re-prefill sticky artist profile fields and refresh summary
+  try { prefillFromProfile(); } catch(e) {}
+  intakeUpdate();
+
+  showToast('Ready for a new release');
 }
 
 function intakeClear() {
