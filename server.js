@@ -66,7 +66,9 @@ function saveDb() {
   _saveTimer = setTimeout(() => {
     try {
       const data = db.export();
-      fs.writeFileSync(DB_PATH, Buffer.from(data));
+      const tmpPath = DB_PATH + '.tmp';
+      fs.writeFileSync(tmpPath, Buffer.from(data));
+      fs.renameSync(tmpPath, DB_PATH);
     } catch(e) { console.error('DB save error:', e.message); }
   }, 100);
 }
@@ -1260,8 +1262,20 @@ async function startServer() {
 
   if (fs.existsSync(DB_PATH)) {
     console.log('[BOOT] Loading existing database...');
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
+    try {
+      const fileBuffer = fs.readFileSync(DB_PATH);
+      db = new SQL.Database(fileBuffer);
+      // Quick sanity check — if this throws, DB is corrupted
+      db.exec("SELECT count(*) FROM sqlite_master");
+      console.log('[BOOT] Existing database loaded OK');
+    } catch (e) {
+      console.error('[BOOT] Database corrupted, backing up and creating fresh:', e.message);
+      try {
+        fs.renameSync(DB_PATH, DB_PATH + '.corrupt.' + Date.now());
+      } catch (_) {}
+      db = new SQL.Database();
+      console.log('[BOOT] Fresh database created');
+    }
   } else {
     console.log('[BOOT] Creating new database...');
     db = new SQL.Database();
