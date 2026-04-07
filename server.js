@@ -1197,7 +1197,7 @@ app.post('/api/claude', requireAccess, async (req, res) => {
       },
       body: JSON.stringify({
         model: model || 'claude-sonnet-4-20250514',
-        max_tokens: Math.min(max_tokens || 1024, 4096),
+        max_tokens: Math.min(max_tokens || 1024, 8192),
         system: system || '',
         messages: messages || []
       }),

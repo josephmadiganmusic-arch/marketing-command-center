@@ -3654,12 +3654,12 @@ function openAiModal(action) { document.getElementById('aiModal-'+action).classL
 function closeAiModal(action) { document.getElementById('aiModal-'+action).classList.remove('active'); }
 document.addEventListener('click', e => { if(e.target.classList.contains('ai-modal-overlay')) e.target.classList.remove('active'); });
 
-async function callClaude(userMessage) {
+async function callClaude(userMessage, maxTokens) {
   const model = document.getElementById('claudeModel').value;
   const response = await fetch('/api/claude', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens:4096, system:buildSystemPrompt(), messages:[{role:'user',content:userMessage}] })
+    body: JSON.stringify({ model, max_tokens: maxTokens || 4096, system:buildSystemPrompt(), messages:[{role:'user',content:userMessage}] })
   });
   if(!response.ok) { const err = await response.text(); throw new Error('Server error (' + response.status + ') — please try again in a moment'); }
   const data = await response.json();
@@ -4020,10 +4020,98 @@ function renderInlineAiResults(container, text) {
 // CAMPAIGN GENERATOR
 // ============================
 // Retry wrapper for API calls — retries up to 2 times with backoff on 502/503/timeout
-async function callClaudeWithRetry(prompt, retries = 2) {
+// Robust JSON extractor: strips markdown fences, finds outermost {...},
+// sanitizes smart quotes / trailing commas, and attempts to REPAIR truncated
+// JSON (the common failure mode when Claude hits max_tokens mid-response).
+function parseJSONLoose(text) {
+  if (!text) return {};
+  let s = String(text).trim();
+  // Strip ```json ... ``` fences
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+
+  const first = s.indexOf('{');
+  if (first === -1) return {};
+  // Use everything from the first { to end (don't trust lastIndexOf — truncated
+  // responses won't have a matching closing brace)
+  let body = s.slice(first);
+
+  // Normalize smart quotes
+  body = body.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
+
+  function sanitize(str) {
+    return str.replace(/,(\s*[}\]])/g, '$1');
+  }
+
+  // 1) Try as-is up to last }
+  const lastBrace = body.lastIndexOf('}');
+  if (lastBrace !== -1) {
+    const direct = sanitize(body.slice(0, lastBrace + 1));
+    try { return JSON.parse(direct); } catch(_) {}
+  }
+
+  // 2) Repair truncation: walk the body tracking string state and bracket depth.
+  // When we hit the end (or an unclosed string), back up to the last safe
+  // position (end of a complete value at top-level depth) and close brackets.
+  let inStr = false, escape = false;
+  const stack = []; // '{' or '['
+  let lastSafeEnd = -1; // index just past a complete top-level element
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (escape) { escape = false; continue; }
+    if (inStr) {
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inStr = false; }
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') { stack.push(ch); continue; }
+    if (ch === '}' || ch === ']') {
+      stack.pop();
+      if (stack.length === 1) {
+        // we just closed an element nested one level inside the root object
+        lastSafeEnd = i + 1;
+      }
+      if (stack.length === 0) {
+        const candidate = sanitize(body.slice(0, i + 1));
+        try { return JSON.parse(candidate); } catch(_) {}
+      }
+    }
+  }
+
+  // Truncated. Build a repaired version: take up to lastSafeEnd, drop any
+  // dangling comma, then close all open brackets.
+  if (lastSafeEnd > 0) {
+    let repaired = body.slice(0, lastSafeEnd);
+    // Recompute remaining open brackets at lastSafeEnd
+    const openStack = [];
+    let inS = false, esc = false;
+    for (let i = 0; i < repaired.length; i++) {
+      const c = repaired[i];
+      if (esc) { esc = false; continue; }
+      if (inS) {
+        if (c === '\\') { esc = true; continue; }
+        if (c === '"') inS = false;
+        continue;
+      }
+      if (c === '"') { inS = true; continue; }
+      if (c === '{' || c === '[') openStack.push(c);
+      else if (c === '}' || c === ']') openStack.pop();
+    }
+    while (openStack.length) {
+      const op = openStack.pop();
+      repaired += (op === '{' ? '}' : ']');
+    }
+    repaired = sanitize(repaired);
+    try { return JSON.parse(repaired); } catch(_) {}
+  }
+
+  return {};
+}
+
+async function callClaudeWithRetry(prompt, retries = 2, maxTokens) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await callClaude(prompt);
+      return await callClaude(prompt, maxTokens);
     } catch(err) {
       const is502 = err.message && (err.message.includes('502') || err.message.includes('503') || err.message.includes('500') || err.message.includes('Server error') || err.message.includes('failed to respond'));
       if (is502 && attempt < retries) {
@@ -4219,16 +4307,16 @@ Requirements:
 - 5 hashtag sets (Release, Genre/Niche, Engagement, Streaming Growth, Viral/TikTok) with 12-15 tags each relevant to this artist's genre and niche
 - 10 calls-to-action focused on Spotify saves, shares, playlist adds
 - Include PRE-RELEASE content (teasers, countdown, snippet hooks) for content to post 2-4 weeks before release
-- Voice: direct, authentic, never preachy or generic`);
+- Voice: direct, authentic, never preachy or generic`, 2, 8000);
 
     try {
-      const c = JSON.parse((contentResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
-      if (c.hooks) hooks = c.hooks;
-      if (c.captions) captions = c.captions;
-      if (c.hashtagSets) hashtagSets = c.hashtagSets;
-      if (c.ctas) ctas = c.ctas;
+      const c = parseJSONLoose(contentResult);
+      if (Array.isArray(c.hooks)) hooks = c.hooks;
+      if (Array.isArray(c.captions)) captions = c.captions;
+      if (Array.isArray(c.hashtagSets)) hashtagSets = c.hashtagSets;
+      if (Array.isArray(c.ctas)) ctas = c.ctas;
       renderHooks(); renderCaptions(); renderHashtags(); renderCTAs();
-    } catch(e) { console.error('Content parse error:', e); }
+    } catch(e) { console.error('Content parse error:', e, '\nRaw:', contentResult); window._lastContentRaw = contentResult; }
     markStep('content', 'done'); clMarkStep('content', 'done'); clProgress(20);
     } // end startStep <= 0
 
@@ -4255,13 +4343,23 @@ Requirements:
 - Content types: Reel, Story, Carousel, Live, TikTok, Post, Collab
 - PRE-RELEASE ideas: snippet previews, studio BTS, countdown posts, pre-save links, artist story teasers, collab announcements
 - POST-RELEASE ideas: release announcement, testimonials, engagement posts, playlist pushes, live sessions, fan reposts
-- All CTAs should be specific and actionable`);
+- All CTAs should be specific and actionable`, 2, 8000);
 
     try {
-      const cal = JSON.parse((calResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
-      if (cal['1']) calendarData = cal;
+      const cal = parseJSONLoose(calResult);
+      if (cal && cal['1']) {
+        calendarData = cal;
+      } else {
+        console.error('Calendar: parsed but missing week 1. Raw:', calResult);
+        window._lastCalendarRaw = calResult;
+        showToast('Calendar generation returned empty — raw saved to window._lastCalendarRaw');
+      }
       renderCalendar(1);
-    } catch(e) { console.error('Calendar parse error:', e); }
+    } catch(e) {
+      console.error('Calendar parse error:', e, '\nRaw:', calResult);
+      window._lastCalendarRaw = calResult;
+      showToast('Calendar parse failed — raw saved to window._lastCalendarRaw');
+    }
     markStep('calendar', 'done'); clMarkStep('calendar', 'done'); clProgress(40);
     } // end startStep <= 1
 
@@ -4308,14 +4406,23 @@ Requirements:
 - Every message must reference this specific song title, artist name, genre, and include the Spotify link, EPK, and email
 - Include pre-release outreach if release date is in the future
 - Professional but personal tone — write like a real person, not a form letter
-- NO bracket placeholders like [Name] or [Playlist Name] when you have real names. Only use brackets if no target was provided for that category.`);
+- NO bracket placeholders like [Name] or [Playlist Name] when you have real names. Only use brackets if no target was provided for that category.`, 2, 8000);
 
     try {
-      const o = JSON.parse((outreachResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
-      if (o.curatorMessages) curatorMessages = o.curatorMessages;
-      if (o.followupMessages) followupMessages = o.followupMessages;
+      const o = parseJSONLoose(outreachResult);
+      if (Array.isArray(o.curatorMessages)) curatorMessages = o.curatorMessages;
+      if (Array.isArray(o.followupMessages)) followupMessages = o.followupMessages;
+      if (curatorMessages.length === 0 && followupMessages.length === 0) {
+        console.error('Outreach: parsed but empty. Raw:', outreachResult);
+        window._lastOutreachRaw = outreachResult;
+        showToast('Outreach generation returned no messages — check console (window._lastOutreachRaw)');
+      }
       renderOutreach();
-    } catch(e) { console.error('Outreach parse error:', e); }
+    } catch(e) {
+      console.error('Outreach parse error:', e, '\nRaw:', outreachResult);
+      window._lastOutreachRaw = outreachResult;
+      showToast('Outreach parse failed — raw saved to window._lastOutreachRaw');
+    }
     markStep('outreach', 'done'); clMarkStep('outreach', 'done'); clProgress(60);
     } // end startStep <= 2
 
@@ -4338,11 +4445,11 @@ Requirements:
 - Think beyond obvious genre playlists — include mood, activity, lifestyle, and themed playlists`);
 
     try {
-      const p = JSON.parse((playlistResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
-      if (p.playlists) playlists = p.playlists;
-      if (p.searchKeywords) searchKeywords = p.searchKeywords;
+      const p = parseJSONLoose(playlistResult);
+      if (Array.isArray(p.playlists)) playlists = p.playlists;
+      if (Array.isArray(p.searchKeywords)) searchKeywords = p.searchKeywords;
       renderPlaylists();
-    } catch(e) { console.error('Playlist parse error:', e); }
+    } catch(e) { console.error('Playlist parse error:', e, '\nRaw:', playlistResult); window._lastPlaylistRaw = playlistResult; }
     markStep('playlists', 'done'); clMarkStep('playlists', 'done'); clProgress(80);
     } // end startStep <= 3
 
@@ -4369,16 +4476,21 @@ Requirements:
 - All tasks specific to this song, artist, and genre — not generic`);
 
     try {
-      const cl = JSON.parse((checklistResult.match(/\{[\s\S]*\}/) || ['{}'])[0]);
-      if (cl.today) checklistToday = cl.today;
-      if (cl.week) checklistWeek = cl.week;
-      if (cl.recurring) checklistRecurring = cl.recurring;
-      if (cl.month) checklistMonth = cl.month;
+      const cl = parseJSONLoose(checklistResult);
+      if (Array.isArray(cl.today)) checklistToday = cl.today;
+      if (Array.isArray(cl.week)) checklistWeek = cl.week;
+      if (Array.isArray(cl.recurring)) checklistRecurring = cl.recurring;
+      if (Array.isArray(cl.month)) checklistMonth = cl.month;
+      // Reset any persisted "completed" state from a prior release so the new campaign starts clean
+      try {
+        localStorage.removeItem(ukey('mcc-checklist'));
+        serverSave('mcc-checklist', {});
+      } catch(_) {}
       renderChecklist('checklist-today', checklistToday);
       renderChecklist('checklist-week', checklistWeek);
       renderChecklist('checklist-recurring', checklistRecurring);
       renderChecklist('checklist-month', checklistMonth);
-    } catch(e) { console.error('Checklist parse error:', e); }
+    } catch(e) { console.error('Checklist parse error:', e, '\nRaw:', checklistResult); window._lastChecklistRaw = checklistResult; }
     markStep('checklist', 'done'); clMarkStep('checklist', 'done'); clProgress(100);
     } // end startStep <= 4
 
