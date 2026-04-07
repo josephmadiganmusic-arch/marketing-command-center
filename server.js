@@ -195,6 +195,9 @@ const emailTransporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: parseInt(process.env.SMTP_PORT || '587'),
   secure: process.env.SMTP_SECURE === 'true',
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
@@ -341,19 +344,18 @@ app.post('/api/signup', async (req, res) => {
     'INSERT INTO users (email, password, subscription_status, trial_ends_at, verification_token, verification_expires) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(cleanEmail, hash, 'trialing', trialEnd, token, tokenExpires);
 
-  // Only attempt email if SMTP is configured
+  // Respond immediately, send email in background (don't block the request)
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      await sendVerificationEmail(cleanEmail, token);
-    } catch (err) {
-      console.error('Email send error:', err.message);
-    }
+    // Fire and forget — don't await
+    sendVerificationEmail(cleanEmail, token).catch(err => {
+      console.error('[SIGNUP] Email send error:', err.message);
+    });
+    res.json({ success: true, needsVerification: true });
   } else {
     console.log('[SIGNUP] SMTP not configured, skipping verification email for', cleanEmail);
-    // Auto-verify since we can't send emails
     dbHelpers.prepare('UPDATE users SET email_verified = 1 WHERE email = ?').run(cleanEmail);
+    res.json({ success: true, needsVerification: false });
   }
-  res.json({ success: true, needsVerification: !!process.env.SMTP_USER });
 });
 
 // --- Email Verification Route ---
