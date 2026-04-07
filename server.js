@@ -317,6 +317,12 @@ function requireAccess(req, res, next) {
   next();
 }
 
+// --- Favicon (public, no auth) ---
+app.get(['/favicon.ico', '/favicon.jpg', '/favicon.png'], (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(__dirname, 'favicon.jpg'));
+});
+
 // --- Public legal pages (no auth required) ---
 app.get(['/privacy', '/privacy-policy', '/privacy.html'], (req, res) => {
   res.sendFile(path.join(__dirname, 'privacy.html'));
