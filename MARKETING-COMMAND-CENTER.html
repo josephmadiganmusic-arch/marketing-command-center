@@ -2259,15 +2259,38 @@ function isTrialUser() {
 function isPaidUser() {
   return SUB_STATUS === 'active' || USER_ROLE === 'admin';
 }
+
+// Trial users are capped at 5 distinct saved releases.
+// Returns true if the release can be added/saved, false if the cap blocks it.
+const TRIAL_RELEASE_LIMIT = 5;
+function canAddRelease(title) {
+  if (isPaidUser()) return true;
+  if (!isTrialUser()) return true; // unknown state — don't block
+  try {
+    const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+    const titles = Object.keys(saved);
+    if (title && saved[title]) return true; // updating an existing release is always fine
+    return titles.length < TRIAL_RELEASE_LIMIT;
+  } catch(e) { return true; }
+}
 function showUpgradeNudge(msg) {
   const existing = document.getElementById('upgradeNudgeToast');
   if (existing) existing.remove();
   const nudge = document.createElement('div');
   nudge.id = 'upgradeNudgeToast';
-  nudge.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;padding:14px 28px;border-radius:12px;font-size:14px;font-weight:600;z-index:100000;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(123,47,247,0.4);max-width:90vw;';
-  nudge.innerHTML = '<span>' + msg + '</span><a href="/subscribe" style="color:#fff;background:rgba(255,255,255,0.2);padding:8px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;white-space:nowrap;">Upgrade Now</a><button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:18px;padding:0 0 0 4px;">&times;</button>';
+  nudge.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;padding:18px 24px 18px 28px;border-radius:14px;font-size:14px;font-weight:600;z-index:100000;display:flex;align-items:center;gap:16px;box-shadow:0 12px 40px rgba(123,47,247,0.5);max-width:92vw;flex-wrap:wrap;';
+  nudge.innerHTML =
+    '<span style="flex:1;min-width:200px;line-height:1.5;">' + msg + '</span>' +
+    '<a href="/subscribe" style="color:#fff;background:rgba(255,255,255,0.22);padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;white-space:nowrap;">Upgrade Now</a>' +
+    '<button aria-label="Close" onclick="this.parentElement.remove()" ' +
+      'style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;cursor:pointer;font-size:22px;line-height:1;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;font-weight:700;transition:all 0.2s;" ' +
+      'onmouseover="this.style.background=\'rgba(255,255,255,0.35)\'" ' +
+      'onmouseout="this.style.background=\'rgba(255,255,255,0.18)\'">&times;</button>';
   document.body.appendChild(nudge);
-  setTimeout(() => { if (nudge.parentElement) nudge.remove(); }, 12000);
+  // Dismiss on Escape key
+  const escHandler = (e) => { if (e.key === 'Escape') { nudge.remove(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
+  setTimeout(() => { if (nudge.parentElement) { nudge.remove(); document.removeEventListener('keydown', escHandler); } }, 15000);
 }
 
 function showPanel(id) {
@@ -2455,7 +2478,7 @@ function intakeForceFlush() {
     localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
     saveArtistProfile();
     // Save to named releases if title is valid — preserve existing campaign bundle
-    if (d.songTitle && d.songTitle.length >= 3) {
+    if (d.songTitle && d.songTitle.length >= 3 && canAddRelease(d.songTitle)) {
       const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
       const existing = saved[d.songTitle] || {};
       saved[d.songTitle] = Object.assign({}, slim, {
@@ -2680,6 +2703,7 @@ function intakeUpdate() {
   _namedSaveTimer = setTimeout(() => {
     const data = intakeGetData();
     if (!data.songTitle || data.songTitle.length < 3) return;
+    if (!canAddRelease(data.songTitle)) return; // trial cap — silent here, intakeSave/generateCampaign will prompt
     const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
     const existing = saved[data.songTitle] || {};
     const toSave = Object.assign({}, data, {
@@ -2739,6 +2763,10 @@ function intakeSave() {
   try {
     const d = intakeGetData();
     if (!d.songTitle) { showToast('Enter a song title first'); return; }
+    if (!canAddRelease(d.songTitle)) {
+      showUpgradeNudge('Free trial is limited to ' + TRIAL_RELEASE_LIMIT + ' saved releases. Subscribe to save unlimited releases.');
+      return;
+    }
     clearTimeout(_autosaveTimer);
     const slim = Object.assign({}, d, { coverArt: null });
     localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
@@ -4701,6 +4729,12 @@ async function generateCampaign() {
   const d = intakeGetData();
   if (!d.songTitle || !d.primaryArtist) {
     showToast('Fill in at least Song Title and Primary Artist');
+    return;
+  }
+
+  // Trial users capped at TRIAL_RELEASE_LIMIT distinct releases.
+  if (!canAddRelease(d.songTitle)) {
+    showUpgradeNudge('Free trial is limited to ' + TRIAL_RELEASE_LIMIT + ' releases. Subscribe to generate campaigns for unlimited releases.');
     return;
   }
 
