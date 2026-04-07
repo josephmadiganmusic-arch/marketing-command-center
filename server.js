@@ -104,10 +104,13 @@ function initDb() {
     )
   `);
 
-  // Add email verification columns if they don't exist (migration for existing DB)
-  try { db.run("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0"); } catch(e) {}
-  try { db.run("ALTER TABLE users ADD COLUMN verification_token TEXT"); } catch(e) {}
-  try { db.run("ALTER TABLE users ADD COLUMN verification_expires TEXT"); } catch(e) {}
+  // Add email verification columns if they don't exist (migration for existing DB).
+  // Only swallow "duplicate column" errors — surface anything else so a real
+  // schema problem doesn't get silently masked.
+  const isDupColErr = e => e && /duplicate column/i.test(String(e.message || e));
+  try { db.run("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE users ADD COLUMN verification_token TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE users ADD COLUMN verification_expires TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
   // Mark existing admin accounts as verified
   db.run("UPDATE users SET email_verified = 1 WHERE role = 'admin'");
@@ -379,6 +382,9 @@ setInterval(() => {
 }, 5 * 60 * 1000).unref();
 
 const rlAuth = rateLimit({ name: 'auth', windowMs: 15 * 60 * 1000, max: 10 });
+// Separate bucket for resend-verification so a user pounding the resend
+// button can't lock themselves out of /api/login (both used to share rlAuth).
+const rlResend = rateLimit({ name: 'resend', windowMs: 60 * 60 * 1000, max: 5 });
 const rlSignup = rateLimit({ name: 'signup', windowMs: 60 * 60 * 1000, max: 5 });
 const rlClaude = rateLimit({ name: 'claude', windowMs: 60 * 60 * 1000, max: 60 });
 const rlResearch = rateLimit({ name: 'research', windowMs: 60 * 60 * 1000, max: 100 });
@@ -547,7 +553,7 @@ app.get('/api/verify-email', (req, res) => {
 });
 
 // --- Resend Verification Email ---
-app.post('/api/resend-verification', rlAuth, async (req, res) => {
+app.post('/api/resend-verification', rlResend, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
 
@@ -708,8 +714,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
       }
       case 'checkout.session.completed': {
         // Defensive: tie the customer ID back to the user if it's somehow not set yet.
+        // Stripe doesn't normalize customer_email casing, so match case-insensitively.
         if (obj.customer && obj.customer_email) {
-          dbHelpers.prepare('UPDATE users SET stripe_customer_id = ? WHERE email = ? AND (stripe_customer_id IS NULL OR stripe_customer_id = "")')
+          dbHelpers.prepare('UPDATE users SET stripe_customer_id = ? WHERE LOWER(email) = ? AND (stripe_customer_id IS NULL OR stripe_customer_id = "")')
             .run(obj.customer, obj.customer_email.toLowerCase());
         }
         break;
@@ -721,6 +728,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
     dbHelpers.prepare('DELETE FROM stripe_events WHERE id = ?').run(event.id);
     return res.sendStatus(500);
   }
+
+  // Flush DB to disk synchronously after a successful webhook so we don't
+  // lose subscription state if the process dies inside the 100ms debounce.
+  try { flushDbNow(); } catch (e) { console.error('[STRIPE] flushDbNow failed:', e.message); }
 
   res.sendStatus(200);
 });
@@ -735,10 +746,13 @@ const SERPER_API_KEY = process.env.SERPER_API_KEY || '';
 
 async function serperSearch(query, num = 10) {
   if (!SERPER_API_KEY) throw new Error('Search API not configured');
+  // 15s hard ceiling — Serper occasionally hangs and we don't want a single
+  // slow upstream call to tie up an Express worker indefinitely.
   const resp = await fetch('https://google.serper.dev/search', {
     method: 'POST',
     headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: query, num })
+    body: JSON.stringify({ q: query, num }),
+    signal: AbortSignal.timeout(15000)
   });
   if (!resp.ok) throw new Error('Search API failed');
   return resp.json();
@@ -1055,8 +1069,12 @@ app.post('/api/admin/tickets/:id', requireAdmin, (req, res) => {
 
 // Support tickets — user submits a ticket
 app.post('/api/support/submit', requireAuth, rlSupport, async (req, res) => {
-  const { subject, message } = req.body;
+  let { subject, message } = req.body;
   if (!subject || !message) return res.status(400).json({ error: 'Subject and message required' });
+  // Cap input lengths so a malicious or buggy client can't burn Claude tokens
+  // by sending megabytes of context. Mirrors the limits used elsewhere.
+  subject = String(subject).slice(0, 200);
+  message = String(message).slice(0, 5000);
 
   // AI auto-response attempt using Claude
   let aiResponse = null;

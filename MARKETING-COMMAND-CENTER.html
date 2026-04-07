@@ -1986,8 +1986,23 @@ const TRIAL_DAYS = parseInt('%%TRIAL_DAYS%%', 10) || 0;
 const SUB_STATUS = '%%SUB_STATUS%%';
 const USER_EMAIL = '%%USER_EMAIL%%';
 
-// HTML-escape utility
-function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// HTML-escape utility — safe for use inside both element content and HTML attributes.
+// Escapes single quotes too, so values can be embedded in attributes that use either quote style.
+function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// Render Claude/Serper-derived markdown safely. Escapes the text first, then
+// applies a small whitelist of markdown patterns (## headings, **bold**, URLs,
+// newlines). Without the escape pass, AI/search output can inject script tags
+// or attribute breakouts directly into the DOM.
+function mdSafe(text, opts) {
+  opts = opts || {};
+  let s = esc(text);
+  if (opts.headings !== false) s = s.replace(/## (.*)/g, '<h3 style="color:#00d4ff;margin:16px 0 8px;">$1</h3>');
+  if (opts.bold !== false)     s = s.replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fff;">$1</strong>');
+  if (opts.links !== false)    s = s.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#00d4ff;">$1</a>');
+  if (opts.newlines)           s = s.replace(/\n/g, '<br>');
+  return s;
+}
 
 // Scope localStorage per user — prefixes all keys with user ID
 function ukey(key) { return 'u' + USER_ID + '_' + key; }
@@ -2280,7 +2295,7 @@ function showUpgradeNudge(msg) {
   nudge.id = 'upgradeNudgeToast';
   nudge.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;padding:18px 24px 18px 28px;border-radius:14px;font-size:14px;font-weight:600;z-index:100000;display:flex;align-items:center;gap:16px;box-shadow:0 12px 40px rgba(123,47,247,0.5);max-width:92vw;flex-wrap:wrap;';
   nudge.innerHTML =
-    '<span style="flex:1;min-width:200px;line-height:1.5;">' + msg + '</span>' +
+    '<span style="flex:1;min-width:200px;line-height:1.5;">' + esc(msg) + '</span>' +
     '<a href="/subscribe" style="color:#fff;background:rgba(255,255,255,0.22);padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;white-space:nowrap;">Upgrade Now</a>' +
     '<button aria-label="Close" onclick="this.parentElement.remove()" ' +
       'style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;cursor:pointer;font-size:22px;line-height:1;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;font-weight:700;transition:all 0.2s;" ' +
@@ -2645,7 +2660,7 @@ Only include names you are confident actually exist. These will be used for real
     statusEl.innerHTML = '<span style="color:#4caf50;">Targets found and filled in. Review and edit before generating campaign.</span>';
     showToast('Outreach targets generated!');
   } catch(err) {
-    statusEl.innerHTML = '<span style="color:#ff6b6b;">Error: ' + err.message + '</span>';
+    statusEl.innerHTML = '<span style="color:#ff6b6b;">Error: ' + esc(err.message) + '</span>';
   } finally {
     btn.disabled = false;
     btn.textContent = origText;
@@ -3246,13 +3261,14 @@ function renderRegCards() {
     card.className = 'reg-card';
     card.id = 'regCard-' + plat.id;
 
-    // Build fields with copy buttons
+    // Build fields with copy buttons. `val` comes from user-controlled intake input,
+    // so escape it for both content and attribute contexts.
     const fieldsHTML = plat.fields.map(f => {
       const val = getIntakeFieldValue(f.key);
       return `<div class="reg-field-item">
-        <span class="reg-field-label">${f.label}</span>
-        <span class="reg-field-value${val ? '' : ' empty-val'}">${val || 'Not set — fill in Intake tab'}</span>
-        ${val ? `<button class="copy-field-btn" onclick="copyText('${val.replace(/'/g,"\\'")}',this)">Copy</button>` : ''}
+        <span class="reg-field-label">${esc(f.label)}</span>
+        <span class="reg-field-value${val ? '' : ' empty-val'}">${val ? esc(val) : 'Not set — fill in Intake tab'}</span>
+        ${val ? `<button class="copy-field-btn" data-copy-text="${esc(val)}" onclick="copyText(this.getAttribute('data-copy-text'),this)">Copy</button>` : ''}
       </div>`;
     }).join('');
 
@@ -3362,41 +3378,47 @@ function regToggleFields(id) {
 // ============================
 function renderHooks() {
   const el = document.getElementById('hooks-list');
+  // hooks come from AI output; escape before rendering
   el.innerHTML = hooks.map((h, i) => `
     <div class="content-card">
       <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.caption').textContent,this)">Copy</button>
       <h4>Hook #${i+1}</h4>
-      <div class="caption">"${h}"</div>
+      <div class="caption">"${esc(h)}"</div>
     </div>`).join('');
 }
 
 function renderCaptions() {
   const el = document.getElementById('captions-list');
+  // captions come from AI output; escape every field
   el.innerHTML = captions.map(c => `
     <div class="content-card">
       <button class="copy-btn" onclick="copyText(this.parentElement.querySelector('.caption').textContent,this)">Copy</button>
-      <h4>${c.title}</h4>
-      <div class="meta"><span>${c.platform}</span><span>${c.type}</span></div>
-      <div class="caption">${c.text}</div>
-      <div class="cta">CTA: ${c.cta}</div>
+      <h4>${esc(c.title)}</h4>
+      <div class="meta"><span>${esc(c.platform)}</span><span>${esc(c.type)}</span></div>
+      <div class="caption">${esc(c.text)}</div>
+      <div class="cta">CTA: ${esc(c.cta)}</div>
     </div>`).join('');
 }
 
 function renderHashtags() {
   const el = document.getElementById('hashtags-list');
+  // hashtag sets come from AI output. Use a data-attribute for the copy
+  // payload so the value never has to round-trip through a JS string literal
+  // inside an HTML attribute (the manual single-quote escape was bypassable).
   el.innerHTML = hashtagSets.map(s => `
     <div class="hashtag-group">
-      <h4>${s.name} <button class="copy-btn" style="position:static;display:inline;margin-left:8px;" onclick="copyText('${s.tags.replace(/'/g,"\\'")}',this)">Copy</button></h4>
-      <div class="hashtags">${s.tags}</div>
+      <h4>${esc(s.name)} <button class="copy-btn" style="position:static;display:inline;margin-left:8px;" data-copy-text="${esc(s.tags)}" onclick="copyText(this.getAttribute('data-copy-text'),this)">Copy</button></h4>
+      <div class="hashtags">${esc(s.tags)}</div>
     </div>`).join('');
 }
 
 function renderCTAs() {
   const el = document.getElementById('cta-list');
+  // ctas come from AI output; use data-attribute for the copy payload
   el.innerHTML = ctas.map((c, i) => `
     <div class="content-card" style="padding:12px 20px;">
-      <button class="copy-btn" onclick="copyText('${c.replace(/'/g,"\\'")}',this)">Copy</button>
-      <span style="color:#00d4ff;font-weight:700;margin-right:8px;">${i+1}.</span>${c}
+      <button class="copy-btn" data-copy-text="${esc(c)}" onclick="copyText(this.getAttribute('data-copy-text'),this)">Copy</button>
+      <span style="color:#00d4ff;font-weight:700;margin-right:8px;">${i+1}.</span>${esc(c)}
     </div>`).join('');
 }
 
@@ -3603,23 +3625,25 @@ function renderOutreach() {
 }
 
 function renderPlaylists() {
+  // playlists / searchKeywords come from AI output; submissionPlatforms is a
+  // hardcoded constant but we escape it too for defense-in-depth.
   document.getElementById('playlist-strategy').innerHTML = playlists.map(p => `
     <div class="content-card">
-      <button class="copy-btn" onclick="copyText('${p.desc.replace(/'/g,"\\'")}',this)">Copy Desc</button>
-      <h4>${p.name}</h4>
-      <div class="caption" style="margin-bottom:8px;color:#00d4ff;font-style:italic;">"${p.desc}"</div>
-      <div class="caption">${p.purpose}</div>
-      ${p.artists ? `<div style="margin-top:8px;font-size:12px;color:#666;">Artists to include: ${p.artists}</div>` : ''}
+      <button class="copy-btn" data-copy-text="${esc(p.desc)}" onclick="copyText(this.getAttribute('data-copy-text'),this)">Copy Desc</button>
+      <h4>${esc(p.name)}</h4>
+      <div class="caption" style="margin-bottom:8px;color:#00d4ff;font-style:italic;">"${esc(p.desc)}"</div>
+      <div class="caption">${esc(p.purpose)}</div>
+      ${p.artists ? `<div style="margin-top:8px;font-size:12px;color:#666;">Artists to include: ${esc(p.artists)}</div>` : ''}
     </div>`).join('');
   document.getElementById('submission-platforms').innerHTML = `<table class="calendar-table">
     <thead><tr><th>Platform</th><th>Cost</th><th>Speed</th><th>Quality</th><th>Priority</th></tr></thead>
     <tbody>${submissionPlatforms.map(p => `<tr>
-      <td><strong>${p.name}</strong></td><td>${p.cost}</td><td>${p.speed}</td><td>${p.quality}</td>
-      <td style="color:#00d4ff;">${p.priority}</td>
+      <td><strong>${esc(p.name)}</strong></td><td>${esc(p.cost)}</td><td>${esc(p.speed)}</td><td>${esc(p.quality)}</td>
+      <td style="color:#00d4ff;">${esc(p.priority)}</td>
     </tr>`).join('')}</tbody>
   </table>`;
   document.getElementById('search-keywords').innerHTML = searchKeywords.map(k =>
-    `<span style="background:#1a1a1a;border:1px solid #222;padding:6px 14px;border-radius:6px;font-size:13px;color:#ccc;">${k}</span>`).join('');
+    `<span style="background:#1a1a1a;border:1px solid #222;padding:6px 14px;border-radius:6px;font-size:13px;color:#ccc;">${esc(k)}</span>`).join('');
 }
 
 function renderChecklist(elId, items) {
@@ -3721,7 +3745,7 @@ function egShowPreview(mode, btn) {
   document.getElementById('egCodeView').style.display = mode==='code' ? 'block' : 'none';
 }
 
-function egEscHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function egEscHtml(str) { return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function egFormatDate(dateStr) { if(!dateStr) return ''; const d=new Date(dateStr+'T00:00:00'); return d.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
 
 const egBuiltInPlatforms = [
@@ -4192,12 +4216,12 @@ function aiCopyText(text, btn) {
 function renderAiResults(containerId, text) {
   const container = document.getElementById(containerId);
   const sections = text.split(/\n(?=#{1,3} |\*\*[A-Z])/).filter(s=>s.trim());
-  if(sections.length<=1) { container.innerHTML = `<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.parentElement.querySelector('p').textContent,this)">Copy</button><p>${text.replace(/\n/g,'<br>')}</p></div>`; return; }
+  if(sections.length<=1) { container.innerHTML = `<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.parentElement.querySelector('p').textContent,this)">Copy</button><p>${mdSafe(text,{newlines:true})}</p></div>`; return; }
   container.innerHTML = sections.map(section => {
     const lines = section.trim().split('\n'); let title='', body=section.trim();
     if(lines[0].startsWith('#')) { title=lines[0].replace(/^#+\s*/,''); body=lines.slice(1).join('\n').trim(); }
     else if(lines[0].startsWith('**') && lines[0].endsWith('**')) { title=lines[0].replace(/\*\*/g,''); body=lines.slice(1).join('\n').trim(); }
-    return `<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.nextElementSibling.textContent||this.parentElement.querySelector('pre').textContent,this)">Copy</button>${title?`<h5>${title}</h5>`:''}<pre style="margin:0;">${body}</pre></div>`;
+    return `<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.nextElementSibling.textContent||this.parentElement.querySelector('pre').textContent,this)">Copy</button>${title?`<h5>${esc(title)}</h5>`:''}<pre style="margin:0;">${esc(body)}</pre></div>`;
   }).join('');
 }
 
@@ -4235,11 +4259,11 @@ async function mapOneClick(action) {
 
   try {
     const result = await callClaude(p.prompt);
-    results.innerHTML = result.replace(/## (.*)/g, '<h3 style="color:#00d4ff;margin:16px 0 8px;">$1</h3>').replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fff;">$1</strong>');
+    results.innerHTML = mdSafe(result, {newlines:true});
     // Add copy button
     results.innerHTML = `<button class="copy-btn" style="position:relative;margin-bottom:12px;" onclick="copyText(document.getElementById('mapResults').textContent,this)">Copy All</button>` + results.innerHTML;
   } catch(err) {
-    results.innerHTML = `<div style="color:#ff6b6b;">Error: ${err.message}</div>`;
+    results.innerHTML = `<div style="color:#ff6b6b;">Error: ${esc(err.message)}</div>`;
   } finally {
     loading.style.display = 'none';
   }
@@ -4394,12 +4418,10 @@ async function runResearch(action) {
 
     const analysis = await callClaude(claudePrompt);
     results.innerHTML = `<button class="copy-btn" style="position:relative;margin-bottom:12px;" onclick="copyText(document.getElementById('mapResults').textContent,this)">Copy All</button>` +
-      analysis.replace(/## (.*)/g, '<h3 style="color:#00d4ff;margin:16px 0 8px;">$1</h3>')
-              .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fff;">$1</strong>')
-              .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#00d4ff;">$1</a>');
+      mdSafe(analysis, {newlines:true});
     awardXP('research_run');
   } catch(err) {
-    results.innerHTML = `<div style="color:#ff6b6b;">Error: ${err.message}</div>`;
+    results.innerHTML = `<div style="color:#ff6b6b;">Error: ${esc(err.message)}</div>`;
     if (err.message.includes('not configured')) {
       results.innerHTML += `<div style="color:#888;margin-top:8px;font-size:13px;">Add SERPER_API_KEY to your Railway environment variables.<br>Free tier at serper.dev (2,500 searches/month).</div>`;
     }
@@ -4429,7 +4451,7 @@ async function runAiAction(action) {
   const submitBtn = loadingEl.previousElementSibling;
   if(submitBtn && submitBtn.classList.contains('ai-submit-btn')) submitBtn.disabled = true;
   try { const result = await callClaude(userPrompt); renderAiResults('aiResults-'+action,result); awardXP('research_run'); }
-  catch(err) { resultsEl.innerHTML = `<div class="ai-result-card" style="border-color:#ff4444;"><p style="color:#ff4444;">Error: ${err.message}</p></div>`; }
+  catch(err) { resultsEl.innerHTML = `<div class="ai-result-card" style="border-color:#ff4444;"><p style="color:#ff4444;">Error: ${esc(err.message)}</p></div>`; }
   finally { loadingEl.classList.remove('active'); if(submitBtn && submitBtn.classList.contains('ai-submit-btn')) submitBtn.disabled=false; }
 }
 
@@ -4514,18 +4536,18 @@ async function runInlineAi(id) {
   loadingEl.classList.add('active'); resultsEl.innerHTML = '';
   if(goBtn && goBtn.classList.contains('inline-ai-go')) goBtn.disabled = true;
   try { const result = await callClaude(prompt); renderInlineAiResults(resultsEl, result); }
-  catch(err) { resultsEl.innerHTML = '<div class="ai-result-card" style="border-color:#ff4444;"><p style="color:#ff4444;">Error: '+err.message+'</p></div>'; }
+  catch(err) { resultsEl.innerHTML = '<div class="ai-result-card" style="border-color:#ff4444;"><p style="color:#ff4444;">Error: '+esc(err.message)+'</p></div>'; }
   finally { loadingEl.classList.remove('active'); if(goBtn && goBtn.classList.contains('inline-ai-go')) goBtn.disabled=false; }
 }
 
 function renderInlineAiResults(container, text) {
   const sections = text.split(/\n(?=#{1,3} |\*\*[A-Z])/).filter(s=>s.trim());
-  if(sections.length<=1) { container.innerHTML = '<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.parentElement.querySelector(\'pre\').textContent,this)">Copy</button><pre style="margin:0;">'+text+'</pre></div>'; return; }
+  if(sections.length<=1) { container.innerHTML = '<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.parentElement.querySelector(\'pre\').textContent,this)">Copy</button><pre style="margin:0;">'+esc(text)+'</pre></div>'; return; }
   container.innerHTML = sections.map(section => {
     const lines=section.trim().split('\n'); let title='', body=section.trim();
     if(lines[0].startsWith('#')) { title=lines[0].replace(/^#+\s*/,''); body=lines.slice(1).join('\n').trim(); }
     else if(lines[0].startsWith('**') && lines[0].endsWith('**')) { title=lines[0].replace(/\*\*/g,''); body=lines.slice(1).join('\n').trim(); }
-    return '<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.parentElement.querySelector(\'pre\').textContent,this)">Copy</button>'+(title?'<h5>'+title+'</h5>':'')+'<pre style="margin:0;">'+body+'</pre></div>';
+    return '<div class="ai-result-card"><button class="ai-copy-btn" onclick="aiCopyText(this.parentElement.querySelector(\'pre\').textContent,this)">Copy</button>'+(title?'<h5>'+esc(title)+'</h5>':'')+'<pre style="margin:0;">'+esc(body)+'</pre></div>';
   }).join('');
 }
 
@@ -5253,7 +5275,7 @@ Requirements:
     if (document.getElementById('clStep-outreach')?.classList.contains('done')) failedStep = 3;
     if (document.getElementById('clStep-playlists')?.classList.contains('done')) failedStep = 4;
     showLoaderError(failedStep, err.message || 'Generation failed');
-    statusEl.innerHTML += `<div class="step" style="color:#ff6b6b;">Error: ${err.message}. Use the Retry button to continue where it left off.</div>`;
+    statusEl.innerHTML += `<div class="step" style="color:#ff6b6b;">Error: ${esc(err.message)}. Use the Retry button to continue where it left off.</div>`;
   }
 }
 
@@ -5843,17 +5865,17 @@ function handleAiScanFiles(input) {
         // Build file list item with audio preview
         const div = document.createElement('div');
         div.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:10px 14px;background:#1a1a1a;border:1px solid #222;border-radius:8px;font-size:12px;color:#ccc;margin:4px 0;';
-        let tagSummary = tagEntries.length > 0 ? tagEntries.slice(0, 3).map(([k,v]) => `${k}: ${v}`).join(' · ') : 'No tags found';
+        let tagSummary = tagEntries.length > 0 ? tagEntries.slice(0, 3).map(([k,v]) => `${esc(k)}: ${esc(v)}`).join(' · ') : 'No tags found';
         div.innerHTML = `
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:18px;">🎵</span>
-            <span style="font-weight:600;">${file.name}</span>
-            <span style="color:#666;">(${(file.size/1024/1024).toFixed(1)}MB${duration ? ' · ' + duration : ''})</span>
-            <span style="color:#00d4ff;font-size:10px;background:rgba(0,212,255,0.08);padding:2px 6px;border-radius:4px;">${audioInfo}</span>
+            <span style="font-weight:600;">${esc(file.name)}</span>
+            <span style="color:#666;">(${(file.size/1024/1024).toFixed(1)}MB${duration ? ' · ' + esc(duration) : ''})</span>
+            <span style="color:#00d4ff;font-size:10px;background:rgba(0,212,255,0.08);padding:2px 6px;border-radius:4px;">${esc(audioInfo)}</span>
           </div>
           <div style="font-size:11px;color:#888;">${tagSummary}</div>
           <audio controls src="${URL.createObjectURL(file)}" style="width:100%;height:32px;margin-top:4px;border-radius:4px;" preload="metadata"></audio>
-          ${tags._embeddedArt ? `<div style="margin-top:4px;"><img src="${tags._embeddedArt}" style="width:60px;height:60px;border-radius:6px;object-fit:cover;border:1px solid #333;" title="Embedded cover art"></div>` : ''}
+          ${tags._embeddedArt ? `<div style="margin-top:4px;"><img src="${esc(tags._embeddedArt)}" style="width:60px;height:60px;border-radius:6px;object-fit:cover;border:1px solid #333;" title="Embedded cover art"></div>` : ''}
         `;
         listEl.appendChild(div);
 
@@ -5875,8 +5897,8 @@ function handleAiScanFiles(input) {
         div.innerHTML = `
           <img src="${e.target.result}" style="width:60px;height:60px;border-radius:6px;object-fit:cover;border:1px solid #333;" title="Cover art">
           <div>
-            <div style="font-weight:600;">${file.name}</div>
-            <div style="color:#666;font-size:11px;">${(file.size/1024).toFixed(0)}KB · ${file.type} · Identified as cover art / image</div>
+            <div style="font-weight:600;">${esc(file.name)}</div>
+            <div style="color:#666;font-size:11px;">${(file.size/1024).toFixed(0)}KB · ${esc(file.type)} · Identified as cover art / image</div>
           </div>
         `;
         listEl.appendChild(div);
@@ -6002,7 +6024,7 @@ Return ONLY the JSON. No explanation. Extract as much as you can from the files.
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     } catch(e) {
-      resultsEl.innerHTML = `<div style="padding:16px;background:#1a1a1a;border-radius:8px;color:#ccc;white-space:pre-wrap;">${text}</div>`;
+      resultsEl.innerHTML = `<div style="padding:16px;background:#1a1a1a;border-radius:8px;color:#ccc;white-space:pre-wrap;">${esc(text)}</div>`;
       loadingEl.style.display = 'none';
       statusEl.textContent = 'Could not parse — showing raw results';
       return;
@@ -6085,7 +6107,7 @@ Return ONLY the JSON. No explanation. Extract as much as you can from the files.
   } catch(err) {
     loadingEl.style.display = 'none';
     statusEl.textContent = 'Error';
-    resultsEl.innerHTML = `<div style="padding:16px;background:#1a0f0f;border:1px solid #3a2a2a;border-radius:8px;color:#f44;font-size:13px;">Error: ${err.message}</div>`;
+    resultsEl.innerHTML = `<div style="padding:16px;background:#1a0f0f;border:1px solid #3a2a2a;border-radius:8px;color:#f44;font-size:13px;">Error: ${esc(err.message)}</div>`;
   }
 }
 

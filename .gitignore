@@ -1,3 +1,4 @@
 node_modules/
 data/
 .env
+rotate-admin-password.js
