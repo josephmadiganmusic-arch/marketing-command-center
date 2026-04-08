@@ -59,6 +59,15 @@
   .radio-group label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #ccd; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 400; margin: 0; }
   .radio-group input[type=radio] { width: auto; margin: 0; cursor: pointer; }
 
+  .checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .checkbox-grid label { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px; color: #ccd; text-transform: none; letter-spacing: 0; font-weight: 400; margin: 0; transition: border 0.15s, background 0.15s; line-height: 1.4; }
+  .checkbox-grid label:hover { border-color: var(--accent-1); }
+  .checkbox-grid label.checked { border-color: var(--accent-1); background: rgba(123,47,247,0.08); }
+  .checkbox-grid input[type=checkbox] { width: auto; margin: 0; margin-top: 2px; cursor: pointer; flex-shrink: 0; accent-color: var(--accent-1); }
+  .checkbox-grid .label-text { flex: 1; }
+  .checkbox-grid .label-sub { display: block; font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  @media (max-width: 560px) { .checkbox-grid { grid-template-columns: 1fr; } }
+
   .submit-btn { width: 100%; padding: 16px; background: var(--gradient-primary); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; letter-spacing: 0.5px; }
   .submit-btn:hover:not(:disabled) { box-shadow: 0 8px 32px rgba(123,47,247,0.4); transform: translateY(-1px); }
   .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -88,11 +97,12 @@
     <p>Redemption Release</p>
   </div>
 
-  <h1 class="page-title">Redeem an Older Release</h1>
-  <p class="page-subtitle">A one-time service to clean up music that was uploaded without proper backend setup.</p>
+  <h1 class="page-title">Register the Royalties You Never Collected</h1>
+  <p class="page-subtitle">A one-time service for songs that went live without ever being fully registered.</p>
 
   <div class="marketing-card">
-    <p>Rollout Heaven Redemption Release is for artists who want to go back and make an older release right. Whether the song was uploaded without proper registration, missing key backend setup, or never fully positioned to collect what it should, we step in and handle the work for you. From cleaning up the foundation to making sure the release is properly registered and aligned, this service helps redeem music from the past so it can move forward the way it should have from the beginning.</p>
+    <p>Most independent releases never get fully registered. The song goes live on Spotify, Apple Music, and the rest &mdash; but the songwriter is never linked to a PRO, the recording is never enrolled with SoundExchange, and the streaming mechanicals quietly pile up at the MLC with no one to claim them. Every play earns money that never reaches the artist.</p>
+    <p style="margin-top:14px;">Rollout Heaven Redemption Release is the fix. Tell us about a release that was uploaded without the backend work done, and we&rsquo;ll go back and register it across every royalty collection service it should have been on from day one &mdash; PRO, MLC, SoundExchange, neighboring rights, YouTube Content ID, publishing administration, and any other body that owes the song money. One song, one flat fee, one cleanup so future streams actually pay you.</p>
   </div>
 
   <div class="price-card">
@@ -114,6 +124,32 @@
     <div class="field">
       <label for="artist_name">Artist Name</label>
       <input type="text" id="artist_name" name="artist_name" maxlength="200">
+    </div>
+    <div class="field">
+      <label for="songwriter_names">Songwriter Name(s)</label>
+      <input type="text" id="songwriter_names" name="songwriter_names" maxlength="500" placeholder="Legal names of everyone who wrote the song">
+      <div class="hint">Required by every PRO. List every songwriter, comma-separated.</div>
+    </div>
+    <div class="field">
+      <label for="pro_affiliation">PRO Affiliation</label>
+      <select id="pro_affiliation" name="pro_affiliation">
+        <option value="">Select...</option>
+        <option value="ASCAP">ASCAP</option>
+        <option value="BMI">BMI</option>
+        <option value="SESAC">SESAC</option>
+        <option value="GMR">GMR</option>
+        <option value="SOCAN">SOCAN (Canada)</option>
+        <option value="PRS">PRS (UK)</option>
+        <option value="None">None &mdash; not signed up anywhere</option>
+        <option value="Unsure">Unsure</option>
+        <option value="Other">Other</option>
+      </select>
+      <div class="hint">If you&rsquo;re not registered with a PRO, pick &ldquo;None&rdquo; &mdash; we&rsquo;ll get you set up.</div>
+    </div>
+    <div class="field">
+      <label for="isrc">ISRC Code</label>
+      <input type="text" id="isrc" name="isrc" maxlength="50" placeholder="e.g. USRC17607839 (optional)">
+      <div class="hint">If you have one. Helps us find the recording faster at SoundExchange / MLC.</div>
     </div>
     <div class="field">
       <label for="dsp_link">DSP Link</label>
@@ -146,15 +182,32 @@
         <label><input type="radio" name="still_live" value="unsure"> Unsure</label>
       </div>
     </div>
+
     <div class="field">
-      <label for="what_went_wrong">What went wrong / what needs fixing? <span class="req">*</span></label>
-      <textarea id="what_went_wrong" name="what_went_wrong" maxlength="3000" required placeholder="Tell us what's missing or broken — registration, royalties, metadata, splits, anything..."></textarea>
+      <label>Which Registrations Are Missing? <span class="req">*</span></label>
+      <div class="hint" style="margin-top:0;margin-bottom:10px;">Check every royalty collection service this song was never properly registered with. If you&rsquo;re not sure, check it &mdash; we&rsquo;ll verify and fix it.</div>
+      <div class="checkbox-grid" id="regsGrid">
+        <label><input type="checkbox" name="registrations_missing" value="pro"><span class="label-text">PRO registration<span class="label-sub">ASCAP / BMI / SESAC &mdash; performance royalties</span></span></label>
+        <label><input type="checkbox" name="registrations_missing" value="mlc"><span class="label-text">MLC enrollment<span class="label-sub">Streaming mechanical royalties (US)</span></span></label>
+        <label><input type="checkbox" name="registrations_missing" value="soundexchange"><span class="label-text">SoundExchange<span class="label-sub">Digital performance for the recording</span></span></label>
+        <label><input type="checkbox" name="registrations_missing" value="youtube_content_id"><span class="label-text">YouTube Content ID<span class="label-sub">Catch &amp; monetize uses on YouTube</span></span></label>
+        <label><input type="checkbox" name="registrations_missing" value="neighboring_rights"><span class="label-text">Neighboring rights<span class="label-sub">International (PPL UK, etc)</span></span></label>
+        <label><input type="checkbox" name="registrations_missing" value="publishing_admin"><span class="label-text">Publishing administration<span class="label-sub">Publisher registration / global collection</span></span></label>
+        <label><input type="checkbox" name="registrations_missing" value="mechanical_licensing"><span class="label-text">Mechanical licensing (covers)<span class="label-sub">For songs you didn&rsquo;t write</span></span></label>
+        <label><input type="checkbox" name="registrations_missing" value="sync_registration"><span class="label-text">Sync agency registration<span class="label-sub">For TV, film, ads</span></span></label>
+        <label><input type="checkbox" name="registrations_missing" value="isrc_upc"><span class="label-text">ISRC / UPC assignment<span class="label-sub">No code yet, or unsure</span></span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="what_went_wrong">Anything Else We Should Know</label>
+      <textarea id="what_went_wrong" name="what_went_wrong" maxlength="3000" placeholder="Optional. Backstory, splits, co-writer info, prior failed attempts, anything that helps us register this faster."></textarea>
       <div class="hint">Up to 3000 characters.</div>
     </div>
     <div class="field">
       <label for="extra_notes">Extra Notes</label>
-      <textarea id="extra_notes" name="extra_notes" maxlength="2000" placeholder="Anything else we should know"></textarea>
-      <div class="hint">Optional. Up to 2000 characters.</div>
+      <textarea id="extra_notes" name="extra_notes" maxlength="2000" placeholder="Optional"></textarea>
+      <div class="hint">Up to 2000 characters.</div>
     </div>
     <button type="submit" class="submit-btn" id="submitBtn">Pay $24.99 &amp; Submit Redemption</button>
   </form>
@@ -203,8 +256,26 @@ function showStatus(type, msg) {
   el.textContent = msg;
 }
 
+// Toggle visual checked state on the registration checkboxes so users can
+// see at a glance which boxes are selected.
+document.querySelectorAll('#regsGrid input[type=checkbox]').forEach(function(cb) {
+  cb.addEventListener('change', function() {
+    cb.closest('label').classList.toggle('checked', cb.checked);
+  });
+});
+
 async function submitRedemption(e) {
   e.preventDefault();
+
+  var checkedRegs = Array.prototype.slice.call(
+    document.querySelectorAll('#regsGrid input[type=checkbox]:checked')
+  ).map(function(cb) { return cb.value; });
+
+  if (!checkedRegs.length && !document.getElementById('what_went_wrong').value.trim()) {
+    showStatus('error', 'Please check at least one missing registration, or describe what the release needs in the notes.');
+    return;
+  }
+
   var orig = submitBtn.textContent;
   submitBtn.disabled = true;
   submitBtn.textContent = 'Redirecting to checkout...';
@@ -213,10 +284,14 @@ async function submitRedemption(e) {
   var payload = {
     release_title: fd.get('release_title') || '',
     artist_name: fd.get('artist_name') || '',
+    songwriter_names: fd.get('songwriter_names') || '',
+    pro_affiliation: fd.get('pro_affiliation') || '',
+    isrc: fd.get('isrc') || '',
     dsp_link: fd.get('dsp_link') || '',
     original_distributor: fd.get('original_distributor') || '',
     original_release_date: fd.get('original_release_date') || '',
     still_live: fd.get('still_live') || '',
+    registrations_missing: checkedRegs,
     what_went_wrong: fd.get('what_went_wrong') || '',
     extra_notes: fd.get('extra_notes') || ''
   };

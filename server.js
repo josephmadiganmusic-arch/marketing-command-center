@@ -287,6 +287,16 @@ function initDb() {
   `);
   db.run('CREATE INDEX IF NOT EXISTS idx_redemption_user ON redemption_requests(user_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_redemption_status ON redemption_requests(status)');
+  // Registration-focused fields added after the initial table ship. The
+  // service is mainly about cleaning up releases that were never registered
+  // (or only partially registered) with royalty collection services, so we
+  // need to capture which collection services are missing and the songwriter
+  // metadata required to register them. Tolerant of duplicate-column errors
+  // for re-runs / fresh DBs that already have these from CREATE TABLE.
+  try { db.run("ALTER TABLE redemption_requests ADD COLUMN isrc TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE redemption_requests ADD COLUMN songwriter_names TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE redemption_requests ADD COLUMN pro_affiliation TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE redemption_requests ADD COLUMN registrations_missing TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
@@ -937,6 +947,27 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
             if (row) {
               const userRow = dbHelpers.prepare('SELECT email FROM users WHERE id = ?').get(row.user_id);
               const customerEmail = userRow ? userRow.email : `user#${row.user_id}`;
+              // Pretty-print the registration checklist for the ticket body.
+              const REG_LABELS = {
+                pro: 'PRO (ASCAP/BMI/SESAC/etc)',
+                mlc: 'MLC (mechanical streaming royalties)',
+                soundexchange: 'SoundExchange (digital performance)',
+                youtube_content_id: 'YouTube Content ID',
+                neighboring_rights: 'Neighboring rights (international)',
+                publishing_admin: 'Publishing administration',
+                mechanical_licensing: 'Mechanical licensing (covers)',
+                sync_registration: 'Sync agency registration',
+                isrc_upc: 'ISRC / UPC assignment'
+              };
+              let regsList = '(none specified)';
+              if (row.registrations_missing) {
+                try {
+                  const parsed = JSON.parse(row.registrations_missing);
+                  if (Array.isArray(parsed) && parsed.length) {
+                    regsList = parsed.map(k => `  - ${REG_LABELS[k] || k}`).join('\n');
+                  }
+                } catch(_) { /* leave default */ }
+              }
               const subject = `Redemption Release paid: ${row.release_title}`;
               const message = [
                 `New Redemption Release order — $24.99 paid.`,
@@ -944,13 +975,18 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
                 `Customer: ${customerEmail}`,
                 `Release: ${row.release_title}`,
                 `Artist: ${row.artist_name || '—'}`,
+                `Songwriter(s): ${row.songwriter_names || '—'}`,
+                `PRO affiliation: ${row.pro_affiliation || '—'}`,
+                `ISRC: ${row.isrc || '—'}`,
                 `DSP link: ${row.dsp_link || '—'}`,
                 `Original distributor: ${row.original_distributor || '—'}`,
                 `Original release date: ${row.original_release_date || '—'}`,
                 `Still live on DSPs: ${row.still_live || '—'}`,
                 ``,
-                `What went wrong:`,
-                row.what_went_wrong || '(none provided)',
+                `Registrations missing / needed:`,
+                regsList,
+                ``,
+                row.what_went_wrong ? `Context from artist:\n${row.what_went_wrong}` : '',
                 row.extra_notes ? `\nExtra notes:\n${row.extra_notes}` : '',
                 ``,
                 `Manage in Master Admin → Redemption Requests, or via /api/admin/redemptions/${redemptionId}.`
@@ -1123,19 +1159,52 @@ app.post('/api/redemption/request', requireActive, async (req, res) => {
   const body = req.body || {};
   const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n).trim();
   const release_title = cap(body.release_title, 200);
-  const what_went_wrong = cap(body.what_went_wrong, 3000);
   if (!release_title) return res.status(400).json({ error: 'Release title is required' });
-  if (!what_went_wrong) return res.status(400).json({ error: 'Please describe what needs fixing' });
 
   const stillLiveRaw = cap(body.still_live, 20).toLowerCase();
   const still_live = ['yes','no','unsure'].includes(stillLiveRaw) ? stillLiveRaw : '';
+
+  // Whitelist PRO affiliations so we don't get junk in the column.
+  const proRaw = cap(body.pro_affiliation, 40);
+  const PRO_OPTIONS = ['ASCAP','BMI','SESAC','GMR','SOCAN','PRS','None','Unsure','Other'];
+  const pro_affiliation = PRO_OPTIONS.includes(proRaw) ? proRaw : '';
+
+  // Registrations-missing checklist arrives as an array of string keys.
+  // Whitelist them so we never store anything not in the known service set,
+  // then serialize as JSON for storage.
+  const KNOWN_REG_SERVICES = [
+    'pro',                  // Performance rights org (ASCAP/BMI/etc)
+    'mlc',                  // Mechanical Licensing Collective (US streaming mechanicals)
+    'soundexchange',        // Non-interactive digital performance (sound recording)
+    'youtube_content_id',   // YouTube Content ID
+    'neighboring_rights',   // International neighboring rights (PPL UK, etc)
+    'publishing_admin',     // Publishing administration / publisher registration
+    'mechanical_licensing', // Cover song / outside mechanical licensing
+    'sync_registration',    // Sync agency registration
+    'isrc_upc'              // ISRC / UPC code assignment
+  ];
+  const inputRegs = Array.isArray(body.registrations_missing) ? body.registrations_missing : [];
+  const cleanRegs = inputRegs
+    .map(s => String(s).toLowerCase().trim())
+    .filter(s => KNOWN_REG_SERVICES.includes(s));
+  const registrations_missing = cleanRegs.length ? JSON.stringify(cleanRegs) : '';
+
+  // The "what went wrong" field is now optional context — required field
+  // is the registrations checklist. Require either at least one missing
+  // registration OR a context paragraph so we don't get an empty submission.
+  const what_went_wrong = cap(body.what_went_wrong, 3000);
+  if (!cleanRegs.length && !what_went_wrong) {
+    return res.status(400).json({ error: 'Tell us which registrations are missing, or describe what the release needs.' });
+  }
 
   const row = {
     artist_name: cap(body.artist_name, 200),
     dsp_link: cap(body.dsp_link, 500),
     original_distributor: cap(body.original_distributor, 80),
     original_release_date: cap(body.original_release_date, 50),
-    extra_notes: cap(body.extra_notes, 2000)
+    extra_notes: cap(body.extra_notes, 2000),
+    isrc: cap(body.isrc, 50),
+    songwriter_names: cap(body.songwriter_names, 500)
   };
 
   try {
@@ -1149,11 +1218,13 @@ app.post('/api/redemption/request', requireActive, async (req, res) => {
     const insert = dbHelpers.prepare(`
       INSERT INTO redemption_requests
         (user_id, release_title, artist_name, dsp_link, original_distributor,
-         original_release_date, still_live, what_went_wrong, extra_notes, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+         original_release_date, still_live, what_went_wrong, extra_notes,
+         isrc, songwriter_names, pro_affiliation, registrations_missing, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       req.user.id, release_title, row.artist_name, row.dsp_link, row.original_distributor,
-      row.original_release_date, still_live, what_went_wrong, row.extra_notes
+      row.original_release_date, still_live, what_went_wrong, row.extra_notes,
+      row.isrc, row.songwriter_names, pro_affiliation, registrations_missing
     );
     const redemptionId = insert.lastInsertRowid;
     flushDbNow();

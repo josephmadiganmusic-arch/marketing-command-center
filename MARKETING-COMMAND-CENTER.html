@@ -6285,6 +6285,30 @@ async function adminLoadRedemptions(filter) {
 
       const detailsRow = (label, val) => val ? '<div style="color:#888;font-size:12px;margin-bottom:3px;"><span style="color:#6b7094;">' + label + ':</span> <span style="color:#ccc;">' + esc(val) + '</span></div>' : '';
 
+      // Pretty registration labels — must match server-side KNOWN_REG_SERVICES.
+      const REG_LABELS = {
+        pro: 'PRO (ASCAP/BMI/SESAC)',
+        mlc: 'MLC (streaming mechanicals)',
+        soundexchange: 'SoundExchange',
+        youtube_content_id: 'YouTube Content ID',
+        neighboring_rights: 'Neighboring rights',
+        publishing_admin: 'Publishing admin',
+        mechanical_licensing: 'Mechanical licensing (covers)',
+        sync_registration: 'Sync agency',
+        isrc_upc: 'ISRC / UPC'
+      };
+      let regsHtml = '';
+      if (r.registrations_missing) {
+        try {
+          const arr = JSON.parse(r.registrations_missing);
+          if (Array.isArray(arr) && arr.length) {
+            regsHtml = '<div style="background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.22);border-radius:8px;padding:10px;margin-top:10px;"><div style="color:#ff6b6b;font-size:11px;font-weight:700;margin-bottom:6px;">REGISTRATIONS NEEDED</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+              arr.map(k => '<span style="background:rgba(255,107,107,0.12);color:#ffb3b3;font-size:11px;padding:3px 8px;border-radius:4px;">' + esc(REG_LABELS[k] || k) + '</span>').join('') +
+              '</div></div>';
+          }
+        } catch(_) {}
+      }
+
       return '<div style="background:var(--bg-input);border:1px solid ' + borderColor + '40;border-radius:10px;padding:16px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">' +
           '<div style="display:flex;align-items:center;gap:10px;">' +
@@ -6295,12 +6319,16 @@ async function adminLoadRedemptions(filter) {
         '</div>' +
         '<div style="color:#6b7094;font-size:12px;margin-bottom:10px;">From: <span style="color:#00d4ff;">' + esc(r.user_email || ('user#' + r.user_id)) + '</span></div>' +
         detailsRow('Artist', r.artist_name) +
+        detailsRow('Songwriter(s)', r.songwriter_names) +
+        detailsRow('PRO', r.pro_affiliation) +
+        detailsRow('ISRC', r.isrc) +
         detailsRow('DSP link', r.dsp_link) +
         detailsRow('Original distributor', r.original_distributor) +
         detailsRow('Original release date', r.original_release_date) +
         detailsRow('Still live', r.still_live) +
         (paid ? detailsRow('Paid at', paid) : '') +
-        '<div style="background:rgba(123,47,247,0.06);border:1px solid rgba(123,47,247,0.18);border-radius:8px;padding:10px;margin-top:10px;"><div style="color:#7b2ff7;font-size:11px;font-weight:600;margin-bottom:4px;">WHAT NEEDS FIXING</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + esc(r.what_went_wrong || '(none provided)') + '</div></div>' +
+        regsHtml +
+        (r.what_went_wrong ? '<div style="background:rgba(123,47,247,0.06);border:1px solid rgba(123,47,247,0.18);border-radius:8px;padding:10px;margin-top:10px;"><div style="color:#7b2ff7;font-size:11px;font-weight:600;margin-bottom:4px;">CONTEXT FROM ARTIST</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + esc(r.what_went_wrong) + '</div></div>' : '') +
         (r.extra_notes ? '<div style="background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.18);border-radius:8px;padding:10px;margin-top:8px;"><div style="color:#00d4ff;font-size:11px;font-weight:600;margin-bottom:4px;">EXTRA NOTES</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + esc(r.extra_notes) + '</div></div>' : '') +
         (r.admin_notes ? '<div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.2);border-radius:8px;padding:10px;margin-top:8px;"><div style="color:#ffd700;font-size:11px;font-weight:600;margin-bottom:4px;">ADMIN NOTES</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + esc(r.admin_notes) + '</div></div>' : '') +
         '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">' +
