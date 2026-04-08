@@ -257,6 +257,37 @@ function initDb() {
     )
   `);
 
+  // Redemption Release one-time service. Artists pay $24.99 to have Joseph
+  // manually clean up an old release (PRO registration, SoundExchange, metadata,
+  // re-positioning). Row is created on form submit (status='pending'), updated
+  // to 'paid' by the Stripe webhook, and marked 'completed' by admin once work
+  // is done. All fields are public-ish release metadata — nothing sensitive,
+  // so no encryption.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS redemption_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      release_title TEXT NOT NULL,
+      artist_name TEXT,
+      dsp_link TEXT,
+      original_distributor TEXT,
+      original_release_date TEXT,
+      still_live TEXT,
+      what_went_wrong TEXT,
+      extra_notes TEXT,
+      status TEXT DEFAULT 'pending',
+      stripe_session_id TEXT,
+      stripe_payment_intent_id TEXT,
+      admin_notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      paid_at TEXT,
+      completed_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_redemption_user ON redemption_requests(user_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_redemption_status ON redemption_requests(status)');
+
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
   // a known-literal password from ever being seeded into the DB.
@@ -284,6 +315,7 @@ const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SEC
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
 const STRIPE_ELITE_PRICE_ID = process.env.STRIPE_ELITE_PRICE_ID || '';
 const STRIPE_ELITE_PLUS_PRICE_ID = process.env.STRIPE_ELITE_PLUS_PRICE_ID || '';
+const STRIPE_REDEMPTION_PRICE_ID = process.env.STRIPE_REDEMPTION_PRICE_ID || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
 // Map Stripe price IDs to internal subscription tiers. Used by both checkout
@@ -885,6 +917,56 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
           dbHelpers.prepare('UPDATE users SET stripe_customer_id = ? WHERE LOWER(email) = ? AND (stripe_customer_id IS NULL OR stripe_customer_id = "")')
             .run(obj.customer, obj.customer_email.toLowerCase());
         }
+        // Redemption Release one-time payments. Mark the row paid and create
+        // an escalated admin ticket so Joseph sees the new order in the queue.
+        // Subscription checkouts (Pro/Elite) hit this same case but skip this
+        // branch because they don't carry metadata.kind.
+        if (obj.metadata && obj.metadata.kind === 'redemption') {
+          const redemptionId = parseInt(obj.metadata.redemption_id, 10);
+          if (Number.isInteger(redemptionId)) {
+            dbHelpers.prepare(`
+              UPDATE redemption_requests
+              SET status = 'paid',
+                  stripe_session_id = ?,
+                  stripe_payment_intent_id = ?,
+                  paid_at = datetime('now')
+              WHERE id = ? AND status = 'pending'
+            `).run(obj.id, obj.payment_intent || null, redemptionId);
+
+            const row = dbHelpers.prepare('SELECT * FROM redemption_requests WHERE id = ?').get(redemptionId);
+            if (row) {
+              const userRow = dbHelpers.prepare('SELECT email FROM users WHERE id = ?').get(row.user_id);
+              const customerEmail = userRow ? userRow.email : `user#${row.user_id}`;
+              const subject = `Redemption Release paid: ${row.release_title}`;
+              const message = [
+                `New Redemption Release order — $24.99 paid.`,
+                ``,
+                `Customer: ${customerEmail}`,
+                `Release: ${row.release_title}`,
+                `Artist: ${row.artist_name || '—'}`,
+                `DSP link: ${row.dsp_link || '—'}`,
+                `Original distributor: ${row.original_distributor || '—'}`,
+                `Original release date: ${row.original_release_date || '—'}`,
+                `Still live on DSPs: ${row.still_live || '—'}`,
+                ``,
+                `What went wrong:`,
+                row.what_went_wrong || '(none provided)',
+                row.extra_notes ? `\nExtra notes:\n${row.extra_notes}` : '',
+                ``,
+                `Manage in Master Admin → Redemption Requests, or via /api/admin/redemptions/${redemptionId}.`
+              ].filter(Boolean).join('\n');
+              try {
+                dbHelpers.prepare(`
+                  INSERT INTO support_tickets (user_id, user_email, subject, message, status, escalated)
+                  VALUES (?, ?, ?, ?, 'open', 1)
+                `).run(row.user_id, customerEmail, subject, message);
+              } catch (e) {
+                console.error('[REDEMPTION] ticket create error:', e.message);
+                // Best-effort: row is already paid; ticket is just notification.
+              }
+            }
+          }
+        }
         break;
       }
     }
@@ -1022,6 +1104,85 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
 
   flushDbNow();
   res.json({ success: true });
+});
+
+// --- Redemption Release ($24.99 one-time service) ---
+// Trial users can VIEW the page (so they see what they're missing) but only
+// Pro/Elite/admin can submit. The form POST is gated by requireActive, so
+// trial users get a 402 and the frontend routes them to /subscribe.
+app.get('/redemption', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'redemption.html'));
+});
+
+app.post('/api/redemption/request', requireActive, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Payments not configured yet' });
+  if (!STRIPE_REDEMPTION_PRICE_ID) {
+    return res.status(503).json({ error: 'Redemption Release is not available yet' });
+  }
+
+  const body = req.body || {};
+  const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n).trim();
+  const release_title = cap(body.release_title, 200);
+  const what_went_wrong = cap(body.what_went_wrong, 3000);
+  if (!release_title) return res.status(400).json({ error: 'Release title is required' });
+  if (!what_went_wrong) return res.status(400).json({ error: 'Please describe what needs fixing' });
+
+  const stillLiveRaw = cap(body.still_live, 20).toLowerCase();
+  const still_live = ['yes','no','unsure'].includes(stillLiveRaw) ? stillLiveRaw : '';
+
+  const row = {
+    artist_name: cap(body.artist_name, 200),
+    dsp_link: cap(body.dsp_link, 500),
+    original_distributor: cap(body.original_distributor, 80),
+    original_release_date: cap(body.original_release_date, 50),
+    extra_notes: cap(body.extra_notes, 2000)
+  };
+
+  try {
+    let customerId = req.user.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({ email: req.user.email });
+      customerId = customer.id;
+      dbHelpers.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?').run(customerId, req.user.id);
+    }
+
+    const insert = dbHelpers.prepare(`
+      INSERT INTO redemption_requests
+        (user_id, release_title, artist_name, dsp_link, original_distributor,
+         original_release_date, still_live, what_went_wrong, extra_notes, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `).run(
+      req.user.id, release_title, row.artist_name, row.dsp_link, row.original_distributor,
+      row.original_release_date, still_live, what_went_wrong, row.extra_notes
+    );
+    const redemptionId = insert.lastInsertRowid;
+    flushDbNow();
+
+    const baseUrl = `https://${CUSTOM_DOMAIN}`;
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{ price: STRIPE_REDEMPTION_PRICE_ID, quantity: 1 }],
+      metadata: {
+        kind: 'redemption',
+        redemption_id: String(redemptionId),
+        user_id: String(req.user.id)
+      },
+      success_url: `${baseUrl}/redemption?success=1&id=${redemptionId}`,
+      cancel_url: `${baseUrl}/redemption?canceled=1`
+    });
+
+    // Stash the session id on the row so we can correlate if the webhook is delayed.
+    dbHelpers.prepare('UPDATE redemption_requests SET stripe_session_id = ? WHERE id = ?')
+      .run(session.id, redemptionId);
+    flushDbNow();
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[REDEMPTION] checkout error:', err.message);
+    res.status(500).json({ error: 'Failed to start checkout' });
+  }
 });
 
 // --- Research API (Serper web search) ---
@@ -1396,6 +1557,48 @@ app.post('/api/admin/tickets/:id', requireAdmin, (req, res) => {
   if (admin_notes !== undefined) {
     dbHelpers.prepare('UPDATE support_tickets SET admin_notes = ?, updated_at = datetime("now") WHERE id = ?').run(String(admin_notes).slice(0, 5000), id);
   }
+  res.json({ success: true });
+});
+
+// Redemption requests — admin list. Paid orders sort first so Joseph sees
+// what needs work, then pending (likely abandoned checkouts), then completed.
+app.get('/api/admin/redemptions', requireAdmin, (req, res) => {
+  const rows = dbHelpers.prepare(`
+    SELECT r.*, u.email AS user_email
+    FROM redemption_requests r
+    LEFT JOIN users u ON u.id = r.user_id
+    ORDER BY
+      CASE r.status
+        WHEN 'paid' THEN 0
+        WHEN 'pending' THEN 1
+        WHEN 'completed' THEN 2
+        ELSE 3
+      END,
+      r.created_at DESC
+  `).all();
+  res.json({ redemptions: rows });
+});
+
+// Redemption requests — admin update status / notes. Status transitions are
+// whitelisted; canceled is allowed so Joseph can clear out abandoned checkouts.
+app.post('/api/admin/redemptions/:id', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const row = dbHelpers.prepare('SELECT * FROM redemption_requests WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ error: 'Redemption not found' });
+  const { status, admin_notes } = req.body || {};
+  if (status && ['pending','paid','completed','canceled'].includes(status)) {
+    if (status === 'completed') {
+      dbHelpers.prepare("UPDATE redemption_requests SET status = ?, completed_at = datetime('now') WHERE id = ?").run(status, id);
+    } else {
+      dbHelpers.prepare('UPDATE redemption_requests SET status = ? WHERE id = ?').run(status, id);
+    }
+  }
+  if (admin_notes !== undefined) {
+    dbHelpers.prepare('UPDATE redemption_requests SET admin_notes = ? WHERE id = ?')
+      .run(String(admin_notes).slice(0, 5000), id);
+  }
+  flushDbNow();
   res.json({ success: true });
 });
 

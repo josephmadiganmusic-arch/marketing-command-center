@@ -957,6 +957,7 @@
     <button class="tab" onclick="showPanel('checklist')">Action Items</button>
     <button class="tab" onclick="showPanel('claudeai')">Music Agent Pro</button>
     <button class="tab" onclick="showPanel('achievements')" style="background:none;border:none;position:relative;"><span style="position:relative;">Achievements</span></button>
+    <button class="tab" onclick="window.location.href='/redemption'" style="background:linear-gradient(135deg,rgba(123,47,247,0.15),rgba(0,212,255,0.15));border:1px solid rgba(123,47,247,0.4);" title="Fix up an older release that's missing registration or backend setup">Redemption</button>
     <button class="tab" id="adminTab" style="display:none;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;font-weight:700;" onclick="showPanel('admin')">Master Admin</button>
   </div>
 
@@ -1860,6 +1861,18 @@
       </div>
       <div id="adminTicketList" style="display:flex;flex-direction:column;gap:12px;"></div>
     </div>
+
+    <!-- Redemption Requests -->
+    <div class="section">
+      <div class="section-title">Redemption Requests</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <button class="btn-action" onclick="adminLoadRedemptions('all')" style="font-size:12px;padding:6px 14px;">All</button>
+        <button class="btn-action" onclick="adminLoadRedemptions('paid')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#080b1e;">Paid (Action Needed)</button>
+        <button class="btn-action" onclick="adminLoadRedemptions('pending')" style="font-size:12px;padding:6px 14px;">Pending (Unpaid)</button>
+        <button class="btn-action" onclick="adminLoadRedemptions('completed')" style="font-size:12px;padding:6px 14px;">Completed</button>
+      </div>
+      <div id="adminRedemptionList" style="display:flex;flex-direction:column;gap:12px;"></div>
+    </div>
   </div><!-- end panel-admin -->
 
   </div><!-- end site-panels -->
@@ -2219,12 +2232,16 @@ const regPlatforms = [
 // ============================
 // CORE UI
 // ============================
-const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','admin'];
+// Note: 'redemption' here is a placeholder for index alignment with the
+// nav button row. Clicking that tab navigates to /redemption directly, so
+// no panel is rendered and showPanel() is never called for it. lockTabs
+// excludes it so it never gets a .locked greyed-out state.
+const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin'];
 let campaignGenerated = false;
 
 function lockTabs() {
   document.querySelectorAll('#mainTabs .tab').forEach((t, i) => {
-    if (panelNames[i] !== 'intake' && panelNames[i] !== 'achievements') t.classList.add('locked');
+    if (panelNames[i] !== 'intake' && panelNames[i] !== 'achievements' && panelNames[i] !== 'redemption') t.classList.add('locked');
   });
 }
 function unlockTabs() {
@@ -6237,6 +6254,108 @@ async function adminLoadData() {
   } catch(e) { console.error('Admin load error:', e); }
 
   adminLoadTickets('all');
+  adminLoadRedemptions('all');
+}
+
+let _adminRedemptionsCache = [];
+async function adminLoadRedemptions(filter) {
+  try {
+    const resp = await fetch('/api/admin/redemptions');
+    if (!resp.ok) return;
+    const { redemptions } = await resp.json();
+    _adminRedemptionsCache = redemptions || [];
+
+    let filtered = _adminRedemptionsCache;
+    if (filter && filter !== 'all') filtered = _adminRedemptionsCache.filter(r => r.status === filter);
+
+    const container = document.getElementById('adminRedemptionList');
+    if (!filtered.length) {
+      container.innerHTML = '<div style="color:#6b7094;text-align:center;padding:32px;">No redemption requests found</div>';
+      return;
+    }
+
+    const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    container.innerHTML = filtered.map(r => {
+      const borderColor = r.status === 'paid' ? '#4ade80' : r.status === 'pending' ? '#ffd700' : r.status === 'completed' ? '#00d4ff' : '#6b7094';
+      const statusLabel = r.status.toUpperCase();
+      const statusBadge = '<span style="background:' + borderColor + '20;color:' + borderColor + ';padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">' + statusLabel + '</span>';
+      const created = r.created_at ? new Date(r.created_at).toLocaleString() : '—';
+      const paid = r.paid_at ? new Date(r.paid_at).toLocaleString() : '';
+
+      const detailsRow = (label, val) => val ? '<div style="color:#888;font-size:12px;margin-bottom:3px;"><span style="color:#6b7094;">' + label + ':</span> <span style="color:#ccc;">' + esc(val) + '</span></div>' : '';
+
+      return '<div style="background:var(--bg-input);border:1px solid ' + borderColor + '40;border-radius:10px;padding:16px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">' +
+          '<div style="display:flex;align-items:center;gap:10px;">' +
+            statusBadge +
+            '<span style="color:#fff;font-weight:600;font-size:14px;">' + esc(r.release_title) + '</span>' +
+          '</div>' +
+          '<span style="color:#6b7094;font-size:11px;">#' + r.id + ' &middot; ' + created + '</span>' +
+        '</div>' +
+        '<div style="color:#6b7094;font-size:12px;margin-bottom:10px;">From: <span style="color:#00d4ff;">' + esc(r.user_email || ('user#' + r.user_id)) + '</span></div>' +
+        detailsRow('Artist', r.artist_name) +
+        detailsRow('DSP link', r.dsp_link) +
+        detailsRow('Original distributor', r.original_distributor) +
+        detailsRow('Original release date', r.original_release_date) +
+        detailsRow('Still live', r.still_live) +
+        (paid ? detailsRow('Paid at', paid) : '') +
+        '<div style="background:rgba(123,47,247,0.06);border:1px solid rgba(123,47,247,0.18);border-radius:8px;padding:10px;margin-top:10px;"><div style="color:#7b2ff7;font-size:11px;font-weight:600;margin-bottom:4px;">WHAT NEEDS FIXING</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + esc(r.what_went_wrong || '(none provided)') + '</div></div>' +
+        (r.extra_notes ? '<div style="background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.18);border-radius:8px;padding:10px;margin-top:8px;"><div style="color:#00d4ff;font-size:11px;font-weight:600;margin-bottom:4px;">EXTRA NOTES</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + esc(r.extra_notes) + '</div></div>' : '') +
+        (r.admin_notes ? '<div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.2);border-radius:8px;padding:10px;margin-top:8px;"><div style="color:#ffd700;font-size:11px;font-weight:600;margin-bottom:4px;">ADMIN NOTES</div><div style="color:#ccc;font-size:13px;line-height:1.6;white-space:pre-wrap;">' + esc(r.admin_notes) + '</div></div>' : '') +
+        '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">' +
+          (r.status === 'paid' ? '<button onclick="adminCompleteRedemption(' + r.id + ')" style="padding:6px 14px;font-size:11px;background:linear-gradient(135deg,#4ade80,#22c55e);border:none;border-radius:6px;color:#080b1e;font-weight:700;cursor:pointer;">Mark Completed</button>' : '') +
+          (r.status === 'pending' ? '<button onclick="adminCancelRedemption(' + r.id + ')" style="padding:6px 14px;font-size:11px;background:#ff444420;border:1px solid #ff444440;border-radius:6px;color:#ff4444;font-weight:600;cursor:pointer;">Cancel</button>' : '') +
+          '<button onclick="adminAddRedemptionNote(' + r.id + ')" style="padding:6px 14px;font-size:11px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);cursor:pointer;">Add Note</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) { console.error('Redemption load error:', e); }
+}
+
+async function adminCompleteRedemption(id) {
+  if (!confirm('Mark redemption #' + id + ' as completed?')) return;
+  try {
+    const resp = await fetch('/api/admin/redemptions/' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' })
+    });
+    if (!resp.ok) throw new Error('Failed');
+    showToast('Redemption completed');
+    adminLoadRedemptions('all');
+  } catch(e) { showToast('Error updating redemption'); }
+}
+
+async function adminCancelRedemption(id) {
+  if (!confirm('Cancel pending redemption #' + id + '?')) return;
+  try {
+    const resp = await fetch('/api/admin/redemptions/' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'canceled' })
+    });
+    if (!resp.ok) throw new Error('Failed');
+    showToast('Redemption canceled');
+    adminLoadRedemptions('all');
+  } catch(e) { showToast('Error updating redemption'); }
+}
+
+async function adminAddRedemptionNote(id) {
+  const row = _adminRedemptionsCache.find(r => r.id === id);
+  const existing = (row && row.admin_notes) || '';
+  const note = prompt('Admin note for redemption #' + id + ':', existing);
+  if (note === null) return;
+  try {
+    const resp = await fetch('/api/admin/redemptions/' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_notes: note })
+    });
+    if (!resp.ok) throw new Error('Failed');
+    showToast('Note saved');
+    adminLoadRedemptions('all');
+  } catch(e) { showToast('Error saving note'); }
 }
 
 async function adminDeleteUser(id, email) {

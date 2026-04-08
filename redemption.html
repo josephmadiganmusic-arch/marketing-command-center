@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redemption Release - Rollout Heaven</title>
+<link rel="icon" type="image/jpeg" href="/favicon.jpg">
+<link rel="apple-touch-icon" href="/favicon.jpg">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+  :root {
+    --bg-deep: #080b1e;
+    --bg-card: #0f1332;
+    --bg-input: #0a0d24;
+    --border: #1a1f4a;
+    --accent-1: #7b2ff7;
+    --accent-2: #00d4ff;
+    --gold: #ffd700;
+    --text-dim: #6b7094;
+    --gradient-primary: linear-gradient(135deg, #7b2ff7, #00d4ff);
+    --gradient-gold: linear-gradient(135deg, #ffd700, #ff9f1a);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg-deep); color: #e0e0e0; min-height: 100vh; padding: 40px 16px; }
+  body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 20%, rgba(123,47,247,0.08) 0%, transparent 50%), radial-gradient(circle at 70% 80%, rgba(0,212,255,0.05) 0%, transparent 50%); pointer-events: none; }
+  .rd-container { width: 100%; max-width: 760px; margin: 0 auto; position: relative; z-index: 1; }
+  .rd-logo { text-align: center; margin-bottom: 24px; }
+  .rd-logo img { width: 150px; height: auto; filter: drop-shadow(0 0 12px rgba(123,47,247,0.3)); }
+  .rd-logo p { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-top: 8px; }
+  .page-title { text-align: center; font-size: 30px; font-weight: 800; color: #fff; margin-bottom: 6px; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .page-subtitle { text-align: center; color: var(--text-dim); font-size: 14px; margin-bottom: 28px; }
+
+  .marketing-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 26px 28px; margin-bottom: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  .marketing-card p { font-size: 14px; line-height: 1.7; color: #d0d0e0; }
+
+  .price-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 24px; text-align: center; position: relative; overflow: hidden; }
+  .price-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--gradient-primary); }
+  .price-card .amount { font-size: 38px; font-weight: 800; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .price-card .amount span { font-size: 14px; font-weight: 400; -webkit-text-fill-color: var(--text-dim); color: var(--text-dim); }
+  .price-card .note { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+
+  #statusMsg { padding: 12px; border-radius: 8px; font-size: 13px; display: none; text-align: center; margin-bottom: 18px; }
+  #statusMsg.info { background: rgba(123,47,247,0.1); border: 1px solid rgba(123,47,247,0.2); color: var(--accent-2); display: block; }
+  #statusMsg.error { background: rgba(255,68,68,0.1); border: 1px solid rgba(255,68,68,0.2); color: #ff6b6b; display: block; }
+  #statusMsg.success { background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.2); color: var(--accent-2); display: block; }
+
+  #trialBanner { display: none; padding: 14px 16px; border-radius: 10px; font-size: 13px; margin-bottom: 18px; background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.25); color: var(--gold); }
+  #trialBanner a { color: var(--gold); font-weight: 700; text-decoration: underline; cursor: pointer; }
+
+  .form-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 28px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; font-weight: 600; color: #ccd; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field label .req { color: #ff6b6b; margin-left: 3px; }
+  .field input, .field select, .field textarea { width: 100%; padding: 12px 14px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; color: #fff; font-size: 14px; font-family: 'Inter', sans-serif; transition: border 0.2s; }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent-1); }
+  .field textarea { resize: vertical; min-height: 100px; }
+  .field .hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .radio-group { display: flex; gap: 16px; flex-wrap: wrap; }
+  .radio-group label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #ccd; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 400; margin: 0; }
+  .radio-group input[type=radio] { width: auto; margin: 0; cursor: pointer; }
+
+  .submit-btn { width: 100%; padding: 16px; background: var(--gradient-primary); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; letter-spacing: 0.5px; }
+  .submit-btn:hover:not(:disabled) { box-shadow: 0 8px 32px rgba(123,47,247,0.4); transform: translateY(-1px); }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .footer-actions { text-align: center; margin-top: 22px; }
+  .footer-link { display: inline-block; color: var(--text-dim); font-size: 12px; cursor: pointer; text-decoration: underline; transition: color 0.2s; margin: 0 8px; }
+  .footer-link:hover { color: var(--accent-2); }
+
+  .form-disabled { opacity: 0.55; pointer-events: none; }
+
+  @media (max-width: 560px) {
+    body { padding: 24px 12px; }
+    .rd-logo img { width: 130px; }
+    .page-title { font-size: 24px; }
+    .marketing-card, .form-card { padding: 22px 20px; }
+    .price-card .amount { font-size: 32px; }
+    .submit-btn { padding: 18px; min-height: 52px; }
+  }
+</style>
+</head>
+<body>
+<button aria-label="Close" id="rdClose" onclick="window.location.href='/'" style="position:fixed;top:18px;right:18px;background:rgba(255,68,68,0.15);border:1px solid #ff4444;color:#ff4444;width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;font-weight:700;font-family:Inter,sans-serif;z-index:1000;transition:all 0.2s;" onmouseover="this.style.background='#ff4444';this.style.color='#fff';" onmouseout="this.style.background='rgba(255,68,68,0.15)';this.style.color='#ff4444';">&times;</button>
+
+<div class="rd-container">
+  <div class="rd-logo">
+    <img src="/logo.png" alt="Rollout Heaven">
+    <p>Redemption Release</p>
+  </div>
+
+  <h1 class="page-title">Redeem an Older Release</h1>
+  <p class="page-subtitle">A one-time service to clean up music that was uploaded without proper backend setup.</p>
+
+  <div class="marketing-card">
+    <p>Rollout Heaven Redemption Release is for artists who want to go back and make an older release right. Whether the song was uploaded without proper registration, missing key backend setup, or never fully positioned to collect what it should, we step in and handle the work for you. From cleaning up the foundation to making sure the release is properly registered and aligned, this service helps redeem music from the past so it can move forward the way it should have from the beginning.</p>
+  </div>
+
+  <div class="price-card">
+    <div class="amount">$24.99 <span>/ release</span></div>
+    <div class="note">One-time charge &mdash; not a subscription</div>
+  </div>
+
+  <div id="trialBanner">
+    Redemption Release is a Pro feature. <a onclick="window.location.href='/subscribe'">Upgrade to access &rarr;</a>
+  </div>
+
+  <div id="statusMsg"></div>
+
+  <form class="form-card" id="redemptionForm" onsubmit="submitRedemption(event)">
+    <div class="field">
+      <label for="release_title">Release Title <span class="req">*</span></label>
+      <input type="text" id="release_title" name="release_title" maxlength="200" required>
+    </div>
+    <div class="field">
+      <label for="artist_name">Artist Name</label>
+      <input type="text" id="artist_name" name="artist_name" maxlength="200">
+    </div>
+    <div class="field">
+      <label for="dsp_link">DSP Link</label>
+      <input type="url" id="dsp_link" name="dsp_link" maxlength="500" placeholder="Spotify or Apple Music URL">
+    </div>
+    <div class="field">
+      <label for="original_distributor">Original Distributor</label>
+      <select id="original_distributor" name="original_distributor">
+        <option value="">Select...</option>
+        <option value="DistroKid">DistroKid</option>
+        <option value="TuneCore">TuneCore</option>
+        <option value="CD Baby">CD Baby</option>
+        <option value="UnitedMasters">UnitedMasters</option>
+        <option value="Amuse">Amuse</option>
+        <option value="Ditto">Ditto</option>
+        <option value="LANDR">LANDR</option>
+        <option value="Symphonic">Symphonic</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="original_release_date">Original Release Date</label>
+      <input type="date" id="original_release_date" name="original_release_date">
+    </div>
+    <div class="field">
+      <label>Still Live on DSPs?</label>
+      <div class="radio-group">
+        <label><input type="radio" name="still_live" value="yes"> Yes</label>
+        <label><input type="radio" name="still_live" value="no"> No</label>
+        <label><input type="radio" name="still_live" value="unsure"> Unsure</label>
+      </div>
+    </div>
+    <div class="field">
+      <label for="what_went_wrong">What went wrong / what needs fixing? <span class="req">*</span></label>
+      <textarea id="what_went_wrong" name="what_went_wrong" maxlength="3000" required placeholder="Tell us what's missing or broken — registration, royalties, metadata, splits, anything..."></textarea>
+      <div class="hint">Up to 3000 characters.</div>
+    </div>
+    <div class="field">
+      <label for="extra_notes">Extra Notes</label>
+      <textarea id="extra_notes" name="extra_notes" maxlength="2000" placeholder="Anything else we should know"></textarea>
+      <div class="hint">Optional. Up to 2000 characters.</div>
+    </div>
+    <button type="submit" class="submit-btn" id="submitBtn">Pay $24.99 &amp; Submit Redemption</button>
+  </form>
+
+  <div class="footer-actions">
+    <span class="footer-link" onclick="window.location.href='/'">Back to App</span>
+    <span class="footer-link" onclick="window.location.href='/subscribe'">Pricing</span>
+  </div>
+</div>
+
+<script>
+var params = new URLSearchParams(window.location.search);
+var formEl = document.getElementById('redemptionForm');
+var submitBtn = document.getElementById('submitBtn');
+
+if (params.get('success')) {
+  showStatus('success', 'Payment received. Rollout Heaven will reach out within 3 business days to begin work on your redemption.');
+  if (formEl) formEl.style.display = 'none';
+} else if (params.get('canceled')) {
+  showStatus('info', 'Checkout canceled. Your form data was not saved — resubmit when you\'re ready.');
+}
+
+// Trial gating: page loads for everyone, but trial users can't submit.
+fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
+  if (!data || !data.loggedIn) {
+    window.location.href = '/login';
+    return;
+  }
+  var isAdmin = data.role === 'admin';
+  var isActive = data.subscription_status === 'active';
+  if (!isAdmin && !isActive) {
+    // Trial, expired, none — show banner and disable form.
+    document.getElementById('trialBanner').style.display = 'block';
+    if (formEl) formEl.classList.add('form-disabled');
+    if (submitBtn) {
+      submitBtn.textContent = 'Upgrade to Pro to Submit';
+      submitBtn.onclick = function(e) { e.preventDefault(); window.location.href = '/subscribe'; };
+    }
+  }
+}).catch(function() { /* network — let user try anyway */ });
+
+function showStatus(type, msg) {
+  var el = document.getElementById('statusMsg');
+  el.className = '';
+  el.classList.add(type);
+  el.textContent = msg;
+}
+
+async function submitRedemption(e) {
+  e.preventDefault();
+  var orig = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Redirecting to checkout...';
+
+  var fd = new FormData(formEl);
+  var payload = {
+    release_title: fd.get('release_title') || '',
+    artist_name: fd.get('artist_name') || '',
+    dsp_link: fd.get('dsp_link') || '',
+    original_distributor: fd.get('original_distributor') || '',
+    original_release_date: fd.get('original_release_date') || '',
+    still_live: fd.get('still_live') || '',
+    what_went_wrong: fd.get('what_went_wrong') || '',
+    extra_notes: fd.get('extra_notes') || ''
+  };
+
+  try {
+    var res = await fetch('/api/redemption/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.status === 402) {
+      // Trial / expired — route to subscribe.
+      window.location.href = '/subscribe';
+      return;
+    }
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return;
+    }
+    var data = await res.json();
+    if (data && data.url) {
+      window.location.href = data.url;
+      return;
+    }
+    showStatus('error', (data && data.error) || 'Failed to start checkout. Please try again.');
+    submitBtn.disabled = false;
+    submitBtn.textContent = orig;
+  } catch (err) {
+    showStatus('error', 'Something went wrong. Please try again.');
+    submitBtn.disabled = false;
+    submitBtn.textContent = orig;
+  }
+}
+</script>
+</body>
+</html>
