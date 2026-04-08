@@ -2175,6 +2175,11 @@ app.get('/logo.png', (req, res) => {
   if (fs.existsSync(logoPath)) res.sendFile(logoPath);
   else res.sendStatus(404);
 });
+app.get('/redemption-logo.png', (req, res) => {
+  const logoPath = path.join(__dirname, 'redemption-logo.png');
+  if (fs.existsSync(logoPath)) res.sendFile(logoPath);
+  else res.sendStatus(404);
+});
 app.use('/public', express.static(publicDir, { index: false }));
 
 // --- Start Server ---
