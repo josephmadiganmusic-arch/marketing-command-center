@@ -2127,6 +2127,243 @@ app.post('/api/admin/outreach/publish', requireAdmin, (req, res) => {
   });
 });
 
+// --- Outreach List: catalog, status, and AI intro endpoints ---
+// Seed templates for the 8 category intro buttons in the Email Generator.
+// These are prompt starters for Claude, NOT the final output. Every click
+// produces a fresh AI-tweaked intro using release metadata (see R9 in
+// task/lessons.md). The fallback token-fill path uses these strings
+// verbatim — only triggered when Claude is unreachable.
+const OUTREACH_SEED_INTROS = {
+  sirius: `Hi {curator_name}, I wanted to reach out about my new release "{song_title}". It's a {genre} track dropping {release_date} and I think it would resonate with the Sirius XM audience — specifically listeners looking for authentic {mood} records.`,
+  iheart: `Hi {curator_name}, I'm the artist behind "{song_title}", a new {genre} single out {release_date}. I'd love to see if it's a fit for iHeart rotation — the response so far has been {traction_angle}.`,
+  fm_am: `Hi {curator_name}, reaching out from the {artist_name} camp about a new single, "{song_title}". It's {genre} with crossover appeal and we'd love to get it in front of the {station_context} audience.`,
+  online_radio: `Hey {curator_name}, I'm sending over my latest single "{song_title}" ({genre}, out {release_date}). I follow what you're doing on the show and think this track lines up with the sound you've been playing.`,
+  press: `Hi {curator_name}, quick pitch: "{song_title}" is a new {genre} release from {artist_name} dropping {release_date}. The story behind it is {story_hook} — happy to send more context if you'd like to write it up.`,
+  blog: `Hey {curator_name}, longtime reader. I wanted to put my new single "{song_title}" on your radar — {genre}, out {release_date}. {story_hook}`,
+  spotify_playlist: `Hi {curator_name}, I'd love to pitch my new single "{song_title}" for {playlist_name}. It's {genre} with a {mood} feel, releases {release_date}, and I think it sits well next to the artists you've been curating.`,
+  podcast: `Hey {curator_name}, big fan of the show. I'd love to come on and talk about my new single "{song_title}" and the story behind it — {story_hook}. Available {release_window}.`
+};
+
+// Hydrate OUTREACH_STATE for a given user — what the frontend needs to
+// render locks, banners, and contact lists. Returns unlocked+version info
+// for users without a purchase so the UI can show the upsell card.
+function buildOutreachState(user) {
+  const unlocked = user.role === 'admin'
+    ? { id: 0, banner_dismissed_version: 0 }
+    : dbHelpers.prepare('SELECT id, banner_dismissed_version FROM outreach_purchases WHERE user_id = ?').get(user.id);
+  const verRow = dbHelpers.prepare("SELECT current_version, change_summary FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = verRow ? verRow.current_version : 0;
+  let changeSummary = null;
+  try { changeSummary = verRow && verRow.change_summary ? JSON.parse(verRow.change_summary) : null; } catch(_) {}
+  return {
+    unlocked: !!unlocked,
+    current_version: version,
+    banner_dismissed_version: unlocked ? (unlocked.banner_dismissed_version || 0) : 0,
+    last_change_summary: changeSummary,
+    categories: OUTREACH_CATEGORIES,
+    category_labels: OUTREACH_CATEGORY_LABELS
+  };
+}
+
+// Public status — anyone logged in can call this. Used by the frontend
+// to decide whether to show the locked card or the full tracker UI.
+app.get('/api/outreach/status', requireAuth, (req, res) => {
+  res.json(buildOutreachState(req.user));
+});
+
+// Locked to unlocked users only. Returns the full contact list for the
+// current published version, grouped by category. Also returns the user's
+// per-contact submission progress so the UI can render status icons.
+app.get('/api/outreach/contacts', requireOutreachUnlocked, (req, res) => {
+  const verRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = verRow ? verRow.current_version : 0;
+  const contacts = version > 0
+    ? dbHelpers.prepare('SELECT id, category, name, submission_type, submission_value, website, phone, notes FROM outreach_contacts WHERE version = ? ORDER BY category, name').all(version)
+    : [];
+  const progress = dbHelpers.prepare('SELECT contact_id, status, release_id, submitted_at FROM submission_progress WHERE user_id = ?').all(req.user.id);
+  res.json({ version, contacts, progress });
+});
+
+// Dismiss the "List Updated" banner for the current version. Stores the
+// dismissed version number so a future publish will re-surface it.
+app.post('/api/outreach/dismiss-banner', requireOutreachUnlocked, (req, res) => {
+  if (req.user.role === 'admin') return res.json({ success: true });
+  const verRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = verRow ? verRow.current_version : 0;
+  dbHelpers.prepare('UPDATE outreach_purchases SET banner_dismissed_version = ? WHERE user_id = ?')
+    .run(version, req.user.id);
+  flushDbNow();
+  res.json({ success: true, dismissed_version: version });
+});
+
+// Google Contacts CSV export for a single category. Format matches the
+// Google Contacts import spec: Name, E-mail 1 - Value, Group Membership.
+app.get('/api/outreach/export/:category.csv', requireOutreachUnlocked, (req, res) => {
+  const cat = String(req.params.category || '').toLowerCase();
+  if (!OUTREACH_CATEGORIES.includes(cat)) return res.status(400).send('Unknown category');
+  const verRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = verRow ? verRow.current_version : 0;
+  const rows = version > 0
+    ? dbHelpers.prepare('SELECT name, submission_type, submission_value FROM outreach_contacts WHERE version = ? AND category = ? ORDER BY name').all(version, cat)
+    : [];
+  const groupLabel = OUTREACH_CATEGORY_LABELS[cat] || cat;
+  const csvEscape = (s) => {
+    const str = String(s || '');
+    if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
+    return str;
+  };
+  const lines = ['Name,E-mail 1 - Value,Group Membership'];
+  for (const r of rows) {
+    // Only emit contacts where submission_type is email — Google Contacts
+    // expects real addresses. Non-email contacts (form, social, phone)
+    // ship via the Submission Tracker, not the CSV export.
+    const email = r.submission_type === 'email' ? r.submission_value : '';
+    lines.push([csvEscape(r.name), csvEscape(email), csvEscape('Rollout Heaven :: ' + groupLabel)].join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="outreach_${cat}_v${version}.csv"`);
+  res.send(lines.join('\n'));
+});
+
+// AI-tweaked intro generator — THE R9 ENDPOINT. Gated by
+// requireOutreachUnlocked ONLY (NOT requireActive), because the $250
+// purchase IS the access grant for trial users. Calls Claude directly
+// with the seed template + release metadata + category context, returns
+// a personalized paragraph. Token cost is bounded by rlOutreachIntro
+// (40/hr/user) + a small max_tokens cap here.
+app.post('/api/outreach/generate-intro', requireOutreachUnlocked, rlOutreachIntro, async (req, res) => {
+  const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
+  if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured', fallback: true });
+
+  const { category, releaseData } = req.body || {};
+  const cat = String(category || '').toLowerCase();
+  if (!OUTREACH_CATEGORIES.includes(cat)) {
+    return res.status(400).json({ error: 'Unknown category' });
+  }
+  const seed = OUTREACH_SEED_INTROS[cat] || '';
+  const rd = releaseData && typeof releaseData === 'object' ? releaseData : {};
+
+  // Cap all incoming metadata fields so a malicious/buggy client can't
+  // pump megabytes of context into the Claude prompt.
+  const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n).trim();
+  const meta = {
+    song_title: cap(rd.songTitle || rd.song_title, 200),
+    artist_name: cap(rd.artistName || rd.artist_name || rd.artists, 200),
+    genre: cap(rd.genre, 100),
+    release_date: cap(rd.releaseDate || rd.release_date, 50),
+    bio: cap(rd.bio || rd.artistBio, 1500),
+    intro_text: cap(rd.introText || rd.intro, 1000),
+    materials: cap(rd.materials || rd.availableMaterials, 500),
+    mood: cap(rd.mood, 100),
+    label: cap(rd.label, 100)
+  };
+  if (!meta.song_title) {
+    return res.status(400).json({ error: 'Release must have a song title' });
+  }
+
+  const system = 'You are a music marketing assistant writing personalized outreach intros for indie musicians. Return ONLY the intro paragraph — no greeting preamble, no signoff, no commentary, no quotation marks. 2-4 sentences max. Natural, specific, conversational. Never invent facts not present in the release metadata.';
+  const userPrompt = [
+    `Category: ${OUTREACH_CATEGORY_LABELS[cat]} (${cat})`,
+    ``,
+    `Seed template (use it as a reference for tone/length, but rewrite it so every recipient gets a unique message, and do NOT keep literal {placeholder} tokens — either substitute them with real metadata or drop them):`,
+    seed,
+    ``,
+    `Release metadata:`,
+    `- Song title: ${meta.song_title}`,
+    meta.artist_name ? `- Artist: ${meta.artist_name}` : '',
+    meta.genre ? `- Genre: ${meta.genre}` : '',
+    meta.release_date ? `- Release date: ${meta.release_date}` : '',
+    meta.mood ? `- Mood / vibe: ${meta.mood}` : '',
+    meta.label ? `- Label: ${meta.label}` : '',
+    meta.materials ? `- Available materials: ${meta.materials}` : '',
+    meta.bio ? `- Artist bio: ${meta.bio}` : '',
+    meta.intro_text ? `- Artist-written intro (reference, not to copy verbatim): ${meta.intro_text}` : '',
+    ``,
+    `Write the intro paragraph now.`
+  ].filter(Boolean).join('\n');
+
+  try {
+    const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': CLAUDE_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: DEFAULT_CLAUDE_MODEL,
+        max_tokens: 400,
+        system,
+        messages: [{ role: 'user', content: userPrompt }]
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+    if (!aiResp.ok) {
+      const errText = await aiResp.text();
+      console.error('[OUTREACH INTRO] Anthropic error:', aiResp.status, errText.slice(0, 500));
+      return res.status(502).json({ error: 'AI service unavailable', fallback: true });
+    }
+    const data = await aiResp.json();
+    const text = (data.content && data.content[0] && data.content[0].text) || '';
+    // Record usage for admin accounting. Admins skip the cap.
+    try {
+      if (req.user.role !== 'admin') {
+        recordClaudeUsage(req.user.id, data.usage?.input_tokens || 0, data.usage?.output_tokens || 0);
+      }
+    } catch(_) {}
+    if (!text.trim()) {
+      return res.status(502).json({ error: 'Empty AI response', fallback: true });
+    }
+    res.json({ intro: text.trim(), category: cat, model: DEFAULT_CLAUDE_MODEL });
+  } catch (err) {
+    console.error('[OUTREACH INTRO] fetch error:', err.message);
+    res.status(502).json({ error: 'AI request failed', fallback: true });
+  }
+});
+
+// Mark a submission as complete + grant +25 XP inline. Unique index on
+// (user_id, contact_id) means repeat submissions for the same contact are
+// idempotent — we don't double-grant XP on re-clicks.
+app.post('/api/outreach/submission/mark', requireOutreachUnlocked, (req, res) => {
+  const contactId = parseInt((req.body || {}).contact_id, 10);
+  if (!Number.isInteger(contactId) || contactId <= 0) return res.status(400).json({ error: 'contact_id required' });
+  const releaseId = String((req.body || {}).release_id || '').slice(0, 100) || null;
+  const notes = String((req.body || {}).notes || '').slice(0, 1000) || null;
+  const contact = dbHelpers.prepare('SELECT id, category FROM outreach_contacts WHERE id = ?').get(contactId);
+  if (!contact) return res.status(404).json({ error: 'Contact not found' });
+
+  // Idempotent insert — if a row already exists, skip the XP grant.
+  const existing = dbHelpers.prepare('SELECT id FROM submission_progress WHERE user_id = ? AND contact_id = ?').get(req.user.id, contactId);
+  let awardedXp = 0;
+  if (!existing) {
+    dbHelpers.prepare(`
+      INSERT INTO submission_progress (user_id, contact_id, status, release_id, notes)
+      VALUES (?, ?, 'submitted', ?, ?)
+    `).run(req.user.id, contactId, releaseId, notes);
+    // Inline XP grant — match the existing xp_log + user_xp pattern.
+    // 25 XP per submission.
+    try {
+      const XP = 25;
+      dbHelpers.prepare(`
+        INSERT INTO xp_log (user_id, action, xp_delta, created_at)
+        VALUES (?, 'outreach_submission', ?, datetime('now'))
+      `).run(req.user.id, XP);
+      dbHelpers.prepare(`
+        INSERT INTO user_xp (user_id, total_xp, level, last_active_date)
+        VALUES (?, ?, 1, date('now'))
+        ON CONFLICT(user_id) DO UPDATE SET
+          total_xp = total_xp + ?,
+          last_active_date = date('now')
+      `).run(req.user.id, XP, XP);
+      awardedXp = XP;
+    } catch (e) {
+      console.error('[OUTREACH] XP grant error:', e.message);
+    }
+    flushDbNow();
+  }
+  res.json({ success: true, awarded_xp: awardedXp, already_submitted: !!existing });
+});
+
 // Support tickets — user submits a ticket
 app.post('/api/support/submit', requireAuth, rlSupport, async (req, res) => {
   let { subject, message } = req.body;
