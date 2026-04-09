@@ -1134,6 +1134,30 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
             }
           }
         }
+        // Outreach List one-time purchase. Insert the unlock row keyed on
+        // user_id (unique index) — if Stripe retries the webhook, the
+        // INSERT OR IGNORE keeps it idempotent. Amount is captured for
+        // support lookups (trial buyers paid $250, Pro buyers $100).
+        if (obj.metadata && obj.metadata.kind === 'outreach_list') {
+          const userId = parseInt(obj.metadata.user_id, 10);
+          if (Number.isInteger(userId)) {
+            try {
+              dbHelpers.prepare(`
+                INSERT OR IGNORE INTO outreach_purchases
+                  (user_id, stripe_session_id, stripe_payment_intent_id, amount_cents, price_id)
+                VALUES (?, ?, ?, ?, ?)
+              `).run(
+                userId,
+                obj.id,
+                obj.payment_intent || null,
+                obj.amount_total != null ? obj.amount_total : null,
+                obj.metadata.price_id || null
+              );
+            } catch (e) {
+              console.error('[OUTREACH] purchase insert error:', e.message);
+            }
+          }
+        }
         break;
       }
     }
@@ -1383,6 +1407,67 @@ app.post('/api/redemption/request', requireActive, async (req, res) => {
     res.json({ url: session.url });
   } catch (err) {
     console.error('[REDEMPTION] checkout error:', err.message);
+    res.status(500).json({ error: 'Failed to start checkout' });
+  }
+});
+
+// --- Outreach List purchase (one-time Stripe Checkout) ---
+// Trial users pay $250, Pro/Elite users pay $100. The $250 path is
+// intentional — trial users get the list AND the AI intro generator even
+// though they can't hit /api/claude directly. The purchase IS the access
+// grant for the Outreach List sub-product (see R9 in task/lessons.md).
+// No refunds (product decision); once purchased, unlocked forever.
+app.post('/api/outreach/purchase', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Payments not configured yet' });
+  if (!STRIPE_OUTREACH_PRICE_TRIAL || !STRIPE_OUTREACH_PRICE_PRO) {
+    return res.status(503).json({ error: 'Outreach List is not available yet' });
+  }
+
+  const user = req.user;
+  // Admins don't need to purchase — they already have access via
+  // requireOutreachUnlocked's role check.
+  if (user.role === 'admin') {
+    return res.status(400).json({ error: 'Admin accounts already have Outreach List access' });
+  }
+
+  // Idempotency — if the user already has a purchase row, short-circuit.
+  const existing = dbHelpers.prepare('SELECT id FROM outreach_purchases WHERE user_id = ?').get(user.id);
+  if (existing) {
+    return res.status(400).json({ error: 'Outreach List already purchased', alreadyUnlocked: true });
+  }
+
+  // Pro/Elite = $100 price, anyone else (trial, past_due, canceled) = $250.
+  const priceId = user.subscription_status === 'active'
+    ? STRIPE_OUTREACH_PRICE_PRO
+    : STRIPE_OUTREACH_PRICE_TRIAL;
+
+  try {
+    let customerId = user.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({ email: user.email });
+      customerId = customer.id;
+      dbHelpers.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?').run(customerId, user.id);
+      flushDbNow();
+    }
+
+    const baseUrl = `https://${CUSTOM_DOMAIN}`;
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      metadata: {
+        kind: 'outreach_list',
+        user_id: String(user.id),
+        price_id: priceId
+      },
+      success_url: `${baseUrl}/?outreach_purchase=success`,
+      cancel_url: `${baseUrl}/subscribe?outreach_canceled=1#outreach-list`
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[OUTREACH] checkout error:', err.message);
     res.status(500).json({ error: 'Failed to start checkout' });
   }
 });
