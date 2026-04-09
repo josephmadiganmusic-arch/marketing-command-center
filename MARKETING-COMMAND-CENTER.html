@@ -3201,7 +3201,7 @@ async function formatLyricsForGenius(btn) {
 async function generatePressRelease(btn) {
   const textarea = document.getElementById('in-pressRelease');
   const status = document.getElementById('in-pressReleaseStatus');
-  const d = intakeGetData ? intakeGetData() : intakeCollect();
+  const d = intakeGetData();
   if (!d.songTitle || !d.primaryArtist) {
     if (status) { status.textContent = 'Fill in Song Title and Artist first.'; status.style.color = '#f87171'; }
     showToast('Fill in Song Title and Artist first');
@@ -5687,6 +5687,16 @@ function stJfhFallback(d) {
 async function stFetchJfhEmail(contact, d) {
   const cacheKey = contact.id + '::' + (d.songTitle || '');
   if (window.ST_JFH_CACHE[cacheKey]) return window.ST_JFH_CACHE[cacheKey];
+  // Press release short-circuit: if the user filled the canonical press
+  // release in intake, paste it verbatim. JFH wants something pasted into
+  // their JotForm staff-email body, and a real press release is the right
+  // payload there. Skip Claude entirely.
+  const savedPR = d && d.pressRelease ? String(d.pressRelease).trim() : '';
+  if (savedPR) {
+    const result = { body: savedPR, source: 'saved' };
+    window.ST_JFH_CACHE[cacheKey] = result;
+    return result;
+  }
   try {
     const resp = await fetch('/api/outreach/generate-intro', {
       method: 'POST',
@@ -5730,8 +5740,16 @@ function stLoadJfhEmailInto(contact, d) {
     const status = document.getElementById('stJfhStatus');
     if (body) body.value = result.body;
     if (status) {
-      status.textContent = result.source === 'ai' ? '(Claude)' : '(template - AI unavailable)';
-      status.style.color = result.source === 'ai' ? '#0a7a2a' : '#a06c00';
+      if (result.source === 'saved') {
+        status.textContent = '(your saved press release)';
+        status.style.color = '#0a7a2a';
+      } else if (result.source === 'ai') {
+        status.textContent = '(Claude)';
+        status.style.color = '#0a7a2a';
+      } else {
+        status.textContent = '(template - AI unavailable)';
+        status.style.color = '#a06c00';
+      }
     }
   });
 }
@@ -6078,6 +6096,20 @@ async function egSetCategory(cat) {
   });
   document.getElementById('egCategoryRegen').style.display = '';
 
+  // Press release short-circuit: if the user filled the canonical press
+  // release in intake, paste it verbatim and skip Claude. Keeps one
+  // source of truth across EG + JFH submission pane.
+  if (cat === 'press_release') {
+    try {
+      const intake = (typeof intakeGetData === 'function') ? intakeGetData() : null;
+      const savedPR = intake && intake.pressRelease ? intake.pressRelease.trim() : '';
+      if (savedPR) {
+        _egApplySavedPressRelease(savedPR);
+        return;
+      }
+    } catch (_) {}
+  }
+
   const sig = _egReleaseSignature();
   const key = sig + '_' + cat;
   if (window.egIntroCache[key]) {
@@ -6085,6 +6117,21 @@ async function egSetCategory(cat) {
     return;
   }
   await _egFetchIntro(cat, false);
+}
+
+function _egApplySavedPressRelease(pr) {
+  const ta = document.getElementById('egIntroParagraph');
+  if (ta) {
+    ta.value = pr;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const statusEl = document.getElementById('egCategoryStatus');
+  if (statusEl) {
+    statusEl.innerHTML = '<span style="color:#4ade80;">Using your saved press release from intake (verbatim).</span>';
+  }
+  if (typeof egGenerateEmail === 'function') {
+    try { egGenerateEmail(); } catch(_) {}
+  }
 }
 
 async function egRegenerateCategory() {
