@@ -81,10 +81,52 @@ function shutdown(signal) {
   console.log('[SHUTDOWN] Received', signal, '— flushing DB');
   clearTimeout(_saveTimer);
   flushDbNow();
+  releaseInstanceLock();
   process.exit(0);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// --- Single-instance boot lock (C4) ---
+// sql.js + session-file-store + in-memory rate limits all assume a single
+// Node process. A second replica would silently clobber the other's writes
+// on every debounced flush (last-writer-wins on the whole DB file). This
+// lock fails boot loudly if another instance is already running against
+// the same DATA_DIR. On crash the lock is stale — delete it manually with
+// a clear operator message before restarting.
+const INSTANCE_LOCK_PATH = path.join(DATA_DIR, '.instance.lock');
+let _instanceLockHeld = false;
+function acquireInstanceLock() {
+  try {
+    const fd = fs.openSync(INSTANCE_LOCK_PATH, 'wx'); // O_EXCL — fails if exists
+    fs.writeSync(fd, JSON.stringify({
+      pid: process.pid,
+      started: new Date().toISOString(),
+      host: process.env.RAILWAY_REPLICA_ID || process.env.HOSTNAME || 'unknown'
+    }));
+    fs.closeSync(fd);
+    _instanceLockHeld = true;
+    console.log('[BOOT] Instance lock acquired at', INSTANCE_LOCK_PATH);
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      let holder = '(unreadable)';
+      try { holder = fs.readFileSync(INSTANCE_LOCK_PATH, 'utf8'); } catch(_) {}
+      console.error('[BOOT] FATAL: another instance already holds the lock at', INSTANCE_LOCK_PATH);
+      console.error('[BOOT] Lock holder:', holder);
+      console.error('[BOOT] sql.js + file sessions require single-instance operation.');
+      console.error('[BOOT] If you are scaling up: DO NOT. Set Railway replicas = 1.');
+      console.error('[BOOT] If the previous instance crashed: `rm ' + INSTANCE_LOCK_PATH + '` on the volume and redeploy.');
+      process.exit(1);
+    }
+    throw e;
+  }
+}
+function releaseInstanceLock() {
+  if (!_instanceLockHeld) return;
+  try { fs.unlinkSync(INSTANCE_LOCK_PATH); } catch(_) {}
+  _instanceLockHeld = false;
+}
+process.on('exit', () => releaseInstanceLock());
 
 function initDb() {
   db.run(`
@@ -2903,6 +2945,11 @@ async function startServer() {
     console.error('[BOOT] WARNING: DATA_DIR not writable:', e.message);
   }
 
+  // Acquire the single-instance lock BEFORE touching the DB. If another
+  // replica is already running this exits before any reads/writes happen,
+  // so we can't corrupt state just by attempting to boot.
+  acquireInstanceLock();
+
   console.log('[BOOT] Loading sql.js...');
   const SQL = await initSqlJs();
   console.log('[BOOT] sql.js loaded');
@@ -2945,6 +2992,7 @@ async function startServer() {
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err);
   try { flushDbNow(); } catch(_) {}
+  try { releaseInstanceLock(); } catch(_) {}
   process.exit(1);
 });
 process.on('unhandledRejection', (err) => {
