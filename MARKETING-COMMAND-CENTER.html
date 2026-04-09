@@ -1410,6 +1410,28 @@
           <button class="template-btn" data-theme="slate" onclick="egSetTheme('slate',this)">Slate Indigo</button>
           <button class="template-btn" data-theme="rose" onclick="egSetTheme('rose',this)">Neon Rose</button>
         </div>
+        <!-- Outreach category bar — AI-tweaked intro generators per audience (R9). -->
+        <div class="category-bar" id="egCategoryBar" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+          <span style="font-size:12px;color:#555;align-self:center;margin-right:4px;">Audience:</span>
+          <button class="category-btn" data-cat="sirius" onclick="egSetCategory('sirius')" title="Sirius XM intro">Sirius XM</button>
+          <button class="category-btn" data-cat="iheart" onclick="egSetCategory('iheart')" title="iHeart intro">iHeart</button>
+          <button class="category-btn" data-cat="fm_am" onclick="egSetCategory('fm_am')" title="FM/AM intro">FM / AM</button>
+          <button class="category-btn" data-cat="online_radio" onclick="egSetCategory('online_radio')" title="Online Radio intro">Online Radio</button>
+          <button class="category-btn" data-cat="press" onclick="egSetCategory('press')" title="Press intro">Press</button>
+          <button class="category-btn" data-cat="blog" onclick="egSetCategory('blog')" title="Blog intro">Blog</button>
+          <button class="category-btn" data-cat="spotify_playlist" onclick="egSetCategory('spotify_playlist')" title="Spotify Playlist intro">Spotify Playlist</button>
+          <button class="category-btn" data-cat="podcast" onclick="egSetCategory('podcast')" title="Podcast intro">Podcast</button>
+          <button class="category-btn" id="egCategoryRegen" onclick="egRegenerateCategory()" title="Regenerate current category intro" style="margin-left:auto;display:none;">&#x21bb; Regenerate</button>
+          <span id="egCategoryStatus" style="font-size:11px;color:#888;margin-left:6px;"></span>
+        </div>
+        <style>
+          .category-btn { padding:6px 12px;font-size:12px;font-weight:600;border:1px solid rgba(123,47,247,0.3);background:rgba(123,47,247,0.08);color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .2s; }
+          .category-btn:hover:not(.locked) { background:rgba(123,47,247,0.18);border-color:rgba(123,47,247,0.55); }
+          .category-btn.active { background:var(--gradient-primary,linear-gradient(135deg,#7b2ff7,#00d4ff));color:#fff;border-color:transparent; }
+          .category-btn.locked { opacity:.55;cursor:not-allowed;position:relative; }
+          .category-btn.locked::after { content:" \01F512";font-size:10px;margin-left:4px; }
+          .category-btn.loading { opacity:.7;cursor:wait; }
+        </style>
         <div id="egGmailCopyBar" style="display:none;margin-bottom:16px;padding:16px;background:rgba(123,47,247,0.08);border:1px solid rgba(123,47,247,0.25);border-radius:10px;text-align:center;">
           <button onclick="egCopyForGmail()" style="width:100%;padding:18px 24px;background:var(--gradient-primary);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;letter-spacing:1px;transition:all 0.3s;min-height:52px;" onmouseover="this.style.boxShadow='0 6px 30px rgba(123,47,247,0.5)'" onmouseout="this.style.boxShadow='none'">COPY FOR GMAIL</button>
           <p style="margin:10px 0 0;font-size:13px;color:#888;line-height:1.5;">Click the button above, then open Gmail, click Compose, and paste (Ctrl+V / Cmd+V). Done!</p>
@@ -3858,6 +3880,156 @@ function egGetSocialLinks() {
     if(v) socials.push({name,url:v});
   });
   return socials;
+}
+
+// --- Outreach List state + category intro buttons (R9) ---
+// Populated at boot from /api/outreach/status. Drives locks on category
+// buttons and the Submission Tracker list gating.
+window.OUTREACH_STATE = {
+  unlocked: false,
+  current_version: 0,
+  banner_dismissed_version: 0,
+  last_change_summary: null,
+  categories: ['sirius','iheart','fm_am','online_radio','press','blog','spotify_playlist','podcast'],
+  category_labels: {}
+};
+// Cache key: `${releaseSignature}_${category}`. Cycling between categories
+// or re-clicking reuses the cached intro; the Regenerate button forces
+// a fresh call.
+window.egIntroCache = {};
+window.egCurrentCategory = null;
+
+function _egReleaseSignature() {
+  const d = egGatherFormData();
+  const sig = [d.songTitle || '', d.artistName || '', d.genre || '', (d.bio || '').slice(0, 200)].join('|');
+  // Simple djb2 hash — just needs to be stable per release, not cryptographic.
+  let h = 5381;
+  for (let i = 0; i < sig.length; i++) h = ((h << 5) + h + sig.charCodeAt(i)) | 0;
+  return String(h);
+}
+
+async function outreachLoadStatus() {
+  try {
+    const r = await fetch('/api/outreach/status');
+    if (!r.ok) return;
+    const s = await r.json();
+    window.OUTREACH_STATE = Object.assign(window.OUTREACH_STATE, s);
+    _egRenderCategoryLocks();
+  } catch(_) {}
+}
+
+function _egRenderCategoryLocks() {
+  const unlocked = !!window.OUTREACH_STATE.unlocked;
+  document.querySelectorAll('#egCategoryBar .category-btn[data-cat]').forEach(btn => {
+    if (unlocked) {
+      btn.classList.remove('locked');
+      btn.removeAttribute('disabled');
+      btn.title = (window.OUTREACH_STATE.category_labels || {})[btn.dataset.cat] || btn.dataset.cat;
+    } else {
+      btn.classList.add('locked');
+      btn.title = 'Unlock the Outreach List to use AI-tweaked intros';
+    }
+  });
+}
+
+async function egSetCategory(cat) {
+  if (!window.OUTREACH_STATE.unlocked) {
+    if (confirm('Unlock the Outreach List to use AI-tweaked category intros. Go to the subscribe page now?')) {
+      window.location.href = '/subscribe#outreach-list';
+    }
+    return;
+  }
+  window.egCurrentCategory = cat;
+  // Active-state toggle
+  document.querySelectorAll('#egCategoryBar .category-btn[data-cat]').forEach(b => {
+    b.classList.toggle('active', b.dataset.cat === cat);
+  });
+  document.getElementById('egCategoryRegen').style.display = '';
+
+  const sig = _egReleaseSignature();
+  const key = sig + '_' + cat;
+  if (window.egIntroCache[key]) {
+    _egApplyIntro(window.egIntroCache[key], cat, false);
+    return;
+  }
+  await _egFetchIntro(cat, false);
+}
+
+async function egRegenerateCategory() {
+  if (!window.egCurrentCategory) return;
+  await _egFetchIntro(window.egCurrentCategory, true);
+}
+
+async function _egFetchIntro(cat, force) {
+  const statusEl = document.getElementById('egCategoryStatus');
+  const btn = document.querySelector('#egCategoryBar .category-btn[data-cat="' + cat + '"]');
+  if (btn) btn.classList.add('loading');
+  statusEl.textContent = 'Generating intro\u2026';
+  try {
+    const releaseData = egGatherFormData();
+    const r = await fetch('/api/outreach/generate-intro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: cat, releaseData })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.intro) {
+      const sig = _egReleaseSignature();
+      window.egIntroCache[sig + '_' + cat] = j.intro;
+      _egApplyIntro(j.intro, cat, false);
+    } else if (j.fallback) {
+      // Server-error fallback: token-fill the seed template with release metadata.
+      const text = _egFallbackIntro(cat, egGatherFormData());
+      _egApplyIntro(text, cat, true);
+    } else {
+      statusEl.textContent = (j.error || 'Intro failed').slice(0, 120);
+    }
+  } catch(e) {
+    const text = _egFallbackIntro(cat, egGatherFormData());
+    _egApplyIntro(text, cat, true);
+  } finally {
+    if (btn) btn.classList.remove('loading');
+  }
+}
+
+function _egApplyIntro(text, cat, fallback) {
+  const ta = document.getElementById('egIntroParagraph');
+  if (ta) {
+    ta.value = text;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const statusEl = document.getElementById('egCategoryStatus');
+  if (fallback) {
+    statusEl.innerHTML = '<span style="color:#ffb347;">Using offline fallback \u2014 Claude unavailable.</span>';
+  } else {
+    statusEl.textContent = 'Intro tweaked for ' + (window.OUTREACH_STATE.category_labels[cat] || cat);
+  }
+  if (typeof egGenerateEmail === 'function') {
+    try { egGenerateEmail(); } catch(_) {}
+  }
+}
+
+// Token-fill fallback — only used when the server returns {fallback:true}
+// or a network error occurs. Matches the server-side OUTREACH_SEED_INTROS
+// but performs simple {token} substitution. Surfaces a UI notice so the
+// user knows they got a degraded version.
+const EG_FALLBACK_SEEDS = {
+  sirius: 'Hi, I wanted to reach out about my new release "{song_title}". It\'s a {genre} track dropping {release_date} and I think it would resonate with the Sirius XM audience.',
+  iheart: 'Hi, I\'m the artist behind "{song_title}", a new {genre} single out {release_date}. I\'d love to see if it\'s a fit for iHeart rotation.',
+  fm_am: 'Hi, reaching out from the {artist_name} camp about a new single, "{song_title}". It\'s {genre} with crossover appeal and we\'d love to get it in front of your FM/AM audience.',
+  online_radio: 'Hey, I\'m sending over my latest single "{song_title}" ({genre}, out {release_date}). I think this track lines up with what you\'ve been playing on the show.',
+  press: 'Hi, quick pitch: "{song_title}" is a new {genre} release from {artist_name} dropping {release_date}. Happy to send more context if you\'d like to write it up.',
+  blog: 'Hey, longtime reader. I wanted to put my new single "{song_title}" on your radar \u2014 {genre}, out {release_date}.',
+  spotify_playlist: 'Hi, I\'d love to pitch my new single "{song_title}" for your playlist. It\'s {genre}, releases {release_date}, and fits alongside the artists you\'ve been curating.',
+  podcast: 'Hey, big fan of the show. I\'d love to come on and talk about my new single "{song_title}" and the story behind it.'
+};
+function _egFallbackIntro(cat, d) {
+  const seed = EG_FALLBACK_SEEDS[cat] || '';
+  return seed
+    .replace('{song_title}', d.songTitle || 'my new track')
+    .replace('{artist_name}', d.artistName || d.artists || 'my')
+    .replace(/\{genre\}/g, d.genre || 'original')
+    .replace('{release_date}', d.releaseDate || 'soon');
 }
 
 function egGatherFormData() {
@@ -6700,6 +6872,7 @@ serverLoad().then(() => {
   setupTrialBanner();
   setupEliteOnboardingNudge();
   loadGamification();
+  outreachLoadStatus();
 });
 </script>
 </body>
