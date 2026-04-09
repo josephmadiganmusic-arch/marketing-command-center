@@ -1034,6 +1034,10 @@ app.post('/api/signup', rlSignup, async (req, res) => {
   // Respond immediately, send email in background (don't block the request).
   // Auto-verification only happens when verification is explicitly disabled —
   // never as a silent fallback when Resend is missing (see C7).
+  // Flush the new user row to disk before we respond — signup is a durable
+  // write we must not lose in the 100ms debounce window. (C2)
+  flushDbNow();
+
   if (REQUIRE_EMAIL_VERIFICATION) {
     if (resend) {
       sendVerificationEmail(cleanEmail, token).catch(err => {
@@ -1044,6 +1048,7 @@ app.post('/api/signup', rlSignup, async (req, res) => {
   } else {
     console.log('[SIGNUP] Verification disabled, auto-verifying', cleanEmail);
     dbHelpers.prepare('UPDATE users SET email_verified = 1 WHERE email = ?').run(cleanEmail);
+    flushDbNow();
     res.json({ success: true, needsVerification: false });
   }
 });
@@ -1061,6 +1066,7 @@ app.get('/api/verify-email', (req, res) => {
   }
 
   dbHelpers.prepare('UPDATE users SET email_verified = 1, verification_token = NULL, verification_expires = NULL WHERE id = ?').run(user.id);
+  flushDbNow(); // durable write — don't rely on the 100ms debounce (C2/L4)
 
   // Do NOT auto-login here. Auto-login on a GET request is a login-fixation
   // vector: an attacker could phish a victim with their own verification link
@@ -1113,30 +1119,62 @@ app.get('/api/me', (req, res) => {
 });
 
 // --- User Data Save/Load (server-side persistence) ---
+// Size caps for durable autosave writes (H1). The outer express.json limit
+// is 10MB but that's the abuse ceiling; real release bundles are < 64KB.
+const USER_DATA_MAX_VALUE_BYTES = 256 * 1024;   // per-key value
+const USER_DATA_MAX_BATCH_ITEMS = 50;           // items per save-batch
+const USER_DATA_MAX_BATCH_BYTES = 2 * 1024 * 1024; // total serialized batch payload
+function _serializeValue(value) {
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
 app.post('/api/data/save', requireAuth, (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'Key required' });
+  const serialized = _serializeValue(value);
+  if (Buffer.byteLength(serialized, 'utf8') > USER_DATA_MAX_VALUE_BYTES) {
+    return res.status(413).json({ error: 'Value too large (max 256 KB per key)' });
+  }
   dbHelpers.prepare(`
     INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
     ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
-  `).run(req.user.id, key, typeof value === 'string' ? value : JSON.stringify(value));
+  `).run(req.user.id, key, serialized);
+  flushDbNow(); // durable user work — C2
   res.json({ success: true });
 });
 
 app.post('/api/data/save-batch', requireAuth, (req, res) => {
   const { items } = req.body;
   if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'Items array required' });
+  // H1 caps: bound item count, per-value size, and total serialized payload
+  // so a buggy/malicious client can't hog sql.js memory or stall the flush.
+  if (items.length > USER_DATA_MAX_BATCH_ITEMS) {
+    return res.status(413).json({ error: 'Too many items (max ' + USER_DATA_MAX_BATCH_ITEMS + ')' });
+  }
+  const preparedItems = [];
+  let totalBytes = 0;
+  for (const { key, value } of items) {
+    if (!key) continue;
+    const serialized = _serializeValue(value);
+    const bytes = Buffer.byteLength(serialized, 'utf8');
+    if (bytes > USER_DATA_MAX_VALUE_BYTES) {
+      return res.status(413).json({ error: 'Value for key "' + key + '" too large (max 256 KB)' });
+    }
+    totalBytes += bytes;
+    if (totalBytes > USER_DATA_MAX_BATCH_BYTES) {
+      return res.status(413).json({ error: 'Batch too large (max 2 MB total)' });
+    }
+    preparedItems.push({ key, serialized });
+  }
   const saveBatch = dbHelpers.transaction(() => {
-    for (const { key, value } of items) {
-      if (key) {
-        dbHelpers.prepare(`
-          INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
-          ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
-        `).run(req.user.id, key, typeof value === 'string' ? value : JSON.stringify(value));
-      }
+    for (const { key, serialized } of preparedItems) {
+      dbHelpers.prepare(`
+        INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+      `).run(req.user.id, key, serialized);
     }
   });
   saveBatch();
+  flushDbNow(); // durable user work — C2
   res.json({ success: true });
 });
 
@@ -2058,6 +2096,7 @@ app.post('/api/admin/tickets/:id', requireAdmin, (req, res) => {
   if (admin_notes !== undefined) {
     dbHelpers.prepare('UPDATE support_tickets SET admin_notes = ?, updated_at = datetime("now") WHERE id = ?').run(String(admin_notes).slice(0, 5000), id);
   }
+  flushDbNow(); // durable admin-action write — C2
   res.json({ success: true });
 });
 
@@ -2634,6 +2673,7 @@ app.post('/api/support/submit', requireAuth, rlSupport, async (req, res) => {
     INSERT INTO support_tickets (user_id, user_email, subject, message, ai_response, escalated)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(req.user.id, req.user.email, subject, message, aiResponse, escalated);
+  flushDbNow(); // durable write — C2
 
   res.json({ success: true, aiResponse, escalated });
 });
@@ -2888,6 +2928,7 @@ app.post('/api/gamification/award', requireAuth, (req, res) => {
   // Re-fetch for accurate totals (achievements may have added XP)
   const final = dbHelpers.prepare('SELECT total_xp, level FROM user_xp WHERE user_id = ?').get(req.user.id);
   const finalLeveledUp = final.level > xp.level;
+  flushDbNow(); // durable XP/achievement write — C2
 
   res.json({
     success: true,
