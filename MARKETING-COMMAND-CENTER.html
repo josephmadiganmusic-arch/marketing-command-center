@@ -4174,6 +4174,32 @@ const ST_FORMS_TYPES = ['form', 'unknown'];
 const ST_DIRECT_TYPES = ['social'];
 const ST_TYPE_LABELS = { form:'Form', social:'Social', unknown:'Website' };
 
+// Sites that refuse X-Frame-Options embedding. The overlay skips the iframe
+// attempt entirely for these and opens the submission page in a popup window
+// immediately. Add a host to this list (lowercase, no `www.`, no path) when a
+// submission site refuses to frame AND the user has confirmed the popup is
+// the right UX. Matches exact host or any `*.<host>` subdomain.
+//  - rapzilla.com        — refuses iframe; pairs with the custom Rapzilla email pane
+//  - amenworldwide.com   — site under construction; kept on the verified list
+//  - christianraps.com   — refuses iframe (Soundcloud curator contact page)
+//  - wgts919.com         — refuses iframe (hit 403 on automated crawl 2026-04-09)
+const ST_POPUP_ONLY_HOSTS = ['rapzilla.com', 'amenworldwide.com', 'christianraps.com', 'wgts919.com'];
+
+// Normalize a URL to its bare hostname (lowercase, no `www.` prefix) for
+// matching against the ST_POPUP_ONLY_HOSTS and ST_CUSTOM_PANE_HOSTS lists.
+// Returns '' if the URL is malformed — callers should treat that as "no
+// special rules apply".
+function stGetHost(url) {
+  try { return new URL(url).hostname.replace(/^www\./, '').toLowerCase(); }
+  catch(_) { return ''; }
+}
+
+function stIsPopupOnlyHost(url) {
+  const h = stGetHost(url);
+  if (!h) return false;
+  return ST_POPUP_ONLY_HOSTS.some(allow => h === allow || h.endsWith('.' + allow));
+}
+
 function stApplyLockState() {
   const wrap = document.getElementById('submissionTrackerWrap');
   if (!wrap) return;
@@ -4390,6 +4416,25 @@ function stOpenSubmission(contactId) {
       + '<div style="font-size:13px;color:#bbb;margin-bottom:14px;">This contact uses <strong>' + (ST_TYPE_LABELS[contact.submission_type] || contact.submission_type) + '</strong>. There\u2019s no form to embed.</div>'
       + '<div style="padding:12px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);border-radius:8px;font-family:monospace;font-size:13px;color:#00d4ff;word-break:break-all;">' + raw.replace(/[<>&]/g, ch => ({ '<':'&lt;','>':'&gt;','&':'&amp;' }[ch])) + '</div>'
       + '<button onclick="stOverlayCopyValue(' + JSON.stringify(String(raw)).replace(/"/g,'&quot;') + ')" style="margin-top:12px;padding:8px 14px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.4);color:#00d4ff;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;">Copy</button>';
+  } else if (stIsPopupOnlyHost(url)) {
+    // Known popup-only sites (ST_POPUP_ONLY_HOSTS) — skip the iframe attempt
+    // entirely and open the submission page in a popup window immediately.
+    // These sites all refuse X-Frame-Options; the prior behavior showed a
+    // broken-iframe first, then forced the user to click "Open in Popup".
+    nonUrlMsg.style.display = 'none';
+    iframe.style.display = 'none';
+    rightNotice.style.display = '';
+    document.getElementById('stOverlayPopupBtn').onclick = function() { stOverlayOpenPopup(url); };
+    stOverlayOpenPopup(url);
+    // Site-specific right-pane notice overrides. Amen Worldwide's site is
+    // currently under construction — users who see a half-rendered page may
+    // wonder if the list is stale, so reassure them the list is verified
+    // clean and Amen is intentionally retained.
+    const _host = stGetHost(url);
+    if (_host === 'amenworldwide.com') {
+      rightNotice.innerHTML = '<div style="color:#00d4ff;font-weight:600;margin-bottom:6px;">Opened in popup window</div>'
+        + '<div style="color:#ccc;font-size:12px;line-height:1.5;">Our outreach list is verified clean. <strong>Amen Worldwide</strong> is kept on the list because their site is currently under construction \u2014 try the popup or check back later.</div>';
+    }
   } else {
     nonUrlMsg.style.display = 'none';
     iframe.style.display = '';
