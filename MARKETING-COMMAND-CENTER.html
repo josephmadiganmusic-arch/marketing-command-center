@@ -4488,25 +4488,65 @@ function stDetectSocialPlatform(raw) {
   return stParseSocialValue(raw).platform;
 }
 
-// Build a personalized DM template for a social-type contact. Used in the
-// left-pane overlay when submission_type === 'social'. The user one-click
-// copies this to send via the platform's DM inbox.
-function stBuildSocialDm(contact, d) {
+// Deterministic fallback DM used when Claude is unreachable, errors, or the
+// user hasn't configured an API key. Same shape as the previous static
+// template so the overlay never shows an empty textarea.
+function stBuildSocialDmFallback(contact, d) {
   const platform = stDetectSocialPlatform(contact.submission_value || contact.website || '');
-  const handle = (contact.name || '').trim() || 'there';
+  const name = (contact.name || '').trim() || 'there';
   const song = d.songTitle || 'my new single';
   const artist = d.primaryArtist || d.stageName || 'me';
   const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Christian hip hop';
   const releaseDate = d.releaseDate || 'soon';
   const spotify = d.linkSpotify || d.linkApple || d.linkYTVideo || '';
   const link = spotify ? '\n\nListen here: ' + spotify : '';
-  return 'Hey ' + handle + ' \u2014 hope all is well on ' + platform + '. '
+  return 'Hey ' + name + ' \u2014 hope all is well on ' + platform + '. '
     + 'I\'m ' + artist + ', and I just dropped a new ' + genre + ' track called "' + song + '"'
     + (releaseDate && releaseDate !== 'soon' ? ' (out ' + releaseDate + ')' : '')
     + '. Saw your page and thought the sound might line up with what you\'re into. '
     + 'Would mean a lot if you gave it a listen and let me know what you think.'
     + link
     + '\n\nAppreciate your time either way. Blessings!';
+}
+
+// Per-contact DM cache so re-opening the same overlay doesn't re-hit Claude.
+// Key = contact.id + '::' + song title. Cleared when release_data changes or
+// the user refreshes. Intentionally in-memory only.
+window.ST_DM_CACHE = window.ST_DM_CACHE || {};
+
+// Call Claude to generate a personalized DM for this specific contact. On
+// any failure (offline, 5xx, missing key) resolves with the fallback template
+// so the UI always has something to show. Returns { dm, source: 'ai'|'fallback' }.
+async function stFetchSocialDm(contact, d) {
+  const parsed = stParseSocialValue(contact.submission_value || contact.website || '');
+  const cacheKey = contact.id + '::' + (d.songTitle || '');
+  if (window.ST_DM_CACHE[cacheKey]) return window.ST_DM_CACHE[cacheKey];
+
+  try {
+    const resp = await fetch('/api/outreach/social-dm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contact: {
+          name: contact.name || '',
+          platform: parsed.platform,
+          handle: parsed.handle || '',
+          category: contact.category || '',
+          notes: contact.notes || '',
+        },
+        releaseData: d,
+      }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data || !data.dm) throw new Error('Empty response');
+    const result = { dm: data.dm, source: 'ai' };
+    window.ST_DM_CACHE[cacheKey] = result;
+    return result;
+  } catch (e) {
+    console.error('[stFetchSocialDm] falling back to template:', e?.message || e);
+    return { dm: stBuildSocialDmFallback(contact, d), source: 'fallback' };
+  }
 }
 
 function stOverlayRenderMetadata() {
@@ -4559,16 +4599,16 @@ function stOverlayRenderMetadata() {
   let socialBlock = '';
   if (isSocial) {
     const platform = stDetectSocialPlatform(contact.submission_value || contact.website || '');
-    const dm = stBuildSocialDm(contact, d);
     socialBlock =
       '<div class="st-social-dm">' +
-      '<div class="st-social-dm-head">Personalized ' + esc(platform) + ' DM</div>' +
-      '<textarea class="st-social-dm-body" readonly>' + esc(dm) + '</textarea>' +
+      '<div class="st-social-dm-head">Personalized ' + esc(platform) + ' DM <span id="stSocialDmStatus" style="font-weight:normal;font-size:10px;color:#888;">(generating…)</span></div>' +
+      '<textarea id="stSocialDmBody" class="st-social-dm-body" readonly placeholder="Generating a DM tailored to ' + esc(contact.name || 'this contact') + '…"></textarea>' +
       '<div style="display:flex;gap:6px;margin-top:6px;">' +
-      '<button class="st-meta-copy" onclick="stOverlayCopyValue(' + JSON.stringify(dm).replace(/"/g,'&quot;') + ', this)">Copy DM</button>' +
+      '<button class="st-meta-copy" onclick="stCopySocialDm(this)">Copy DM</button>' +
+      '<button class="st-meta-copy" onclick="stRegenerateSocialDm()">Regenerate</button>' +
       '<button class="st-meta-copy" onclick="stOpenContactSocial()">Open ' + esc(platform) + '</button>' +
       '</div>' +
-      '<div style="font-size:10px;color:#666;margin-top:6px;font-style:italic;">Tweak the copy before sending. Auto-filled from your release metadata.</div>' +
+      '<div style="font-size:10px;color:#666;margin-top:6px;font-style:italic;">Tweak the copy before sending. Generated by Claude from your release metadata + this contact.</div>' +
       '</div>';
   }
   host.innerHTML = socialBlock + fields.filter(([, v]) => v && String(v).trim()).map(([label, value]) => {
@@ -4579,6 +4619,51 @@ function stOverlayRenderMetadata() {
       '<button class="st-meta-copy" onclick="stOverlayCopyValue(' + JSON.stringify(String(value)).replace(/"/g,'&quot;') + ', this)">Copy</button>' +
       '</div>';
   }).join('');
+
+  // Fire-and-forget Claude fetch for the social DM. The overlay's already
+  // rendered with a "generating…" placeholder; stLoadSocialDmInto handles
+  // stale-response guarding + UI population.
+  if (isSocial) stLoadSocialDmInto(contact, d);
+}
+
+// Shared async loader — fetches a personalized DM and writes it into the
+// overlay's textarea/status when the response lands, ignoring the result if
+// the user has already navigated to a different contact in the meantime.
+function stLoadSocialDmInto(contact, d) {
+  const loadingForContactId = contact.id;
+  stFetchSocialDm(contact, d).then(result => {
+    if (window.ST_OVERLAY.contactId !== loadingForContactId) return;
+    const body = document.getElementById('stSocialDmBody');
+    const status = document.getElementById('stSocialDmStatus');
+    if (body) body.value = result.dm;
+    if (status) {
+      status.textContent = result.source === 'ai' ? '(Claude)' : '(template — AI unavailable)';
+      status.style.color = result.source === 'ai' ? '#0a7a2a' : '#a06c00';
+    }
+  });
+}
+
+// Copy the current (possibly AI-generated) DM body text to clipboard. Reads
+// from the live textarea so it picks up any user edits before copying.
+function stCopySocialDm(btn) {
+  const body = document.getElementById('stSocialDmBody');
+  if (!body) return;
+  stOverlayCopyValue(body.value, btn);
+}
+
+// Bust the cache for this contact+song and re-fetch a fresh DM. Useful when
+// the first draft doesn't feel right.
+function stRegenerateSocialDm() {
+  const contact = (window.ST_STATE.contacts || []).find(c => c.id === window.ST_OVERLAY.contactId);
+  if (!contact) return;
+  let d = {};
+  try { d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}') || {}; } catch(_) {}
+  delete window.ST_DM_CACHE[contact.id + '::' + (d.songTitle || '')];
+  const body = document.getElementById('stSocialDmBody');
+  const status = document.getElementById('stSocialDmStatus');
+  if (body) body.value = '';
+  if (status) { status.textContent = '(generating…)'; status.style.color = '#888'; }
+  stLoadSocialDmInto(contact, d);
 }
 
 // "Open <Platform>" button — opens the social profile in a popup window

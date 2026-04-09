@@ -858,6 +858,10 @@ const rlSupport = rateLimit({ name: 'support', windowMs: 60 * 60 * 1000, max: 5 
 // enough that a user can cycle through all 8 categories + re-roll several
 // times while writing an email, tight enough to cap Claude cost per user.
 const rlOutreachIntro = rateLimit({ name: 'outreach_intro', windowMs: 60 * 60 * 1000, max: 40 });
+// Submission Tracker — personalized social DM generator. Higher cap than
+// the intro generator because users will click through many social contacts
+// in a single session while prospecting.
+const rlSocialDm = rateLimit({ name: 'social_dm', windowMs: 60 * 60 * 1000, max: 120 });
 
 // Health check endpoint (must respond before any redirects)
 app.get('/health', (req, res) => res.status(200).send('OK'));
@@ -2602,6 +2606,97 @@ app.post('/api/outreach/generate-intro', requireOutreachUnlocked, rlOutreachIntr
     res.json({ intro: text.trim(), category: cat, model: DEFAULT_CLAUDE_MODEL });
   } catch (err) {
     console.error('[OUTREACH INTRO] fetch error:', err.message);
+    res.status(502).json({ error: 'AI request failed', fallback: true });
+  }
+});
+
+// Submission Tracker — personalized social DM generator. Calls Claude with
+// one contact's (name, platform, handle) + the current release metadata and
+// returns a short, contact-specific DM body. Client caches per contact+song
+// so re-opening the overlay doesn't re-burn tokens. Rate limit = 120/hr/user.
+app.post('/api/outreach/social-dm', requireOutreachUnlocked, rlSocialDm, async (req, res) => {
+  const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
+  if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured', fallback: true });
+
+  const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n).trim();
+  const contactIn = req.body && req.body.contact && typeof req.body.contact === 'object' ? req.body.contact : {};
+  const rd = req.body && req.body.releaseData && typeof req.body.releaseData === 'object' ? req.body.releaseData : {};
+
+  const contact = {
+    name: cap(contactIn.name, 200),
+    platform: cap(contactIn.platform, 50) || 'Instagram',
+    handle: cap(contactIn.handle, 100),
+    category: cap(contactIn.category, 100),
+    notes: cap(contactIn.notes, 500),
+  };
+  const meta = {
+    song_title: cap(rd.songTitle || rd.song_title, 200),
+    artist_name: cap(rd.primaryArtist || rd.stageName || rd.artistName, 200),
+    feat: cap(rd.featArtist, 200),
+    genre: cap([rd.genrePrimary, rd.genreSecondary].filter(Boolean).join(' / ') || rd.genre, 100),
+    release_date: cap(rd.releaseDate || rd.release_date, 50),
+    mood: cap(rd.mood, 100),
+    bio: cap(rd.bio || rd.artistBio, 1500),
+    link: cap(rd.linkSpotify || rd.linkApple || rd.linkYTMusic || rd.linkYTVideo, 500),
+  };
+  if (!meta.song_title || !contact.name) {
+    return res.status(400).json({ error: 'Contact name and song title required' });
+  }
+
+  const system = 'You write short, warm, human direct messages for indie Christian hip hop artists reaching out on social media. Return ONLY the DM body — no subject line, no preamble, no commentary, no quotation marks. Max 4 short sentences. Sound like a real person, not a template. Never invent facts not in the metadata. End with a soft ask (listen / let me know what you think) and a brief sign-off like "Blessings" or "Appreciate you". Do NOT include hashtags.';
+  const userPrompt = [
+    `Platform: ${contact.platform}`,
+    `Recipient name: ${contact.name}`,
+    contact.handle ? `Recipient handle: @${contact.handle}` : '',
+    contact.category ? `Recipient category: ${contact.category}` : '',
+    contact.notes ? `Notes about this recipient: ${contact.notes}` : '',
+    ``,
+    `Release metadata:`,
+    `- Song title: ${meta.song_title}`,
+    meta.artist_name ? `- Artist: ${meta.artist_name}${meta.feat ? ' feat. ' + meta.feat : ''}` : '',
+    meta.genre ? `- Genre: ${meta.genre}` : '',
+    meta.release_date ? `- Release date: ${meta.release_date}` : '',
+    meta.mood ? `- Mood / vibe: ${meta.mood}` : '',
+    meta.bio ? `- Artist bio: ${meta.bio}` : '',
+    meta.link ? `- Listen link (include at the end on its own line): ${meta.link}` : '',
+    ``,
+    `Write the DM now. Greet ${contact.name} by name.`
+  ].filter(Boolean).join('\n');
+
+  try {
+    const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': CLAUDE_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: DEFAULT_CLAUDE_MODEL,
+        max_tokens: 400,
+        system,
+        messages: [{ role: 'user', content: userPrompt }]
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+    if (!aiResp.ok) {
+      const errText = await aiResp.text();
+      console.error('[OUTREACH SOCIAL-DM] Anthropic error:', aiResp.status, errText.slice(0, 500));
+      return res.status(502).json({ error: 'AI service unavailable', fallback: true });
+    }
+    const data = await aiResp.json();
+    const text = (data.content && data.content[0] && data.content[0].text) || '';
+    try {
+      if (req.user.role !== 'admin') {
+        recordClaudeUsage(req.user.id, data.usage?.input_tokens || 0, data.usage?.output_tokens || 0);
+      }
+    } catch(_) {}
+    if (!text.trim()) {
+      return res.status(502).json({ error: 'Empty AI response', fallback: true });
+    }
+    res.json({ dm: text.trim(), platform: contact.platform, model: DEFAULT_CLAUDE_MODEL });
+  } catch (err) {
+    console.error('[OUTREACH SOCIAL-DM] fetch error:', err.message);
     res.status(502).json({ error: 'AI request failed', fallback: true });
   }
 });
