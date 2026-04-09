@@ -865,10 +865,12 @@ const rlOutreachIntro = rateLimit({ name: 'outreach_intro', windowMs: 60 * 60 * 
 // the intro generator because users will click through many social contacts
 // in a single session while prospecting.
 const rlSocialDm = rateLimit({ name: 'social_dm', windowMs: 60 * 60 * 1000, max: 120 });
-// Intake — audio-to-lyrics transcription via Groq Whisper. Tight cap
-// because each request costs Groq free-tier audio-seconds and most
-// users only transcribe a handful of songs per release cycle.
-const rlTranscribe = rateLimit({ name: 'transcribe', windowMs: 60 * 60 * 1000, max: 20 });
+// Intake — audio-to-lyrics transcription via Groq Whisper. Client
+// chunks audio into 30s segments to stop hallucination cascade, so
+// a single 5-minute song fires ~10 requests. 60/hr covers ~6 songs
+// per user per hour, still comfortably inside Groq's free-tier cap
+// (20 req/min, 2000 req/day on whisper-large-v3).
+const rlTranscribe = rateLimit({ name: 'transcribe', windowMs: 60 * 60 * 1000, max: 60 });
 
 // Health check endpoint (must respond before any redirects)
 app.get('/health', (req, res) => res.status(200).send('OK'));
