@@ -37,7 +37,7 @@
   .logo span { background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   .badge { font-size: 11px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
   .container { max-width: 1300px; margin: 0 auto; padding: 0 24px; }
-  .tabs { display: flex; gap: 4px; background: var(--bg-card); border-radius: 10px; padding: 4px; margin: 32px 0; border: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; background: var(--bg-card); border-radius: 10px; padding: 4px; margin: 32px 0; border: 1px solid var(--border); }
   .tabs::-webkit-scrollbar { height: 0; }
   .tab { padding: 12px 20px; border: none; background: none; color: var(--text-dim); font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 8px; font-family: 'Inter', sans-serif; transition: all 0.3s ease; white-space: nowrap; flex-shrink: 0; position: relative; }
   .tab.active { background: var(--gradient-primary); color: #fff; box-shadow: var(--glow-purple); }
