@@ -4233,6 +4233,36 @@ const ST_CUSTOM_PANE_HOSTS = {
   'jesusfreakhideout.com': 'jesusfreakhideout',
 };
 
+// Per-site brand-theme mapping for the Compose right-pane preview. When the
+// user toggles the overlay to Compose mode, we auto-pick an Email Generator
+// theme whose colors match the submission site's brand so the rendered email
+// "feels" like it belongs on that site when the user previews it. Values must
+// match egThemes keys in the Email Generator panel.
+//   - rapzilla.com          -> fire   (dark black/red matches rapzilla.com)
+//   - jesuswired.com        -> royal  (dark purple matches jesuswired.com)
+//   - jesusfreakhideout.com -> blue   (dark navy matches jesusfreakhideout.com)
+// Hosts not listed here leave whatever theme the user last picked unchanged.
+const ST_CUSTOM_PANE_THEMES = {
+  'rapzilla.com': 'fire',
+  'jesuswired.com': 'royal',
+  'jesusfreakhideout.com': 'blue',
+};
+
+// Resolve a contact+url to a brand-matching EG theme name, or '' if no
+// mapping applies. Checks the same candidate list as stGetCustomPaneKey so
+// form-type rows and website-only rows both work.
+function stGetCustomPaneTheme(contact, url) {
+  const candidates = [url, contact && contact.website, contact && contact.submission_value];
+  for (const c of candidates) {
+    const h = stGetHost(c || '');
+    if (!h) continue;
+    for (const allow in ST_CUSTOM_PANE_THEMES) {
+      if (h === allow || h.endsWith('.' + allow)) return ST_CUSTOM_PANE_THEMES[allow];
+    }
+  }
+  return '';
+}
+
 // Resolve a contact+url to a custom-pane key, or '' if no custom pane
 // applies. Checks the contact's website first, then the submission_value
 // so a form-type row with its URL in either column still matches.
@@ -4401,12 +4431,16 @@ function stCloseExportMenu() {
 // submission URL, with a 2.5s load-detection → window.open popup fallback
 // for sites that X-Frame-Options SAMEORIGIN/DENY. Mark Submitted → POST
 // /api/outreach/submission/mark, refresh local state + XP.
-window.ST_OVERLAY = { contactId: null, popupRef: null, loadTimer: null };
+window.ST_OVERLAY = { contactId: null, popupRef: null, loadTimer: null, rightMode: 'site' };
 
 function stOpenSubmission(contactId) {
   const contact = window.ST_STATE.contacts.find(c => c.id === contactId);
   if (!contact) return;
   window.ST_OVERLAY.contactId = contactId;
+  // Every open starts in Site mode (iframe of submission URL). User toggles
+  // Compose via the header pill if they want the Email Generator preview.
+  window.ST_OVERLAY.rightMode = 'site';
+  window.__egRefreshListener = null;
 
   // Populate header
   document.getElementById('stOverlayName').textContent = contact.name || 'Unnamed';
@@ -4497,8 +4531,129 @@ function stOpenSubmission(contactId) {
     document.getElementById('stOverlayPopupBtn').onclick = function() { stOverlayOpenPopup(url); };
   }
 
+  // Reset mode toggle to Site (default) and hide any leftover compose view.
+  stSetOverlayRightMode('site', true);
+
   document.getElementById('stOverlay').style.display = 'flex';
   document.body.style.overflow = 'hidden';
+}
+
+// Toggle the right pane between Site (submission URL iframe, original) and
+// Compose (live Email Generator preview). Called from the header pill buttons
+// and from stOpenSubmission to reset to 'site' on every new contact. The
+// `silent` flag skips the intake-load work on the initial reset so we don't
+// do useless work when the user is still viewing the site iframe.
+function stSetOverlayRightMode(mode, silent) {
+  if (mode !== 'site' && mode !== 'compose') mode = 'site';
+  window.ST_OVERLAY.rightMode = mode;
+  const composeView = document.getElementById('stOverlayComposeView');
+  const siteBtn = document.getElementById('stOverlayModeSite');
+  const composeBtn = document.getElementById('stOverlayModeCompose');
+  // Paint active-state pill styling.
+  if (siteBtn && composeBtn) {
+    const activeStyle = 'linear-gradient(135deg,rgba(0,212,255,0.22),rgba(123,47,247,0.22))';
+    siteBtn.style.background = mode === 'site' ? activeStyle : 'transparent';
+    siteBtn.style.color = mode === 'site' ? '#fff' : '#888';
+    composeBtn.style.background = mode === 'compose' ? activeStyle : 'transparent';
+    composeBtn.style.color = mode === 'compose' ? '#fff' : '#888';
+  }
+  if (mode === 'site') {
+    if (composeView) composeView.style.display = 'none';
+    // Tear down the live refresh hook so egGenerateEmail re-enables its
+    // normal on-tab side effects (toast, XP, scroll) next time it runs.
+    window.__egRefreshListener = null;
+    return;
+  }
+  // mode === 'compose'
+  if (composeView) composeView.style.display = 'flex';
+  if (!silent) stPrepareOverlayCompose();
+}
+
+// Load the Email Generator form from intake, auto-pick the brand theme for
+// this contact's site, auto-pick the audience category from contact.category,
+// and kick off a first render. The __egRefreshListener hook (installed here)
+// mirrors every subsequent egGenerateEmail output into the overlay compose
+// iframe — so theme or category changes made from the EG tab would propagate
+// live, and our async Claude intro fetch auto-updates the preview when it
+// returns.
+function stPrepareOverlayCompose() {
+  const frame = document.getElementById('stOverlayComposeFrame');
+  const empty = document.getElementById('stOverlayComposeEmpty');
+  const statusEl = document.getElementById('stOverlayComposeStatus');
+  const themeEl = document.getElementById('stOverlayComposeTheme');
+  if (!frame) return;
+
+  // Install the mirror hook BEFORE any egGenerateEmail call so the output
+  // lands in our iframe (and the EG tab's side effects stay silent).
+  window.__egRefreshListener = function(html) {
+    try {
+      if (empty) empty.style.display = 'none';
+      const doc = frame.contentDocument || frame.contentWindow.document;
+      doc.open(); doc.write(html || ''); doc.close();
+    } catch(_) {}
+  };
+
+  // Empty state: no release in intake -> just show the empty message.
+  const d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
+  if (!d.songTitle) {
+    if (empty) empty.style.display = '';
+    try {
+      const doc = frame.contentDocument || frame.contentWindow.document;
+      doc.open(); doc.write(''); doc.close();
+    } catch(_) {}
+    if (statusEl) statusEl.textContent = 'No release loaded.';
+    if (themeEl) themeEl.textContent = '';
+    return;
+  }
+
+  // Populate EG form from intake (silent — no toast).
+  try { egLoadFromIntake(true); } catch(_) {}
+
+  // Auto-select brand theme for this site, if mapped. We set egCurrentTheme
+  // directly and repaint the template-btn active state so the EG tab stays
+  // in sync if the user flips to it.
+  const contact = window.ST_STATE.contacts.find(c => c.id === window.ST_OVERLAY.contactId);
+  let url = '';
+  if (contact) {
+    if (contact.submission_value && /^https?:\/\//i.test(contact.submission_value)) url = contact.submission_value;
+    else if (contact.website && /^https?:\/\//i.test(contact.website)) url = contact.website;
+    else if (contact.website) url = 'https://' + contact.website;
+  }
+  const brandTheme = contact ? stGetCustomPaneTheme(contact, url) : '';
+  if (brandTheme && typeof egThemes === 'object' && egThemes[brandTheme]) {
+    egCurrentTheme = brandTheme;
+    document.querySelectorAll('#panel-emailgen .template-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.theme === brandTheme);
+    });
+    if (themeEl) {
+      const labelMap = { dark:'Cosmic Night', light:'Clean White', blue:'Midnight Blue', royal:'Royal Purple', fire:'Ember', emerald:'Emerald', cream:'Warm Cream', slate:'Slate Indigo', rose:'Neon Rose' };
+      themeEl.textContent = '\u00B7 ' + (labelMap[brandTheme] || brandTheme) + ' (matched to site)';
+    }
+  } else if (themeEl) {
+    themeEl.textContent = '';
+  }
+
+  if (statusEl) statusEl.textContent = 'Rendering\u2026';
+
+  // First render: synchronous egGenerateEmail will fire our listener and
+  // paint the iframe. If the contact has a category and we're unlocked,
+  // then also kick off the async Claude intro refresh — the listener will
+  // be re-fired automatically when _egApplyIntro -> egGenerateEmail runs.
+  try { egGenerateEmail(); } catch(_) {}
+
+  if (contact && contact.category && window.OUTREACH_STATE && window.OUTREACH_STATE.unlocked) {
+    // Only swap if different from currently selected EG category to avoid
+    // a redundant fetch.
+    if (window.egCurrentCategory !== contact.category) {
+      try { egSetCategory(contact.category); } catch(_) {}
+    }
+  }
+
+  if (statusEl) {
+    // Clear the rendering label shortly after — the preview either painted
+    // synchronously or will paint when the async Claude intro returns.
+    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 400);
+  }
 }
 
 function stOverlayOpenPopup(url) {
@@ -4527,6 +4682,14 @@ function stOverlayClose() {
   }
   window.ST_OVERLAY.popupRef = null;
   window.ST_OVERLAY.contactId = null;
+  window.ST_OVERLAY.rightMode = 'site';
+  // Tear down the compose mirror hook so the EG tab's normal side effects
+  // (toast/XP/scroll) come back the next time the user runs egGenerateEmail.
+  window.__egRefreshListener = null;
+  const composeView = document.getElementById('stOverlayComposeView');
+  if (composeView) composeView.style.display = 'none';
+  const composeFrame = document.getElementById('stOverlayComposeFrame');
+  if (composeFrame) composeFrame.src = 'about:blank';
   document.getElementById('stOverlayIframe').src = 'about:blank';
 }
 
@@ -5534,6 +5697,16 @@ function egGenerateEmail() {
   frame.onload = zoomToFit;
   setTimeout(zoomToFit, 200);
   setTimeout(zoomToFit, 800);
+
+  // Mirror to Submission Tracker overlay Compose mode. When the overlay is
+  // in Compose mode it registers window.__egRefreshListener to receive every
+  // rebuild of the email HTML (theme change, category change, intake edit).
+  // Listener presence is also our "silent mode" flag — when set, skip the
+  // toast/XP/scroll side effects since the user isn't on the EG tab.
+  if (typeof window.__egRefreshListener === 'function') {
+    try { window.__egRefreshListener(egGeneratedHTML); } catch(_) {}
+    return;
+  }
 
   // Show the Copy for Gmail bar and scroll user to it
   document.getElementById('egGmailCopyBar').style.display = 'block';
@@ -8271,6 +8444,11 @@ serverLoad().then(() => {
         <div id="stOverlaySub" style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-top:2px;"></div>
         <div id="stOverlayNotes" style="font-size:12px;color:#aaa;margin-top:4px;display:none;"></div>
       </div>
+      <!-- Site / Compose toggle. Site = iframe of the submission URL (default, original behavior). Compose = Email Generator preview iframe rendering the live HTML email for the current release with the brand theme auto-selected for this site. Left pane (metadata + custom block) stays unchanged either way. -->
+      <div id="stOverlayModeToggle" style="display:flex;gap:0;background:rgba(255,255,255,0.04);border:1px solid #2a2a32;border-radius:6px;padding:2px;">
+        <button id="stOverlayModeSite" type="button" data-mode="site" onclick="stSetOverlayRightMode('site')" style="padding:6px 14px;background:linear-gradient(135deg,rgba(0,212,255,0.22),rgba(123,47,247,0.22));border:none;color:#fff;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;">SITE</button>
+        <button id="stOverlayModeCompose" type="button" data-mode="compose" onclick="stSetOverlayRightMode('compose')" style="padding:6px 14px;background:transparent;border:none;color:#888;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;">COMPOSE</button>
+      </div>
       <button id="stOverlayPopupBtn" style="padding:8px 14px;background:rgba(0,212,255,0.12);border:1px solid rgba(0,212,255,0.4);color:#00d4ff;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;">Open in Popup</button>
       <button id="stOverlayMarkBtn" onclick="stOverlayMarkSubmitted()" style="padding:10px 18px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;">Mark Submitted (+25 XP)</button>
       <button onclick="stOverlayClose()" aria-label="Close" style="padding:8px 14px;background:transparent;border:1px solid #444;color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;">&#x2715;</button>
@@ -8290,12 +8468,34 @@ serverLoad().then(() => {
           <div id="stOverlayMetaFields"></div>
         </div>
       </div>
-      <!-- Right pane: iframe / popup fallback -->
+      <!-- Right pane: iframe / popup fallback / compose preview. The
+           stOverlayComposeView is absolutely positioned on top of the site
+           iframe area and toggled via stSetOverlayRightMode(). When visible
+           it shows the live Email Generator HTML preview with the brand
+           theme auto-selected for the current submission site. -->
       <div id="stOverlayRight" style="flex:1;display:flex;flex-direction:column;min-width:0;background:#050509;">
         <div id="stOverlayRightNotice" style="padding:10px 16px;background:#0a0a12;border-bottom:1px solid #1e1e28;font-size:12px;color:#888;"></div>
         <div style="flex:1;position:relative;min-height:0;">
           <iframe id="stOverlayIframe" src="about:blank" style="width:100%;height:100%;border:0;background:#fff;"></iframe>
           <div id="stOverlayNonUrl" style="display:none;position:absolute;inset:0;padding:28px;overflow-y:auto;"></div>
+          <div id="stOverlayComposeView" style="display:none;position:absolute;inset:0;flex-direction:column;background:#0a0a12;z-index:2;">
+            <div id="stOverlayComposeBar" style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#0d0d15;border-bottom:1px solid #1e1e28;flex-wrap:wrap;">
+              <span style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#ffc107;font-weight:700;">Email Preview</span>
+              <span id="stOverlayComposeTheme" style="font-size:10px;color:#888;"></span>
+              <span id="stOverlayComposeStatus" style="font-size:11px;color:#888;flex:1;min-width:0;"></span>
+              <a href="#" id="stOverlayComposeOpenEg" onclick="stOverlayClose();showPanel('emailgen');return false;" style="font-size:11px;color:#00d4ff;text-decoration:none;">Open full Email Generator &rarr;</a>
+              <button id="stOverlayComposeCopyBtn" type="button" onclick="egCopyForGmail()" style="padding:6px 14px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);border:none;color:#fff;border-radius:5px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;">COPY FOR GMAIL</button>
+            </div>
+            <div style="flex:1;position:relative;min-height:0;background:#fff;">
+              <iframe id="stOverlayComposeFrame" src="about:blank" style="width:100%;height:100%;border:0;background:#fff;"></iframe>
+              <div id="stOverlayComposeEmpty" style="display:none;position:absolute;inset:0;padding:36px;text-align:center;color:#aaa;font-size:13px;background:#0a0a12;">
+                <div style="max-width:420px;margin:60px auto 0;">
+                  <div style="font-size:15px;color:#fff;margin-bottom:10px;font-weight:700;">No release loaded</div>
+                  <div style="line-height:1.6;">Fill the <strong style="color:#00d4ff;">Intake</strong> tab first so we have a song to build the email around, then come back here.</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
