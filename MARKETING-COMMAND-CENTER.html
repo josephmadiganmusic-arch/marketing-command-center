@@ -4294,15 +4294,20 @@ function stIsPopupOnlyHost(url) {
   return ST_POPUP_ONLY_HOSTS.some(allow => h === allow || h.endsWith('.' + allow));
 }
 
-// Per-site custom left-pane renderers. Keyed by bare hostname (lowercase,
-// no www.) -> short key string consumed by stOverlayRenderMetadata to pick
-// the right builder. Sites listed here get a bespoke email / DM generator
-// PREPENDED above the standard release-metadata fields; the metadata block
-// still renders below so Copy Song Title / Copy Artist / etc. stay wired.
+// Per-site custom left-pane renderers. Keyed by hostname OR host+path
+// prefix (lowercase, no www., no trailing slash) -> short key string
+// consumed by stOverlayRenderMetadata to pick the right builder. Sites
+// listed here get a bespoke email / DM / field list PREPENDED above the
+// standard release-metadata fields; the metadata block still renders
+// below so Copy Song Title / Copy Artist / etc. stay wired.
 //   - rapzilla.com            -> static Rapzilla submission email (SONG/VIDEO)
 //   - jesuswired.com          -> static JesusWired email (4-type selector)
 //   - jesusfreakhideout.com   -> Claude-generated press_release intro
-// Host matching mirrors ST_POPUP_ONLY_HOSTS: exact host OR *.host subdomain.
+// Key format: if the key contains a '/' it is treated as a host+path
+// prefix match (needed to disambiguate multiple sites hosted on the same
+// form-hosting service like form.jotform.com); otherwise it is a bare
+// hostname match (exact host OR *.host subdomain, mirroring
+// ST_POPUP_ONLY_HOSTS behavior).
 const ST_CUSTOM_PANE_HOSTS = {
   'rapzilla.com': 'rapzilla',
   'jesuswired.com': 'jesuswired',
@@ -4324,34 +4329,64 @@ const ST_CUSTOM_PANE_THEMES = {
   'jesusfreakhideout.com': 'blue',
 };
 
-// Resolve a contact+url to a brand-matching EG theme name, or '' if no
-// mapping applies. Checks the same candidate list as stGetCustomPaneKey so
-// form-type rows and website-only rows both work.
-function stGetCustomPaneTheme(contact, url) {
+// Normalize a URL/string to the lowercase "host/path" form used by
+// stMatchCustomPaneMap for prefix matching. Strips protocol, leading
+// www., trailing slash, query, and hash. Returns '' on malformed input.
+// For bare-hostname strings (no protocol) we still produce a usable
+// normalized form so contact.website entries like "rapzilla.com" or
+// "rapzilla.com/submit" resolve the same as full URLs.
+function stNormalizeForPaneMatch(c) {
+  if (!c) return '';
+  try {
+    const u = new URL(c);
+    return (u.hostname.replace(/^www\./, '') + u.pathname).toLowerCase().replace(/\/+$/, '');
+  } catch(_) {
+    return String(c).toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/[?#].*$/, '')
+      .replace(/\/+$/, '');
+  }
+}
+
+// Shared matcher for ST_CUSTOM_PANE_HOSTS / ST_CUSTOM_PANE_THEMES. Walks
+// the contact's candidate URLs (explicit url, contact.website,
+// contact.submission_value) and returns the map's value for the first
+// key that matches. Key format:
+//   - "host.tld"                -> bare hostname match (exact host OR
+//                                  *.host subdomain)
+//   - "host.tld/path/prefix"    -> host+path prefix match (used for
+//                                  disambiguating sites on shared form
+//                                  hosts like form.jotform.com/<id>)
+// Returns '' when no candidate matches any key.
+function stMatchCustomPaneMap(contact, url, map) {
   const candidates = [url, contact && contact.website, contact && contact.submission_value];
   for (const c of candidates) {
-    const h = stGetHost(c || '');
-    if (!h) continue;
-    for (const allow in ST_CUSTOM_PANE_THEMES) {
-      if (h === allow || h.endsWith('.' + allow)) return ST_CUSTOM_PANE_THEMES[allow];
+    const norm = stNormalizeForPaneMatch(c);
+    if (!norm) continue;
+    const host = norm.split('/')[0];
+    for (const allow in map) {
+      if (allow.indexOf('/') !== -1) {
+        if (norm === allow || norm.startsWith(allow + '/')) return map[allow];
+      } else {
+        if (host === allow || host.endsWith('.' + allow)) return map[allow];
+      }
     }
   }
   return '';
+}
+
+// Resolve a contact+url to a brand-matching EG theme name, or '' if no
+// mapping applies.
+function stGetCustomPaneTheme(contact, url) {
+  return stMatchCustomPaneMap(contact, url, ST_CUSTOM_PANE_THEMES);
 }
 
 // Resolve a contact+url to a custom-pane key, or '' if no custom pane
 // applies. Checks the contact's website first, then the submission_value
 // so a form-type row with its URL in either column still matches.
 function stGetCustomPaneKey(contact, url) {
-  const candidates = [url, contact && contact.website, contact && contact.submission_value];
-  for (const c of candidates) {
-    const h = stGetHost(c || '');
-    if (!h) continue;
-    for (const allow in ST_CUSTOM_PANE_HOSTS) {
-      if (h === allow || h.endsWith('.' + allow)) return ST_CUSTOM_PANE_HOSTS[allow];
-    }
-  }
-  return '';
+  return stMatchCustomPaneMap(contact, url, ST_CUSTOM_PANE_HOSTS);
 }
 
 function stApplyLockState() {
