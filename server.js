@@ -2440,11 +2440,16 @@ app.get('/api/outreach/contacts', requireOutreachUnlocked, (req, res) => {
   const verRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
   const version = verRow ? verRow.current_version : 0;
   // Phone-only contacts are excluded from the tracker — cold-calling is not
-  // a supported outreach motion and the client will not render them. Defense
-  // in depth: filtering server-side ensures phone numbers never leave the DB
-  // to the browser, even if a future client-side bug forgets to drop them.
+  // a supported outreach motion and the client will not render them. Email
+  // contacts are ALSO excluded from the tracker (see R13): the tracker only
+  // hosts click-through outreach (forms, websites, playlist forms, socials)
+  // because email reach-outs are handled via the per-category Google Contacts
+  // CSV export (/api/outreach/export/:category.csv), so opening each email
+  // contact one-by-one in the overlay would be redundant. Defense in depth:
+  // filtering server-side ensures these rows never leave the DB to the
+  // browser, even if a future client-side bug forgets to drop them.
   const contacts = version > 0
-    ? dbHelpers.prepare("SELECT id, category, name, submission_type, submission_value, website, phone, notes FROM outreach_contacts WHERE version = ? AND submission_type != 'phone' ORDER BY category, name").all(version)
+    ? dbHelpers.prepare("SELECT id, category, name, submission_type, submission_value, website, phone, notes FROM outreach_contacts WHERE version = ? AND submission_type != 'phone' AND submission_type != 'email' ORDER BY category, name").all(version)
     : [];
   const progress = dbHelpers.prepare('SELECT contact_id, status, release_id, submitted_at FROM submission_progress WHERE user_id = ?').all(req.user.id);
   res.json({ version, contacts, progress });
