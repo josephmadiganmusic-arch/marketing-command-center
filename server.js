@@ -2177,8 +2177,12 @@ app.get('/api/outreach/status', requireAuth, (req, res) => {
 app.get('/api/outreach/contacts', requireOutreachUnlocked, (req, res) => {
   const verRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
   const version = verRow ? verRow.current_version : 0;
+  // Phone-only contacts are excluded from the tracker — cold-calling is not
+  // a supported outreach motion and the client will not render them. Defense
+  // in depth: filtering server-side ensures phone numbers never leave the DB
+  // to the browser, even if a future client-side bug forgets to drop them.
   const contacts = version > 0
-    ? dbHelpers.prepare('SELECT id, category, name, submission_type, submission_value, website, phone, notes FROM outreach_contacts WHERE version = ? ORDER BY category, name').all(version)
+    ? dbHelpers.prepare("SELECT id, category, name, submission_type, submission_value, website, phone, notes FROM outreach_contacts WHERE version = ? AND submission_type != 'phone' ORDER BY category, name").all(version)
     : [];
   const progress = dbHelpers.prepare('SELECT contact_id, status, release_id, submitted_at FROM submission_progress WHERE user_id = ?').all(req.user.id);
   res.json({ version, contacts, progress });

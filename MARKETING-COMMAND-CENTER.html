@@ -1553,7 +1553,7 @@
         </div>
         <div id="stSubTabs" class="st-subtabs" style="display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #2a2a32;">
           <button class="st-subtab active" data-kind="forms_emails" onclick="stFilterSubTab('forms_emails')">Forms &amp; Emails</button>
-          <button class="st-subtab" data-kind="direct_outreach" onclick="stFilterSubTab('direct_outreach')">Direct Outreach</button>
+          <button class="st-subtab" data-kind="direct_outreach" onclick="stFilterSubTab('direct_outreach')">Social</button>
         </div>
         <div id="stSummary" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
         <div id="stList"></div>
@@ -3997,8 +3997,14 @@ window.ST_STATE = {
 };
 
 const ST_FORMS_TYPES = ['email', 'form', 'unknown'];
-const ST_DIRECT_TYPES = ['social', 'phone'];
-const ST_TYPE_LABELS = { email:'Email', form:'Form', social:'Social', phone:'Phone', unknown:'Unknown' };
+// Phone-only contacts are intentionally EXCLUDED from the tracker UI.
+// Cold-calling as an outreach motion is not supported by the product
+// contract — contacts are filtered out at load time (stInit) and on the
+// server /api/outreach/contacts query. The sub-tab formerly labeled
+// "Direct Outreach" is now "Social" since social is the only remaining
+// non-form/email submission type.
+const ST_DIRECT_TYPES = ['social'];
+const ST_TYPE_LABELS = { email:'Email', form:'Form', social:'Social', unknown:'Unknown' };
 
 function stApplyLockState() {
   const wrap = document.getElementById('submissionTrackerWrap');
@@ -4026,7 +4032,11 @@ async function stInit() {
     }
     const j = await r.json();
     window.ST_STATE.version = j.version || 0;
-    window.ST_STATE.contacts = Array.isArray(j.contacts) ? j.contacts : [];
+    // Belt-and-suspenders phone filter: the server also drops phone-only
+    // rows, but we re-filter client-side so a future API regression or an
+    // admin-mode bypass can't surface phone contacts in the tracker.
+    const rawContacts = Array.isArray(j.contacts) ? j.contacts : [];
+    window.ST_STATE.contacts = rawContacts.filter(c => c.submission_type !== 'phone');
     const prog = {};
     (j.progress || []).forEach(p => { prog[p.contact_id] = p; });
     window.ST_STATE.progress = prog;
