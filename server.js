@@ -2784,6 +2784,67 @@ app.post('/api/intake/transcribe-lyrics',
   }
 );
 
+// Intake — Genius-format lyric sectioning via Claude. Takes the current
+// lyrics textarea content (either a raw Whisper transcript or manually
+// typed lyrics) and injects Genius-style section headers ([Intro],
+// [Verse 1], [Chorus], [Verse 2], [Bridge], [Outro], etc). Preserves the
+// user's exact words and line breaks; only adds bracketed headers and
+// normalizes obvious line-break issues. Shares rlClaude with other
+// Claude endpoints. Trial users can access (requireAccess, per R11).
+app.post('/api/intake/format-lyrics-genius', requireAccess, rlClaude, async (req, res) => {
+  const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
+  if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured' });
+
+  const raw = typeof (req.body && req.body.lyrics) === 'string' ? req.body.lyrics : '';
+  const trimmed = raw.trim();
+  if (!trimmed) return res.status(400).json({ error: 'lyrics required' });
+  // Hard cap to keep prompt bounded. 12KB is ~2500 words, well above any
+  // realistic song.
+  if (trimmed.length > 12000) {
+    return res.status(413).json({ error: 'Lyrics too long (max ~12,000 characters)' });
+  }
+
+  const system = 'You format song lyrics into the genius.com convention by inserting bracketed section headers. Return ONLY the formatted lyrics. No preamble, no commentary, no code fences, no quotes, no explanations. PRESERVE the user\'s exact words, spelling, and line breaks. Do NOT paraphrase, rewrite, correct, or add lyrics. Do NOT remove lyrics. Only two things are allowed: (1) insert bracketed section headers on their own line before the relevant block, and (2) collapse runs of 3+ blank lines to a single blank line. Section headers use these exact formats: [Intro], [Verse 1], [Verse 2], [Pre-Chorus], [Chorus], [Post-Chorus], [Refrain], [Bridge], [Breakdown], [Interlude], [Hook], [Outro]. Number verses sequentially starting at 1. Detect repeated choruses by matching content and label them all [Chorus] without numbering. If the song has a clear hook that repeats, use [Hook] consistently. If you cannot confidently identify a section, default to [Verse N]. Add a single blank line between sections. Do NOT use em dashes (U+2014) or en dashes (U+2013) anywhere.';
+
+  const userPrompt = `Format these lyrics for genius.com. Remember: insert bracketed section headers only, preserve words and line breaks exactly, return only the formatted lyrics.\n\n---\n${trimmed}\n---`;
+
+  try {
+    const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': CLAUDE_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: DEFAULT_CLAUDE_MODEL,
+        max_tokens: 4000,
+        system,
+        messages: [{ role: 'user', content: userPrompt }]
+      }),
+      signal: AbortSignal.timeout(90000)
+    });
+    if (!aiResp.ok) {
+      const errText = await aiResp.text();
+      console.error('[FORMAT-LYRICS] Anthropic error:', aiResp.status, errText.slice(0, 500));
+      return res.status(502).json({ error: 'AI service unavailable' });
+    }
+    const data = await aiResp.json();
+    const text = (data.content && data.content[0] && data.content[0].text) || '';
+    try {
+      if (req.user.role !== 'admin') {
+        recordClaudeUsage(req.user.id, data.usage?.input_tokens || 0, data.usage?.output_tokens || 0);
+      }
+    } catch(_) {}
+    if (!text.trim()) return res.status(502).json({ error: 'Empty AI response' });
+    const cleaned = text.trim().replace(/\u2014/g, ', ').replace(/\u2013/g, '-');
+    res.json({ lyrics: cleaned, model: DEFAULT_CLAUDE_MODEL });
+  } catch (err) {
+    console.error('[FORMAT-LYRICS] fetch error:', err.message);
+    res.status(502).json({ error: 'AI request failed' });
+  }
+});
+
 // Mark a submission as complete + grant +25 XP inline. Unique index on
 // (user_id, contact_id) means repeat submissions for the same contact are
 // idempotent — we don't double-grant XP on re-clicks.

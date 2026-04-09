@@ -1059,6 +1059,7 @@
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
               <input type="file" id="in-lyricsAudioInput" accept="audio/*" style="display:none;" onchange="transcribeLyricsFromAudio(this)">
               <button type="button" id="in-lyricsUploadBtn" style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="document.getElementById('in-lyricsAudioInput').click()">Upload Audio to Transcribe</button>
+              <button type="button" id="in-lyricsFormatBtn" style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="formatLyricsForGenius(this)">Format for Genius</button>
               <span id="in-lyricsStatus" style="font-size:11px;color:#6b7280;"></span>
             </div>
             <p style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.5;">Upload an MP3/WAV/M4A of your song and Whisper will transcribe it. Edit any mistakes, then use Format for Genius (coming next) to add section headers. Required by radio stations like God's House of Hip Hop, also used for your genius.com upload.</p>
@@ -3041,6 +3042,52 @@ async function transcribeLyricsFromAudio(input) {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origLabel || 'Upload Audio to Transcribe'; btn.style.opacity = '1'; }
     input.value = '';
+  }
+}
+
+async function formatLyricsForGenius(btn) {
+  const textarea = document.getElementById('in-lyrics');
+  const status = document.getElementById('in-lyricsStatus');
+  const raw = (textarea && textarea.value || '').trim();
+
+  if (!raw) {
+    if (status) { status.textContent = 'Paste or transcribe lyrics first.'; status.style.color = '#f87171'; }
+    showToast('Lyrics textarea is empty');
+    return;
+  }
+
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Formatting...';
+  btn.style.opacity = '0.5';
+  if (status) { status.textContent = 'Adding Genius section headers...'; status.style.color = '#00d4ff'; }
+
+  try {
+    const resp = await fetch('/api/intake/format-lyrics-genius', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ lyrics: raw })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const msg = (data && data.error) || ('Format failed (' + resp.status + ')');
+      throw new Error(msg);
+    }
+    const formatted = (data.lyrics || '').trim();
+    if (!formatted) throw new Error('Empty response');
+
+    textarea.value = formatted;
+    intakeUpdate();
+    if (status) { status.textContent = 'Formatted for Genius. Review and edit as needed.'; status.style.color = '#4ade80'; }
+    showToast('Lyrics formatted for Genius!');
+  } catch (err) {
+    if (status) { status.textContent = 'Error: ' + err.message; status.style.color = '#f87171'; }
+    showToast('Format failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+    btn.style.opacity = '1';
   }
 }
 
