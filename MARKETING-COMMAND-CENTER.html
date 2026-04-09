@@ -4343,35 +4343,13 @@ function stOpenSubmission(contactId) {
     nonUrlMsg.style.display = 'none';
     iframe.style.display = '';
     rightNotice.style.display = '';
-    rightNotice.textContent = 'Loading ' + url + '\u2026';
-    iframe.src = 'about:blank';
-    // Iframe-first with 2.5s detection. If the iframe's contentDocument is
-    // unreachable (X-Frame-Options / CSP blocking), fall back to window.open
-    // positioned on the right half of the screen.
-    let iframeLoadedOk = false;
-    iframe.onload = function() {
-      try {
-        // Same-origin check — accessing contentDocument throws on cross-origin block.
-        const doc = iframe.contentDocument;
-        if (doc && doc.location && doc.location.href && doc.location.href !== 'about:blank') {
-          iframeLoadedOk = true;
-          rightNotice.textContent = 'Loaded in-page. If the page looks blank, click "Open in Popup" to open it in a separate window.';
-        }
-      } catch(e) {
-        // Same-origin check failed — cross-origin content, but the frame may
-        // still render fine. We can't prove it, so the 2.5s timer stays as
-        // the authoritative fallback.
-      }
-    };
+    rightNotice.textContent = 'Loading ' + url + ' \u2014 if the page refuses to frame, click "Open in Popup".';
+    // Iframe-only. The previous auto-popup fallback (2.5s timer that called
+    // stOverlayOpenPopup) was opening a second window on top of the iframe
+    // and was noisy — user prefers iframe-only with manual popup escape via
+    // the "Open in Popup" header button. If the iframe shows blank, they
+    // click the button explicitly.
     iframe.src = url;
-    window.ST_OVERLAY.loadTimer = setTimeout(function() {
-      // If the iframe didn't signal a successful same-origin load, assume
-      // the target refused to frame us and open a popup fallback.
-      if (!iframeLoadedOk) {
-        stOverlayOpenPopup(url);
-      }
-    }, 2500);
-    // Store URL for the manual "Open in Popup" button
     document.getElementById('stOverlayPopupBtn').onclick = function() { stOverlayOpenPopup(url); };
   }
 
