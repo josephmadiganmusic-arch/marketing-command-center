@@ -2146,12 +2146,24 @@ async function serverLoad() {
     const resp = await fetch('/api/data/load');
     if (!resp.ok) return;
     const data = await resp.json();
-    // Merge server data into localStorage (server wins if local is empty)
+    // Merge server data into localStorage.
+    // Most keys: server wins when local is missing (the original behavior).
+    // release_data_all: UNION merge — so a save from another device/session
+    // is never silently lost. Per-release key conflicts prefer the local
+    // copy (assumed fresher on the current device).
     for (const [key, value] of Object.entries(data)) {
       const localKey = ukey(key);
-      const localVal = localStorage.getItem(localKey);
-      // Server data takes priority if local is missing
-      if (!localVal) {
+      const localRaw = localStorage.getItem(localKey);
+      if (key === 'release_data_all') {
+        let localObj = {};
+        try { localObj = JSON.parse(localRaw || '{}') || {}; } catch(_) { localObj = {}; }
+        const serverObj = (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+        // Object.assign order matters: local overrides server per-key.
+        const merged = Object.assign({}, serverObj, localObj);
+        try { localStorage.setItem(localKey, JSON.stringify(merged)); } catch(_) {}
+        continue;
+      }
+      if (!localRaw) {
         localStorage.setItem(localKey, typeof value === 'string' ? value : JSON.stringify(value));
       }
     }
@@ -2855,6 +2867,10 @@ function intakeUpdate() {
         try { localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved)); } catch(e2) {}
       }
     }
+    // Sync autosaved release bundle to server. Without this, the only path
+    // to the server for in-progress releases is beforeunload sendBeacon,
+    // which is lost on browser crash / tab kill / network drop.
+    serverSave('release_data_all', saved);
     intakeLoadList();
     const sel = document.getElementById('intakeReleaseSelect');
     if (sel) sel.value = data.songTitle;
