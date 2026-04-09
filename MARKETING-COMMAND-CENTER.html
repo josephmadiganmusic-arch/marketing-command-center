@@ -7516,8 +7516,11 @@ serverLoad().then(() => {
       <button onclick="stOverlayClose()" aria-label="Close" style="padding:8px 14px;background:transparent;border:1px solid #444;color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;">&#x2715;</button>
     </div>
     <div style="flex:1;display:flex;min-height:0;">
-      <!-- Left pane: release metadata with copy buttons -->
-      <div id="stOverlayLeft" style="width:420px;max-width:42%;border-right:1px solid #2a2a32;background:#0d0d15;display:flex;flex-direction:column;">
+      <!-- Left pane: release metadata with copy buttons. Hidden by default
+           per user preference — iframe-only is enough. The DOM stays so the
+           existing stOverlayRenderMetadata() JS keeps working without a
+           refactor, but nothing renders. -->
+      <div id="stOverlayLeft" style="display:none;width:420px;max-width:42%;border-right:1px solid #2a2a32;background:#0d0d15;flex-direction:column;">
         <div style="padding:14px 18px;border-bottom:1px solid #1e1e28;">
           <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;font-weight:600;">Release Metadata</div>
           <div style="font-size:11px;color:#666;margin-top:3px;">Copy &amp; paste into the submission form</div>

@@ -2480,10 +2480,13 @@ app.get('/api/outreach/export/:category.csv', requireOutreachUnlocked, (req, res
   };
   const lines = ['Name,E-mail 1 - Value,Group Membership'];
   for (const r of rows) {
-    // Only emit contacts where submission_type is email — Google Contacts
-    // expects real addresses. Non-email contacts (form, social, phone)
-    // ship via the Submission Tracker, not the CSV export.
-    const email = r.submission_type === 'email' ? r.submission_value : '';
+    // Google Contacts only makes sense for email contacts — skip form,
+    // social, phone, and anything without a valid-looking email address
+    // so the exported CSV never contains blank-email rows that would
+    // pollute the user's Google Contacts with unaddressable entries.
+    if (r.submission_type !== 'email') continue;
+    const email = String(r.submission_value || '').trim();
+    if (!email || email.indexOf('@') < 1) continue;
     lines.push([csvEscape(r.name), csvEscape(email), csvEscape('Rollout Heaven :: ' + groupLabel)].join(','));
   }
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
