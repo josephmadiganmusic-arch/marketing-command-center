@@ -1313,6 +1313,25 @@
             </div>
           </div>
           <div class="form-section">
+            <div class="form-section-title">Artist Photo</div>
+            <div class="upload-zone" id="egArtistPhotoZone">
+              <input type="file" id="egArtistPhotoInput" accept="image/*" onchange="egHandleArtistPhoto(this)">
+              <div class="upload-icon">&#9728;</div>
+              <div class="upload-label">Drop artist photo here or click to upload</div>
+              <div class="upload-hint">JPG, PNG, or WEBP (recommended 1200x1500 portrait)</div>
+              <div class="upload-filename" id="egArtistPhotoName"></div>
+              <div class="upload-size" id="egArtistPhotoSize"></div>
+              <div class="cover-preview" id="egArtistPhotoPreview"><img id="egArtistPhotoPreviewImg" alt="Artist Photo"></div>
+            </div>
+            <button type="button" class="upload-clear" id="egArtistPhotoClearBtn" style="display:none;" onclick="egClearArtistPhoto(event)">Remove Artist Photo</button>
+            <div class="form-grid" style="margin-top:16px;">
+              <div class="form-group full-width">
+                <label>Or paste hosted image URL</label>
+                <input type="text" id="egArtistPhotoUrl" placeholder="https://yoursite.com/artist.jpg" oninput="egHandleArtistPhotoUrl(this.value)">
+              </div>
+            </div>
+          </div>
+          <div class="form-section">
             <div class="form-section-title">Track Information</div>
             <div class="form-grid">
               <div class="form-group"><label>Song Title *</label><input type="text" id="egSongTitle" placeholder="Enter song title" required></div>
@@ -1409,6 +1428,7 @@
           <button class="template-btn" data-theme="cream" onclick="egSetTheme('cream',this)">Warm Cream</button>
           <button class="template-btn" data-theme="slate" onclick="egSetTheme('slate',this)">Slate Indigo</button>
           <button class="template-btn" data-theme="rose" onclick="egSetTheme('rose',this)">Neon Rose</button>
+          <button class="template-btn" data-theme="rapzilla" onclick="egSetTheme('rapzilla',this)">Rapzilla Red</button>
         </div>
         <!-- Outreach category bar — AI-tweaked intro generators per audience (R9). -->
         <div class="category-bar" id="egCategoryBar" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
@@ -3917,6 +3937,7 @@ function renderChecklist(elId, items) {
 let egCurrentTheme = 'dark';
 let egGeneratedHTML = '';
 let egCoverArtData = null;
+let egArtistPhotoData = null;
 // egMp3Data/egWavData removed — audio now shared via Google Drive links
 
 const egThemes = {
@@ -3928,7 +3949,13 @@ const egThemes = {
   emerald: { bg:'#060f0a',containerBg:'#0a1810',containerBorder:'#14281c',accent:'#34d399',accentGrad:'linear-gradient(90deg,#34d399,#6ee7b7,#34d399)',accentGradBtn:'linear-gradient(135deg,#34d399,#6ee7b7)',textPrimary:'#f0fdf7',textSecondary:'#b8dcc8',textMuted:'#5a9a78',textDim:'#3a7058',cardBg:'#0f2018',cardBorder:'#14281c',divider:'#14281c',btnText:'#060f0a',footerText:'#1e4030' },
   cream: { bg:'#f8f5ef',containerBg:'#fffdf8',containerBorder:'#e8e0d0',accent:'#8b6914',accentGrad:'linear-gradient(90deg,#8b6914,#b8941e,#8b6914)',accentGradBtn:'linear-gradient(135deg,#8b6914,#a07a18)',textPrimary:'#2a2015',textSecondary:'#4a3e30',textMuted:'#8a7e6e',textDim:'#b0a898',cardBg:'#f4f0e8',cardBorder:'#e0d8c8',divider:'#ddd5c5',btnText:'#fffdf8',footerText:'#b8b0a0' },
   slate: { bg:'#f0f2f5',containerBg:'#ffffff',containerBorder:'#d8dce3',accent:'#4f46e5',accentGrad:'linear-gradient(90deg,#4f46e5,#7c73fa,#4f46e5)',accentGradBtn:'linear-gradient(135deg,#4f46e5,#6366f1)',textPrimary:'#1e1b4b',textSecondary:'#3b3866',textMuted:'#6b6b8a',textDim:'#9b9bb0',cardBg:'#f5f6fa',cardBorder:'#e2e4ed',divider:'#dde0ea',btnText:'#ffffff',footerText:'#a0a4b8' },
-  rose: { bg:'#0f0608',containerBg:'#170a10',containerBorder:'#2e141e',accent:'#f472b6',accentGrad:'linear-gradient(90deg,#ec4899,#f9a8d4,#ec4899)',accentGradBtn:'linear-gradient(135deg,#ec4899,#f472b6)',textPrimary:'#fdf2f8',textSecondary:'#e0c0d0',textMuted:'#9a6880',textDim:'#6a4058',cardBg:'#1e0e18',cardBorder:'#2e141e',divider:'#2e141e',btnText:'#0f0608',footerText:'#4a2038' }
+  rose: { bg:'#0f0608',containerBg:'#170a10',containerBorder:'#2e141e',accent:'#f472b6',accentGrad:'linear-gradient(90deg,#ec4899,#f9a8d4,#ec4899)',accentGradBtn:'linear-gradient(135deg,#ec4899,#f472b6)',textPrimary:'#fdf2f8',textSecondary:'#e0c0d0',textMuted:'#9a6880',textDim:'#6a4058',cardBg:'#1e0e18',cardBorder:'#2e141e',divider:'#2e141e',btnText:'#0f0608',footerText:'#4a2038' },
+  // Rapzilla-branded theme: white/red/black matching rapzilla.com's brand
+  // palette. The red is their exact brand hex #f23024. Black body text on
+  // a white surface — classic print/editorial feel — with red accents for
+  // section headers, buttons, and the left-border signature bar. Auto-picked
+  // by ST_CUSTOM_PANE_THEMES when the contact's host is rapzilla.com.
+  rapzilla: { bg:'#f5f5f5',containerBg:'#ffffff',containerBorder:'#1a1a1a',accent:'#f23024',accentGrad:'linear-gradient(90deg,#f23024,#ff5040,#f23024)',accentGradBtn:'linear-gradient(135deg,#f23024,#c41e14)',textPrimary:'#0a0a0a',textSecondary:'#1a1a1a',textMuted:'#555555',textDim:'#888888',cardBg:'#fafafa',cardBorder:'#1a1a1a',divider:'#1a1a1a',btnText:'#ffffff',footerText:'#888888' }
 };
 
 const egPlatformColors = { 'spotify':'#1DB954','apple music':'#FC3C44','amazon music':'#25D1DA','tidal':'#ffffff','youtube music':'#FF0000','youtube':'#FF0000','soundcloud':'#FF5500','deezer':'#A238FF','pandora':'#3668FF','audiomack':'#FFA200','bandcamp':'#1DA0C3' };
@@ -3947,8 +3974,55 @@ function egHandleCoverArt(input) {
     document.getElementById('egCoverArtZone').classList.add('has-file');
     document.getElementById('egCoverClearBtn').style.display = 'inline-block';
     document.getElementById('egCoverArtUrl').value = '';
+    // If the Submission Tracker overlay is open in Compose mode, live-refresh
+    // the right-pane preview so the uploaded art appears immediately.
+    if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
   };
   reader.readAsDataURL(file);
+}
+
+function egHandleArtistPhoto(input) {
+  const file = input.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    egArtistPhotoData = e.target.result;
+    document.getElementById('egArtistPhotoName').textContent = file.name;
+    document.getElementById('egArtistPhotoSize').textContent = egFormatBytes(file.size);
+    document.getElementById('egArtistPhotoPreviewImg').src = egArtistPhotoData;
+    document.getElementById('egArtistPhotoPreview').style.display = 'block';
+    document.getElementById('egArtistPhotoZone').classList.add('has-file');
+    document.getElementById('egArtistPhotoClearBtn').style.display = 'inline-block';
+    document.getElementById('egArtistPhotoUrl').value = '';
+    if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
+  };
+  reader.readAsDataURL(file);
+}
+
+function egHandleArtistPhotoUrl(url) {
+  if(url.trim()) {
+    egArtistPhotoData = url.trim();
+    document.getElementById('egArtistPhotoPreviewImg').src = url.trim();
+    document.getElementById('egArtistPhotoPreview').style.display = 'block';
+    document.getElementById('egArtistPhotoZone').classList.add('has-file');
+    document.getElementById('egArtistPhotoName').textContent = 'External URL';
+    document.getElementById('egArtistPhotoSize').textContent = '';
+    document.getElementById('egArtistPhotoClearBtn').style.display = 'inline-block';
+    document.getElementById('egArtistPhotoInput').value = '';
+    if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
+  }
+}
+
+function egClearArtistPhoto(e) {
+  e.stopPropagation();
+  egArtistPhotoData = null;
+  document.getElementById('egArtistPhotoInput').value = '';
+  document.getElementById('egArtistPhotoUrl').value = '';
+  document.getElementById('egArtistPhotoName').textContent = '';
+  document.getElementById('egArtistPhotoSize').textContent = '';
+  document.getElementById('egArtistPhotoPreview').style.display = 'none';
+  document.getElementById('egArtistPhotoZone').classList.remove('has-file');
+  document.getElementById('egArtistPhotoClearBtn').style.display = 'none';
+  if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
 }
 
 function egHandleCoverArtUrl(url) {
@@ -3961,6 +4035,7 @@ function egHandleCoverArtUrl(url) {
     document.getElementById('egCoverArtSize').textContent = '';
     document.getElementById('egCoverClearBtn').style.display = 'inline-block';
     document.getElementById('egCoverArtInput').value = '';
+    if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
   }
 }
 
@@ -3974,6 +4049,7 @@ function egClearCoverArt(e) {
   document.getElementById('egCoverPreview').style.display = 'none';
   document.getElementById('egCoverArtZone').classList.remove('has-file');
   document.getElementById('egCoverClearBtn').style.display = 'none';
+  if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
 }
 
 // Audio upload functions removed — replaced with Google Drive link fields
@@ -4243,7 +4319,7 @@ const ST_CUSTOM_PANE_HOSTS = {
 //   - jesusfreakhideout.com -> blue   (dark navy matches jesusfreakhideout.com)
 // Hosts not listed here leave whatever theme the user last picked unchanged.
 const ST_CUSTOM_PANE_THEMES = {
-  'rapzilla.com': 'fire',
+  'rapzilla.com': 'rapzilla',
   'jesuswired.com': 'royal',
   'jesusfreakhideout.com': 'blue',
 };
@@ -4477,7 +4553,6 @@ function stOpenSubmission(contactId) {
   else if (contact.website && /^https?:\/\//i.test(contact.website)) url = contact.website;
   else if (contact.website) url = 'https://' + contact.website;
 
-  const rightPane = document.getElementById('stOverlayRight');
   const iframe = document.getElementById('stOverlayIframe');
   const rightNotice = document.getElementById('stOverlayRightNotice');
   const nonUrlMsg = document.getElementById('stOverlayNonUrl');
@@ -4489,50 +4564,40 @@ function stOpenSubmission(contactId) {
   }
   window.ST_OVERLAY.popupRef = null;
 
+  // Right pane is now always the Email Generator preview (compose view) —
+  // the submission site opens in a popup window via the header button (or
+  // automatically for known popup-only hosts). We never iframe the site.
+  iframe.style.display = 'none';
+  iframe.src = 'about:blank';
+  nonUrlMsg.style.display = 'none';
+
   if (!url) {
-    iframe.style.display = 'none';
-    rightNotice.style.display = 'none';
-    nonUrlMsg.style.display = '';
+    rightNotice.style.display = '';
     const raw = contact.submission_value || '(no submission value)';
-    nonUrlMsg.innerHTML = '<div style="font-size:14px;color:#fff;margin-bottom:8px;">Direct outreach target</div>'
-      + '<div style="font-size:13px;color:#bbb;margin-bottom:14px;">This contact uses <strong>' + (ST_TYPE_LABELS[contact.submission_type] || contact.submission_type) + '</strong>. There\u2019s no form to embed.</div>'
-      + '<div style="padding:12px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);border-radius:8px;font-family:monospace;font-size:13px;color:#00d4ff;word-break:break-all;">' + raw.replace(/[<>&]/g, ch => ({ '<':'&lt;','>':'&gt;','&':'&amp;' }[ch])) + '</div>'
-      + '<button onclick="stOverlayCopyValue(' + JSON.stringify(String(raw)).replace(/"/g,'&quot;') + ')" style="margin-top:12px;padding:8px 14px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.4);color:#00d4ff;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;">Copy</button>';
-  } else if (stIsPopupOnlyHost(url)) {
-    // Known popup-only sites (ST_POPUP_ONLY_HOSTS) — skip the iframe attempt
-    // entirely and open the submission page in a popup window immediately.
-    // These sites all refuse X-Frame-Options; the prior behavior showed a
-    // broken-iframe first, then forced the user to click "Open in Popup".
-    nonUrlMsg.style.display = 'none';
-    iframe.style.display = 'none';
-    rightNotice.style.display = '';
-    document.getElementById('stOverlayPopupBtn').onclick = function() { stOverlayOpenPopup(url); };
-    stOverlayOpenPopup(url);
-    // Site-specific right-pane notice overrides. Amen Worldwide's site is
-    // currently under construction — users who see a half-rendered page may
-    // wonder if the list is stale, so reassure them the list is verified
-    // clean and Amen is intentionally retained.
-    const _host = stGetHost(url);
-    if (_host === 'amenworldwide.com') {
-      rightNotice.innerHTML = '<div style="color:#00d4ff;font-weight:600;margin-bottom:6px;">Opened in popup window</div>'
-        + '<div style="color:#ccc;font-size:12px;line-height:1.5;">Our outreach list is verified clean. <strong>Amen Worldwide</strong> is kept on the list because their site is currently under construction \u2014 try the popup or check back later.</div>';
-    }
+    const rawEsc = String(raw).replace(/[<>&]/g, ch => ({ '<':'&lt;','>':'&gt;','&':'&amp;' }[ch]));
+    rightNotice.innerHTML = '<span style="color:#888;">Direct outreach target (' + (ST_TYPE_LABELS[contact.submission_type] || contact.submission_type) + '):</span> <span style="color:#00d4ff;font-family:monospace;">' + rawEsc + '</span>';
+    document.getElementById('stOverlayPopupBtn').style.display = 'none';
   } else {
-    nonUrlMsg.style.display = 'none';
-    iframe.style.display = '';
     rightNotice.style.display = '';
-    rightNotice.textContent = 'Loading ' + url + ' \u2014 if the page refuses to frame, click "Open in Popup".';
-    // Iframe-only. The previous auto-popup fallback (2.5s timer that called
-    // stOverlayOpenPopup) was opening a second window on top of the iframe
-    // and was noisy — user prefers iframe-only with manual popup escape via
-    // the "Open in Popup" header button. If the iframe shows blank, they
-    // click the button explicitly.
-    iframe.src = url;
+    rightNotice.innerHTML = '<span style="color:#888;">Submission site:</span> <a href="' + url + '" target="_blank" rel="noopener" style="color:#00d4ff;text-decoration:none;">' + url + '</a> &nbsp;&middot;&nbsp; <span style="color:#888;">click "Open in Popup" to load it in a side window.</span>';
+    document.getElementById('stOverlayPopupBtn').style.display = '';
     document.getElementById('stOverlayPopupBtn').onclick = function() { stOverlayOpenPopup(url); };
+    // Known popup-only hosts: auto-open the popup immediately since there's
+    // no iframe fallback anymore. Amen Worldwide gets a special construction
+    // notice in addition.
+    if (stIsPopupOnlyHost(url)) {
+      stOverlayOpenPopup(url);
+      const _host = stGetHost(url);
+      if (_host === 'amenworldwide.com') {
+        rightNotice.innerHTML += ' <span style="color:#ffb347;">Note: site is under construction.</span>';
+      }
+    }
   }
 
-  // Reset mode toggle to Site (default) and hide any leftover compose view.
-  stSetOverlayRightMode('site', true);
+  // Always prepare the compose preview — this loads intake into the EG form,
+  // auto-picks the site's brand theme, installs the mirror hook, and renders
+  // the first HTML email into the right-pane iframe.
+  stPrepareOverlayCompose();
 
   document.getElementById('stOverlay').style.display = 'flex';
   document.body.style.overflow = 'hidden';
@@ -4626,7 +4691,7 @@ function stPrepareOverlayCompose() {
       b.classList.toggle('active', b.dataset.theme === brandTheme);
     });
     if (themeEl) {
-      const labelMap = { dark:'Cosmic Night', light:'Clean White', blue:'Midnight Blue', royal:'Royal Purple', fire:'Ember', emerald:'Emerald', cream:'Warm Cream', slate:'Slate Indigo', rose:'Neon Rose' };
+      const labelMap = { dark:'Cosmic Night', light:'Clean White', blue:'Midnight Blue', royal:'Royal Purple', fire:'Ember', emerald:'Emerald', cream:'Warm Cream', slate:'Slate Indigo', rose:'Neon Rose', rapzilla:'Rapzilla Red' };
       themeEl.textContent = '\u00B7 ' + (labelMap[brandTheme] || brandTheme) + ' (matched to site)';
     }
   } else if (themeEl) {
@@ -5558,6 +5623,7 @@ function egGatherFormData() {
     dlMp3: document.getElementById('egDlMp3').value.trim(),
     dlPressKit: document.getElementById('egDlPressKit').value.trim(),
     coverArt: egCoverArtData,
+    artistPhoto: egArtistPhotoData,
     musicVideo: document.getElementById('egLinkMusicVideo').value.trim(),
     hasMp3: false, hasWav: false
   };
@@ -5608,7 +5674,14 @@ function egLoadFromIntake(silent) {
     document.getElementById('egCoverArtZone').classList.add('has-file');
     document.getElementById('egCoverClearBtn').style.display = 'inline-block';
   }
-  showToast('Loaded from Intake!');
+  if (d.artistPhoto) {
+    egArtistPhotoData = d.artistPhoto;
+    document.getElementById('egArtistPhotoPreviewImg').src = d.artistPhoto;
+    document.getElementById('egArtistPhotoPreview').style.display = 'block';
+    document.getElementById('egArtistPhotoZone').classList.add('has-file');
+    document.getElementById('egArtistPhotoClearBtn').style.display = 'inline-block';
+  }
+  if (!silent) showToast('Loaded from Intake!');
 }
 
 function egGenerateEmail() {
@@ -5658,6 +5731,11 @@ function egGenerateEmail() {
   }
   let introHTML = '';
   if(data.intro) { data.intro.split('\n').filter(p=>p.trim()).forEach(p => { introHTML += `<p style="margin:16px 0 0 0;font-size:15px;color:${t.textSecondary};line-height:1.75;">${egEscHtml(p)}</p>`; }); }
+  let artistPhotoHTML = '';
+  if(data.artistPhoto) {
+    const apSrc = data.artistPhoto.startsWith('data:') ? data.artistPhoto : egEscHtml(data.artistPhoto);
+    artistPhotoHTML = `<tr><td align="center" style="padding:28px 40px 0 40px;"><img src="${apSrc}" alt="${egEscHtml(data.artistName || data.artists)}" width="260" style="width:260px;max-width:100%;height:auto;border-radius:12px;display:block;box-shadow:0 8px 28px rgba(0,0,0,0.4);"></td></tr>`;
+  }
   let bioHTML = '';
   if(data.bio) bioHTML = `<tr><td style="padding:28px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${t.cardBg};border:1px solid ${t.cardBorder};border-radius:10px;"><tr><td style="padding:24px 28px;"><p style="margin:0 0 4px 0;font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">About The Artist</p><p style="margin:12px 0 0 0;font-size:14px;color:${t.textSecondary};line-height:1.75;">${egEscHtml(data.bio)}</p></td></tr></table></td></tr><tr><td style="padding:28px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:linear-gradient(90deg,transparent,${t.divider},${t.divider},transparent);"></td></tr></table></td></tr>`;
   let epkBtnHTML = '';
@@ -5670,7 +5748,7 @@ function egGenerateEmail() {
   const subtitleLine = subtitleParts.join(' &nbsp;&#8226;&nbsp; ');
   const dividerRow = `<tr><td style="padding:28px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:linear-gradient(90deg,transparent,${t.divider},${t.divider},transparent);"></td></tr></table></td></tr>`;
 
-  egGeneratedHTML = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${egEscHtml(data.songTitle)} - ${egEscHtml(data.artists)}</title></head><body style="margin:0;padding:0;background-color:${t.bg};font-family:'Segoe UI',Helvetica,Arial,sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${t.bg};"><tr><td align="center" style="padding:20px 10px;"><table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background-color:${t.containerBg};border-radius:12px;overflow:hidden;border:1px solid ${t.containerBorder};"><tr><td style="height:4px;background:${t.accentGrad};"></td></tr><tr><td align="center" style="padding:32px 40px 0 40px;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="background-color:${t.cardBg};border:1px solid ${t.cardBorder};border-radius:20px;padding:6px 18px;"><span style="font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">New Single Release</span></td></tr></table></td></tr>${coverHTML}<tr><td align="center" style="padding:24px 40px 0 40px;"><h1 style="margin:0;font-size:36px;font-weight:700;color:${t.textPrimary};letter-spacing:-0.5px;line-height:1.2;">${egEscHtml(data.songTitle.toUpperCase())}</h1><p style="margin:8px 0 0 0;font-size:16px;color:${t.accent};font-weight:500;letter-spacing:1px;">${egEscHtml(data.artists.toUpperCase())}</p></td></tr>${subtitleLine?`<tr><td align="center" style="padding:16px 40px 0 40px;"><span style="font-size:13px;color:${t.textMuted};letter-spacing:0.5px;">${subtitleLine}</span></td></tr>`:''  }${dividerRow}<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0;font-size:15px;color:${t.textSecondary};line-height:1.75;">Good afternoon,</p>${introHTML}</td></tr>${epkBtnHTML}${dividerRow}${bioHTML}<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0 0 20px 0;font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">Track Metadata &amp; Credits</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${metaHTML}</table></td></tr><tr><td style="padding:12px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:linear-gradient(90deg,transparent,${t.divider},${t.divider},transparent);"></td></tr></table></td></tr>${streamHTML?`<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0 0 20px 0;font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">Stream &amp; Download</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${streamHTML}</table></td></tr>${dividerRow}`:''}${musicVideoHTML}${musicVideoHTML?dividerRow:''}${downloadBtnsHTML}${downloadBtnsHTML?dividerRow:''}${materialsHTML?`<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0 0 20px 0;font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">For Radio &amp; Media</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${t.cardBg};border:1px solid ${t.cardBorder};border-radius:10px;"><tr><td style="padding:24px 28px;"><p style="margin:0;font-size:14px;color:${t.textSecondary};line-height:1.7;">I'm happy to provide any of the following:</p><table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:14px;">${materialsHTML}</table>${data.email?`<p style="margin:16px 0 0 0;font-size:13px;color:${t.textMuted};line-height:1.6;">Reply to this email or contact <a href="mailto:${egEscHtml(data.email)}" style="color:${t.accent};text-decoration:none;">${egEscHtml(data.email)}</a> to request materials.</p>`:''}</td></tr></table></td></tr>${dividerRow}`:''}<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0;font-size:15px;color:${t.textSecondary};line-height:1.75;">Thank you so much for your time and consideration. I truly appreciate what you do for independent artists, and I'd love the opportunity to connect.</p><p style="margin:20px 0 0 0;font-size:15px;color:${t.textSecondary};line-height:1.75;">God bless,</p></td></tr><tr><td style="padding:20px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:3px solid ${t.accent};"><tr><td style="padding-left:20px;"><p style="margin:0;font-size:20px;font-weight:700;color:${t.textPrimary};letter-spacing:-0.3px;">${egEscHtml(data.artistName)}</p>${data.label?`<p style="margin:4px 0 0 0;font-size:13px;color:${t.accent};font-weight:600;letter-spacing:1px;">${egEscHtml(data.label)}</p>`:''}${data.email?`<p style="margin:12px 0 0 0;font-size:13px;color:${t.textMuted};"><a href="mailto:${egEscHtml(data.email)}" style="color:${t.textMuted};text-decoration:none;">${egEscHtml(data.email)}</a></p>`:''}</td></tr></table></td></tr>${socialHTML}<tr><td align="center" style="padding:28px 40px 32px 40px;"><p style="margin:0;font-size:11px;color:${t.footerText};letter-spacing:0.3px;">&copy; ${new Date().getFullYear()} ${egEscHtml(data.label||data.artistName)} &nbsp;&#8226;&nbsp; All Rights Reserved</p></td></tr></table></td></tr></table></body></html>`;
+  egGeneratedHTML = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${egEscHtml(data.songTitle)} - ${egEscHtml(data.artists)}</title></head><body style="margin:0;padding:0;background-color:${t.bg};font-family:'Segoe UI',Helvetica,Arial,sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${t.bg};"><tr><td align="center" style="padding:20px 10px;"><table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background-color:${t.containerBg};border-radius:12px;overflow:hidden;border:1px solid ${t.containerBorder};"><tr><td style="height:4px;background:${t.accentGrad};"></td></tr><tr><td align="center" style="padding:32px 40px 0 40px;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="background-color:${t.cardBg};border:1px solid ${t.cardBorder};border-radius:20px;padding:6px 18px;"><span style="font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">New Single Release</span></td></tr></table></td></tr>${coverHTML}<tr><td align="center" style="padding:24px 40px 0 40px;"><h1 style="margin:0;font-size:36px;font-weight:700;color:${t.textPrimary};letter-spacing:-0.5px;line-height:1.2;">${egEscHtml(data.songTitle.toUpperCase())}</h1><p style="margin:8px 0 0 0;font-size:16px;color:${t.accent};font-weight:500;letter-spacing:1px;">${egEscHtml(data.artists.toUpperCase())}</p></td></tr>${subtitleLine?`<tr><td align="center" style="padding:16px 40px 0 40px;"><span style="font-size:13px;color:${t.textMuted};letter-spacing:0.5px;">${subtitleLine}</span></td></tr>`:''  }${dividerRow}<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0;font-size:15px;color:${t.textSecondary};line-height:1.75;">Good afternoon,</p>${introHTML}</td></tr>${epkBtnHTML}${dividerRow}${artistPhotoHTML}${bioHTML}<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0 0 20px 0;font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">Track Metadata &amp; Credits</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${metaHTML}</table></td></tr><tr><td style="padding:12px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:linear-gradient(90deg,transparent,${t.divider},${t.divider},transparent);"></td></tr></table></td></tr>${streamHTML?`<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0 0 20px 0;font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">Stream &amp; Download</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${streamHTML}</table></td></tr>${dividerRow}`:''}${musicVideoHTML}${musicVideoHTML?dividerRow:''}${downloadBtnsHTML}${downloadBtnsHTML?dividerRow:''}${materialsHTML?`<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0 0 20px 0;font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">For Radio &amp; Media</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${t.cardBg};border:1px solid ${t.cardBorder};border-radius:10px;"><tr><td style="padding:24px 28px;"><p style="margin:0;font-size:14px;color:${t.textSecondary};line-height:1.7;">I'm happy to provide any of the following:</p><table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:14px;">${materialsHTML}</table>${data.email?`<p style="margin:16px 0 0 0;font-size:13px;color:${t.textMuted};line-height:1.6;">Reply to this email or contact <a href="mailto:${egEscHtml(data.email)}" style="color:${t.accent};text-decoration:none;">${egEscHtml(data.email)}</a> to request materials.</p>`:''}</td></tr></table></td></tr>${dividerRow}`:''}<tr><td style="padding:28px 40px 0 40px;"><p style="margin:0;font-size:15px;color:${t.textSecondary};line-height:1.75;">Thank you so much for your time and consideration. I truly appreciate what you do for independent artists, and I'd love the opportunity to connect.</p><p style="margin:20px 0 0 0;font-size:15px;color:${t.textSecondary};line-height:1.75;">God bless,</p></td></tr><tr><td style="padding:20px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:3px solid ${t.accent};"><tr><td style="padding-left:20px;"><p style="margin:0;font-size:20px;font-weight:700;color:${t.textPrimary};letter-spacing:-0.3px;">${egEscHtml(data.artistName)}</p>${data.label?`<p style="margin:4px 0 0 0;font-size:13px;color:${t.accent};font-weight:600;letter-spacing:1px;">${egEscHtml(data.label)}</p>`:''}${data.email?`<p style="margin:12px 0 0 0;font-size:13px;color:${t.textMuted};"><a href="mailto:${egEscHtml(data.email)}" style="color:${t.textMuted};text-decoration:none;">${egEscHtml(data.email)}</a></p>`:''}</td></tr></table></td></tr>${socialHTML}<tr><td align="center" style="padding:28px 40px 32px 40px;"><p style="margin:0;font-size:11px;color:${t.footerText};letter-spacing:0.3px;">&copy; ${new Date().getFullYear()} ${egEscHtml(data.label||data.artistName)} &nbsp;&#8226;&nbsp; All Rights Reserved</p></td></tr></table></td></tr></table></body></html>`;
 
   const frame = document.getElementById('egPreviewFrame');
   const doc = frame.contentDocument||frame.contentWindow.document;
@@ -8444,11 +8522,6 @@ serverLoad().then(() => {
         <div id="stOverlaySub" style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-top:2px;"></div>
         <div id="stOverlayNotes" style="font-size:12px;color:#aaa;margin-top:4px;display:none;"></div>
       </div>
-      <!-- Site / Compose toggle. Site = iframe of the submission URL (default, original behavior). Compose = Email Generator preview iframe rendering the live HTML email for the current release with the brand theme auto-selected for this site. Left pane (metadata + custom block) stays unchanged either way. -->
-      <div id="stOverlayModeToggle" style="display:flex;gap:0;background:rgba(255,255,255,0.04);border:1px solid #2a2a32;border-radius:6px;padding:2px;">
-        <button id="stOverlayModeSite" type="button" data-mode="site" onclick="stSetOverlayRightMode('site')" style="padding:6px 14px;background:linear-gradient(135deg,rgba(0,212,255,0.22),rgba(123,47,247,0.22));border:none;color:#fff;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;">SITE</button>
-        <button id="stOverlayModeCompose" type="button" data-mode="compose" onclick="stSetOverlayRightMode('compose')" style="padding:6px 14px;background:transparent;border:none;color:#888;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;">COMPOSE</button>
-      </div>
       <button id="stOverlayPopupBtn" style="padding:8px 14px;background:rgba(0,212,255,0.12);border:1px solid rgba(0,212,255,0.4);color:#00d4ff;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;">Open in Popup</button>
       <button id="stOverlayMarkBtn" onclick="stOverlayMarkSubmitted()" style="padding:10px 18px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;">Mark Submitted (+25 XP)</button>
       <button onclick="stOverlayClose()" aria-label="Close" style="padding:8px 14px;background:transparent;border:1px solid #444;color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;">&#x2715;</button>
@@ -8476,13 +8549,16 @@ serverLoad().then(() => {
       <div id="stOverlayRight" style="flex:1;display:flex;flex-direction:column;min-width:0;background:#050509;">
         <div id="stOverlayRightNotice" style="padding:10px 16px;background:#0a0a12;border-bottom:1px solid #1e1e28;font-size:12px;color:#888;"></div>
         <div style="flex:1;position:relative;min-height:0;">
-          <iframe id="stOverlayIframe" src="about:blank" style="width:100%;height:100%;border:0;background:#fff;"></iframe>
+          <iframe id="stOverlayIframe" src="about:blank" style="display:none;width:100%;height:100%;border:0;background:#fff;"></iframe>
           <div id="stOverlayNonUrl" style="display:none;position:absolute;inset:0;padding:28px;overflow-y:auto;"></div>
-          <div id="stOverlayComposeView" style="display:none;position:absolute;inset:0;flex-direction:column;background:#0a0a12;z-index:2;">
+          <div id="stOverlayComposeView" style="display:flex;position:absolute;inset:0;flex-direction:column;background:#0a0a12;z-index:2;">
             <div id="stOverlayComposeBar" style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#0d0d15;border-bottom:1px solid #1e1e28;flex-wrap:wrap;">
               <span style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#ffc107;font-weight:700;">Email Preview</span>
               <span id="stOverlayComposeTheme" style="font-size:10px;color:#888;"></span>
               <span id="stOverlayComposeStatus" style="font-size:11px;color:#888;flex:1;min-width:0;"></span>
+              <!-- Quick-upload buttons — trigger the hidden EG file inputs directly. The handlers (egHandleCoverArt / egHandleArtistPhoto) auto-re-render the compose preview via the __egRefreshListener hook. -->
+              <button type="button" onclick="document.getElementById('egCoverArtInput').click()" style="padding:6px 12px;background:rgba(255,193,7,0.12);border:1px solid rgba(255,193,7,0.4);color:#ffc107;border-radius:5px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;">+ Cover Art</button>
+              <button type="button" onclick="document.getElementById('egArtistPhotoInput').click()" style="padding:6px 12px;background:rgba(255,193,7,0.12);border:1px solid rgba(255,193,7,0.4);color:#ffc107;border-radius:5px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;">+ Artist Photo</button>
               <a href="#" id="stOverlayComposeOpenEg" onclick="stOverlayClose();showPanel('emailgen');return false;" style="font-size:11px;color:#00d4ff;text-decoration:none;">Open full Email Generator &rarr;</a>
               <button id="stOverlayComposeCopyBtn" type="button" onclick="egCopyForGmail()" style="padding:6px 14px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);border:none;color:#fff;border-radius:5px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;">COPY FOR GMAIL</button>
             </div>
