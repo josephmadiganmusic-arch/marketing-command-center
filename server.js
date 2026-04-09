@@ -2643,7 +2643,7 @@ app.post('/api/outreach/social-dm', requireOutreachUnlocked, rlSocialDm, async (
     return res.status(400).json({ error: 'Contact name and song title required' });
   }
 
-  const system = 'You write short, warm, human direct messages for indie Christian hip hop artists reaching out on social media. Return ONLY the DM body — no subject line, no preamble, no commentary, no quotation marks. Max 4 short sentences. Sound like a real person, not a template. Never invent facts not in the metadata. End with a soft ask (listen / let me know what you think) and a brief sign-off like "Blessings" or "Appreciate you". Do NOT include hashtags.';
+  const system = 'You write short, warm, human direct messages for indie Christian hip hop artists reaching out on social media. Return ONLY the DM body. No subject line, no preamble, no commentary, no quotation marks. Max 4 short sentences. Sound like a real person, not a template. Never invent facts not in the metadata. End with a soft ask (listen / let me know what you think) and a brief sign-off like Blessings or Appreciate you. Do NOT include hashtags. IMPORTANT: Do NOT use em dashes (\u2014) or en dashes (\u2013) anywhere in your response. Use periods, commas, or short separate sentences instead. Em dashes read as AI-generated and kill the human tone.';
   const userPrompt = [
     `Platform: ${contact.platform}`,
     `Recipient name: ${contact.name}`,
@@ -2694,7 +2694,10 @@ app.post('/api/outreach/social-dm', requireOutreachUnlocked, rlSocialDm, async (
     if (!text.trim()) {
       return res.status(502).json({ error: 'Empty AI response', fallback: true });
     }
-    res.json({ dm: text.trim(), platform: contact.platform, model: DEFAULT_CLAUDE_MODEL });
+    // Strip em/en dashes even if the model slips past the system-prompt ban.
+    // Em dash becomes comma-space, en dash becomes simple hyphen.
+    const cleaned = text.trim().replace(/\u2014/g, ', ').replace(/\u2013/g, '-');
+    res.json({ dm: cleaned, platform: contact.platform, model: DEFAULT_CLAUDE_MODEL });
   } catch (err) {
     console.error('[OUTREACH SOCIAL-DM] fetch error:', err.message);
     res.status(502).json({ error: 'AI request failed', fallback: true });

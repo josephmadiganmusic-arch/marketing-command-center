@@ -4353,9 +4353,19 @@ function stOpenSubmission(contactId) {
   // Render metadata pane from intake release_data
   stOverlayRenderMetadata();
 
-  // Determine right-pane URL: prefer a real URL in submission_value, then website
+  // Determine right-pane URL: prefer a real URL in submission_value, then website.
+  // For social contacts we also parse "Platform: @handle" into a canonical
+  // profile URL so the iframe tries to load Instagram/TikTok/etc. directly —
+  // same UX as forms. Most socials block embedding via X-Frame-Options, so the
+  // existing "Open in Popup" header button is the escape hatch.
   let url = '';
   if (contact.submission_value && /^https?:\/\//i.test(contact.submission_value)) url = contact.submission_value;
+  else if (contact.submission_type === 'social') {
+    const parsed = stParseSocialValue(contact.submission_value || '');
+    if (parsed.url) url = parsed.url;
+    else if (contact.website && /^https?:\/\//i.test(contact.website)) url = contact.website;
+    else if (contact.website) url = 'https://' + contact.website;
+  }
   else if (contact.website && /^https?:\/\//i.test(contact.website)) url = contact.website;
   else if (contact.website) url = 'https://' + contact.website;
 
