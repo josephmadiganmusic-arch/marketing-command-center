@@ -2352,8 +2352,8 @@ app.post('/api/outreach/submission/mark', requireOutreachUnlocked, (req, res) =>
     try {
       const XP = 25;
       dbHelpers.prepare(`
-        INSERT INTO xp_log (user_id, action, xp_delta, created_at)
-        VALUES (?, 'outreach_submission', ?, datetime('now'))
+        INSERT INTO xp_log (user_id, action, xp_amount, description)
+        VALUES (?, 'outreach_submission', ?, 'Outreach submission')
       `).run(req.user.id, XP);
       dbHelpers.prepare(`
         INSERT INTO user_xp (user_id, total_xp, level, last_active_date)
