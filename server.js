@@ -95,34 +95,97 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // the same DATA_DIR. On crash the lock is stale — delete it manually with
 // a clear operator message before restarting.
 const INSTANCE_LOCK_PATH = path.join(DATA_DIR, '.instance.lock');
+const LOCK_STALE_MS = 90 * 1000;          // lock older than this is considered stale
+const LOCK_RETRY_TOTAL_MS = 120 * 1000;   // total time we'll wait for an overlapping instance to release
+const LOCK_RETRY_INTERVAL_MS = 3 * 1000;
 let _instanceLockHeld = false;
-function acquireInstanceLock() {
+let _instanceLockHeartbeat = null;
+function _writeLockFile() {
+  const payload = JSON.stringify({
+    pid: process.pid,
+    started: new Date().toISOString(),
+    heartbeat: new Date().toISOString(),
+    host: process.env.RAILWAY_REPLICA_ID || process.env.HOSTNAME || 'unknown'
+  });
+  const fd = fs.openSync(INSTANCE_LOCK_PATH, 'wx'); // O_EXCL
+  fs.writeSync(fd, payload);
+  fs.closeSync(fd);
+}
+function _lockIsStale() {
   try {
-    const fd = fs.openSync(INSTANCE_LOCK_PATH, 'wx'); // O_EXCL — fails if exists
-    fs.writeSync(fd, JSON.stringify({
-      pid: process.pid,
-      started: new Date().toISOString(),
-      host: process.env.RAILWAY_REPLICA_ID || process.env.HOSTNAME || 'unknown'
-    }));
-    fs.closeSync(fd);
-    _instanceLockHeld = true;
-    console.log('[BOOT] Instance lock acquired at', INSTANCE_LOCK_PATH);
-  } catch (e) {
-    if (e.code === 'EEXIST') {
-      let holder = '(unreadable)';
-      try { holder = fs.readFileSync(INSTANCE_LOCK_PATH, 'utf8'); } catch(_) {}
-      console.error('[BOOT] FATAL: another instance already holds the lock at', INSTANCE_LOCK_PATH);
-      console.error('[BOOT] Lock holder:', holder);
-      console.error('[BOOT] sql.js + file sessions require single-instance operation.');
-      console.error('[BOOT] If you are scaling up: DO NOT. Set Railway replicas = 1.');
-      console.error('[BOOT] If the previous instance crashed: `rm ' + INSTANCE_LOCK_PATH + '` on the volume and redeploy.');
-      process.exit(1);
+    const raw = fs.readFileSync(INSTANCE_LOCK_PATH, 'utf8');
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch(_) {}
+    const heartbeatTs = parsed && parsed.heartbeat ? Date.parse(parsed.heartbeat) : NaN;
+    const mtimeMs = fs.statSync(INSTANCE_LOCK_PATH).mtimeMs;
+    const freshest = Math.max(
+      isNaN(heartbeatTs) ? 0 : heartbeatTs,
+      mtimeMs || 0
+    );
+    return (Date.now() - freshest) > LOCK_STALE_MS;
+  } catch (_) { return false; }
+}
+function acquireInstanceLock() {
+  // Retry loop handles Railway zero-downtime deploys: the new instance boots
+  // while the old one still holds the lock. Old instance gets SIGTERM around
+  // the same time, releases the lock in its shutdown handler, and we acquire
+  // on the next retry. Stale-lock detection handles kill -9 / OOM / host reap
+  // where the shutdown handler never ran.
+  const deadline = Date.now() + LOCK_RETRY_TOTAL_MS;
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      _writeLockFile();
+      _instanceLockHeld = true;
+      console.log('[BOOT] Instance lock acquired at', INSTANCE_LOCK_PATH, '(attempt ' + attempt + ')');
+      // Heartbeat so a future zero-downtime boot can see we're still alive
+      // vs. stale lock. Cheap — one stat + one write every 30s.
+      _instanceLockHeartbeat = setInterval(() => {
+        try {
+          const payload = JSON.stringify({
+            pid: process.pid,
+            started: new Date().toISOString(),
+            heartbeat: new Date().toISOString(),
+            host: process.env.RAILWAY_REPLICA_ID || process.env.HOSTNAME || 'unknown'
+          });
+          fs.writeFileSync(INSTANCE_LOCK_PATH, payload);
+        } catch(_) {}
+      }, 30 * 1000);
+      _instanceLockHeartbeat.unref();
+      return;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      // Lock file exists — is it stale?
+      if (_lockIsStale()) {
+        let holder = '(unreadable)';
+        try { holder = fs.readFileSync(INSTANCE_LOCK_PATH, 'utf8'); } catch(_) {}
+        console.warn('[BOOT] Stale lock detected (age > ' + LOCK_STALE_MS + 'ms), force-releasing. Prior holder:', holder);
+        try { fs.unlinkSync(INSTANCE_LOCK_PATH); } catch(_) {}
+        continue; // retry immediately
+      }
+      // Fresh lock — another instance is genuinely running (likely the
+      // outgoing zero-downtime instance). Wait and retry.
+      if (Date.now() >= deadline) {
+        let holder = '(unreadable)';
+        try { holder = fs.readFileSync(INSTANCE_LOCK_PATH, 'utf8'); } catch(_) {}
+        console.error('[BOOT] FATAL: could not acquire instance lock after', LOCK_RETRY_TOTAL_MS, 'ms');
+        console.error('[BOOT] Lock holder:', holder);
+        console.error('[BOOT] sql.js + file sessions require single-instance operation.');
+        console.error('[BOOT] If you are scaling up: DO NOT. Set Railway replicas = 1.');
+        console.error('[BOOT] If the previous instance is hung: `rm ' + INSTANCE_LOCK_PATH + '` on the volume and redeploy.');
+        process.exit(1);
+      }
+      console.log('[BOOT] Lock held by another instance, retrying in ' + (LOCK_RETRY_INTERVAL_MS/1000) + 's (attempt ' + attempt + ')');
+      // Synchronous sleep — we're single-threaded and not accepting traffic yet.
+      const waitUntil = Date.now() + LOCK_RETRY_INTERVAL_MS;
+      while (Date.now() < waitUntil) { /* busy-wait — boot only, not hot path */ }
     }
-    throw e;
   }
 }
 function releaseInstanceLock() {
   if (!_instanceLockHeld) return;
+  if (_instanceLockHeartbeat) { clearInterval(_instanceLockHeartbeat); _instanceLockHeartbeat = null; }
   try { fs.unlinkSync(INSTANCE_LOCK_PATH); } catch(_) {}
   _instanceLockHeld = false;
 }
