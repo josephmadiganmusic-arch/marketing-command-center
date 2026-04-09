@@ -4408,6 +4408,40 @@ function stOverlayClose() {
   document.getElementById('stOverlayIframe').src = 'about:blank';
 }
 
+// Detect the social platform from a URL or handle string. Used to tailor
+// the DM template wording (e.g. "Hope you're having a great week on IG").
+function stDetectSocialPlatform(raw) {
+  const s = String(raw || '').toLowerCase();
+  if (s.includes('instagram.com') || s.startsWith('@') || s.startsWith('ig:')) return 'Instagram';
+  if (s.includes('tiktok.com')) return 'TikTok';
+  if (s.includes('twitter.com') || s.includes('x.com')) return 'X (Twitter)';
+  if (s.includes('facebook.com') || s.includes('fb.com')) return 'Facebook';
+  if (s.includes('youtube.com') || s.includes('youtu.be')) return 'YouTube';
+  if (s.includes('threads.net')) return 'Threads';
+  return 'Instagram'; // sensible default for CHH outreach
+}
+
+// Build a personalized DM template for a social-type contact. Used in the
+// left-pane overlay when submission_type === 'social'. The user one-click
+// copies this to send via the platform's DM inbox.
+function stBuildSocialDm(contact, d) {
+  const platform = stDetectSocialPlatform(contact.submission_value || contact.website || '');
+  const handle = (contact.name || '').trim() || 'there';
+  const song = d.songTitle || 'my new single';
+  const artist = d.primaryArtist || d.stageName || 'me';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Christian hip hop';
+  const releaseDate = d.releaseDate || 'soon';
+  const spotify = d.linkSpotify || d.linkApple || d.linkYTVideo || '';
+  const link = spotify ? '\n\nListen here: ' + spotify : '';
+  return 'Hey ' + handle + ' \u2014 hope all is well on ' + platform + '. '
+    + 'I\'m ' + artist + ', and I just dropped a new ' + genre + ' track called "' + song + '"'
+    + (releaseDate && releaseDate !== 'soon' ? ' (out ' + releaseDate + ')' : '')
+    + '. Saw your page and thought the sound might line up with what you\'re into. '
+    + 'Would mean a lot if you gave it a listen and let me know what you think.'
+    + link
+    + '\n\nAppreciate your time either way. Blessings!';
+}
+
 function stOverlayRenderMetadata() {
   // Pull from intake release_data (localStorage). If empty, show a prompt
   // to fill the Intake tab first.
@@ -4415,6 +4449,10 @@ function stOverlayRenderMetadata() {
   try { d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}') || {}; } catch(_) {}
   const host = document.getElementById('stOverlayMetaFields');
   const emptyMsg = document.getElementById('stOverlayMetaEmpty');
+  // Look up the current contact so we can inject a social DM template at
+  // the top when reaching out on socials.
+  const contact = (window.ST_STATE.contacts || []).find(c => c.id === window.ST_OVERLAY.contactId);
+  const isSocial = contact && contact.submission_type === 'social';
   if (!d.songTitle && !d.primaryArtist) {
     host.innerHTML = '';
     emptyMsg.style.display = '';
@@ -4448,7 +4486,25 @@ function stOverlayRenderMetadata() {
     ['Email', d.email],
   ];
   const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
-  host.innerHTML = fields.filter(([, v]) => v && String(v).trim()).map(([label, value]) => {
+  // Personalized DM block for social contacts — appears at the top of the
+  // left pane, above the raw metadata, so the user can copy and paste into
+  // Instagram/TikTok DMs without writing anything from scratch.
+  let socialBlock = '';
+  if (isSocial) {
+    const platform = stDetectSocialPlatform(contact.submission_value || contact.website || '');
+    const dm = stBuildSocialDm(contact, d);
+    socialBlock =
+      '<div class="st-social-dm">' +
+      '<div class="st-social-dm-head">Personalized ' + esc(platform) + ' DM</div>' +
+      '<textarea class="st-social-dm-body" readonly>' + esc(dm) + '</textarea>' +
+      '<div style="display:flex;gap:6px;margin-top:6px;">' +
+      '<button class="st-meta-copy" onclick="stOverlayCopyValue(' + JSON.stringify(dm).replace(/"/g,'&quot;') + ', this)">Copy DM</button>' +
+      '<button class="st-meta-copy" onclick="stOpenContactSocial()">Open ' + esc(platform) + '</button>' +
+      '</div>' +
+      '<div style="font-size:10px;color:#666;margin-top:6px;font-style:italic;">Tweak the copy before sending. Auto-filled from your release metadata.</div>' +
+      '</div>';
+  }
+  host.innerHTML = socialBlock + fields.filter(([, v]) => v && String(v).trim()).map(([label, value]) => {
     const isLong = label === 'Bio' || String(value).length > 80;
     return '<div class="st-meta-field' + (isLong ? ' long' : '') + '">' +
       '<div class="st-meta-label">' + esc(label) + '</div>' +
@@ -4456,6 +4512,22 @@ function stOverlayRenderMetadata() {
       '<button class="st-meta-copy" onclick="stOverlayCopyValue(' + JSON.stringify(String(value)).replace(/"/g,'&quot;') + ', this)">Copy</button>' +
       '</div>';
   }).join('');
+}
+
+// "Open <Platform>" button — opens the social profile in a popup window
+// so the user can actually send the DM. Uses the same popup sizing as the
+// submission popup fallback.
+function stOpenContactSocial() {
+  const contact = (window.ST_STATE.contacts || []).find(c => c.id === window.ST_OVERLAY.contactId);
+  if (!contact) return;
+  let url = contact.submission_value || contact.website || '';
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url)) {
+    // Bare handle — assume Instagram since that's the CHH default.
+    const handle = String(url).replace(/^@/, '').trim();
+    url = 'https://instagram.com/' + encodeURIComponent(handle);
+  }
+  stOverlayOpenPopup(url);
 }
 
 function stOverlayCopyValue(value, btn) {
@@ -7516,11 +7588,11 @@ serverLoad().then(() => {
       <button onclick="stOverlayClose()" aria-label="Close" style="padding:8px 14px;background:transparent;border:1px solid #444;color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;">&#x2715;</button>
     </div>
     <div style="flex:1;display:flex;min-height:0;">
-      <!-- Left pane: release metadata with copy buttons. Hidden by default
-           per user preference — iframe-only is enough. The DOM stays so the
-           existing stOverlayRenderMetadata() JS keeps working without a
-           refactor, but nothing renders. -->
-      <div id="stOverlayLeft" style="display:none;width:420px;max-width:42%;border-right:1px solid #2a2a32;background:#0d0d15;flex-direction:column;">
+      <!-- Left pane: release metadata with copy buttons + (for social
+           contacts) an auto-generated personalized DM template at the top
+           so the user can one-click copy an outreach message tailored to
+           the contact's handle. -->
+      <div id="stOverlayLeft" style="width:420px;max-width:42%;border-right:1px solid #2a2a32;background:#0d0d15;display:flex;flex-direction:column;">
         <div style="padding:14px 18px;border-bottom:1px solid #1e1e28;">
           <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;font-weight:600;">Release Metadata</div>
           <div style="font-size:11px;color:#666;margin-top:3px;">Copy &amp; paste into the submission form</div>
@@ -7550,6 +7622,9 @@ serverLoad().then(() => {
   #stOverlay .st-meta-copy { padding:4px 10px;font-size:11px;background:rgba(123,47,247,0.12);border:1px solid rgba(123,47,247,0.35);color:#b88fff;border-radius:4px;cursor:pointer;font-family:inherit;flex-shrink:0;align-self:flex-start; }
   #stOverlay .st-meta-copy:hover { background:rgba(123,47,247,0.22);border-color:rgba(123,47,247,0.6); }
   #stOverlay .st-meta-copy.copied { background:#00d4ff;border-color:#00d4ff;color:#000; }
+  #stOverlay .st-social-dm { padding:12px;margin-bottom:14px;background:linear-gradient(160deg,rgba(0,212,255,0.08),rgba(123,47,247,0.08));border:1px solid rgba(0,212,255,0.35);border-radius:10px; }
+  #stOverlay .st-social-dm-head { font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#00d4ff;font-weight:700;margin-bottom:8px; }
+  #stOverlay .st-social-dm-body { width:100%;min-height:140px;resize:vertical;padding:10px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#eee;font-family:inherit;font-size:12px;line-height:1.45; }
   @media (max-width: 900px) {
     #stOverlay #stOverlayHeader { flex-wrap:wrap;gap:8px;padding:10px 14px; }
     #stOverlay #stOverlayLeft { width:100%;max-width:100%;max-height:45vh;border-right:none;border-bottom:1px solid #2a2a32; }
