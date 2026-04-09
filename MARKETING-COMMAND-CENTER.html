@@ -7411,6 +7411,7 @@ function migrateOldStorage() {
   const oldKeys = ['release_data','release_data_all','mcc_campaign_data','mcc_campaign_song',
     'mcc_campaign_generated','mcc-checklist','registration_progress','bab_releases','claude_api_key'];
   let found = false;
+  let anyFailed = false;
   for (const k of oldKeys) {
     const val = localStorage.getItem(k);
     if (val) {
@@ -7431,12 +7432,25 @@ function migrateOldStorage() {
         localStorage.removeItem(k);
         found = true;
       } catch(e) {
-        // Quota exceeded — remove old key to free space and skip
-        localStorage.removeItem(k);
+        // Quota exceeded (or any other localStorage failure) — DO NOT remove
+        // the legacy key. The legacy key IS the user's data; removing it to
+        // "free space" would permanently destroy the release metadata we
+        // were trying to migrate in the first place. Leave it in place so
+        // a future load can retry once space frees up elsewhere, and mark
+        // the migration as not-yet-complete below.
+        console.error('[migrate] failed to migrate legacy key "' + k + '":', e?.message || e);
+        anyFailed = true;
       }
     }
   }
-  localStorage.setItem('_migrated_' + USER_ID, '1');
+  // Only mark the migration complete if every attempted key succeeded. If
+  // even one key failed (quota or otherwise), leave the flag unset so the
+  // next session retries the remaining legacy keys — the successful ones
+  // are already removed from legacy storage, so the retry loop is cheap
+  // (most iterations will see val = null and skip).
+  if (!anyFailed) {
+    localStorage.setItem('_migrated_' + USER_ID, '1');
+  }
   if (found) location.reload();
 }
 
