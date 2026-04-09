@@ -1174,6 +1174,11 @@
             <textarea id="in-emailIntro" rows="4" oninput="intakeUpdate()" placeholder="Opening paragraph for submission emails..."></textarea>
             <button type="button" style="margin-top:8px;padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#333'" onclick="generateEmailIntro(this)">Generate Intro</button>
           </div>
+          <div class="form-group" style="margin-top:16px;">
+            <label>Marketing Plan</label>
+            <textarea id="in-marketingPlan" rows="5" oninput="intakeUpdate()" placeholder="How are you pushing this release? Timeline, channels, ad spend, collabs, press outreach, playlist pitches. Radio stations and curators ask this to gauge whether the song has momentum behind it."></textarea>
+            <button type="button" style="margin-top:8px;padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#333'" onclick="generateMarketingPlan(this)">Generate Marketing Plan</button>
+          </div>
         </div>
 
         <!-- Available Materials -->
@@ -2676,7 +2681,7 @@ function intakeGetData() {
     instagram: v('in-instagram'), facebook: v('in-facebook'), tiktok: v('in-tiktok'), twitter: v('in-twitter'),
     dlWav: v('in-dlWavDirect'), dlMp3: v('in-dlMp3Direct'), dlPressKit: v('in-dlPressKit'),
     dlWavDirect: v('in-dlWavDirect'), dlMp3Direct: v('in-dlMp3Direct'),
-    bio: v('in-bio'), emailIntro: v('in-emailIntro'),
+    bio: v('in-bio'), emailIntro: v('in-emailIntro'), marketingPlan: v('in-marketingPlan'),
     matRadioEdit: c('in-matRadioEdit'), matPressPhotos: c('in-matPressPhotos'), matBio: c('in-matBio'),
     matInstrumental: c('in-matInstrumental'), matAcapella: c('in-matAcapella'), matMusicVideo: c('in-matMusicVideo'),
     matLyrics: c('in-matLyrics'), matInterview: c('in-matInterview'),
@@ -2882,6 +2887,59 @@ Return ONLY the paragraph text. No quotes, no labels, no formatting, no em dashe
     document.getElementById('in-songDescription').value = clean;
     intakeUpdate();
     showToast('Song description generated!');
+  } catch(err) {
+    showToast('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+    btn.style.opacity = '1';
+  }
+}
+
+async function generateMarketingPlan(btn) {
+  const d = intakeGetData();
+  if (!d.songTitle || !d.primaryArtist) {
+    showToast('Fill in Song Title and Artist first');
+    return;
+  }
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  btn.style.opacity = '0.5';
+
+  const feat = d.featArtist ? ` featuring ${d.featArtist}` : '';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
+  const socials = [
+    d.instagram ? `IG ${d.instagram}` : '',
+    d.tiktok ? `TikTok ${d.tiktok}` : '',
+    d.facebook ? `FB ${d.facebook}` : '',
+    d.twitter ? `X ${d.twitter}` : '',
+  ].filter(Boolean).join(', ') || 'N/A';
+
+  try {
+    const result = await callClaude(`Write a concise marketing plan paragraph for a music release. Radio stations and playlist curators read this to gauge whether a song has real promotional momentum behind it (not just a "please add me" submission). Be specific about timeline, channels, and targets. Write it from the artist's point of view in the first person.
+
+SONG: "${d.songTitle}"${feat}
+ARTIST: ${d.primaryArtist}
+GENRE: ${genre}
+RELEASE DATE: ${d.releaseDate || 'TBD'}
+LABEL: ${d.label || 'Independent'}
+SOCIALS: ${socials}
+BIO (context only): ${d.bio || 'N/A'}
+
+Write ONE short paragraph (4 to 6 sentences). It should:
+- Open with the release window and a one-line strategy
+- Name specific channels the artist is pushing (social platforms, paid ads, playlists, press outreach, radio, shows or tours, collabs)
+- Mention any concrete commitments (e.g. a 4-week rollout, paid IG Reels spend, targeted TikTok seeding, press outreach to specific blogs/podcasts, playlist pitching to specific curators)
+- Sound confident but grounded, not hype-y
+- Avoid em dashes and en dashes. Use commas or periods instead.
+
+Return ONLY the paragraph text. No quotes, no labels, no bullet points, no em dashes, no en dashes.`);
+
+    const clean = result.trim().replace(/\u2014/g, ', ').replace(/\u2013/g, '-');
+    document.getElementById('in-marketingPlan').value = clean;
+    intakeUpdate();
+    showToast('Marketing plan generated!');
   } catch(err) {
     showToast('Error: ' + err.message);
   } finally {
@@ -3313,6 +3371,7 @@ function intakeFillForm(d) {
   setVal('in-dlPressKit', d.dlPressKit);
   setVal('in-dlWavDirect', d.dlWavDirect || d.dlWav); setVal('in-dlMp3Direct', d.dlMp3Direct || d.dlMp3);
   setVal('in-bio', d.bio); setVal('in-emailIntro', d.emailIntro);
+  setVal('in-marketingPlan', d.marketingPlan);
   document.getElementById('in-matRadioEdit').checked = !!d.matRadioEdit;
   document.getElementById('in-matPressPhotos').checked = !!d.matPressPhotos;
   document.getElementById('in-matBio').checked = !!d.matBio;
