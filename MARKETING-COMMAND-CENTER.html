@@ -1950,7 +1950,11 @@
     <div class="section">
       <div class="section-title">Outreach List Importer</div>
       <div id="adminOutreachStatus" style="font-size:13px;color:#bbb;margin-bottom:12px;">Loading&hellip;</div>
-      <p style="font-size:12px;color:#888;margin-bottom:8px;">Paste the cleaned CSV below. Dry Run shows the diff against the current version. Publish commits it as the next version and triggers the "List Updated" banner for all unlocked users.</p>
+      <p style="font-size:12px;color:#888;margin-bottom:8px;">Upload a CSV file or paste the cleaned CSV below. Dry Run shows the diff against the current version. Publish commits it as the next version and triggers the "List Updated" banner for all unlocked users.</p>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+        <input type="file" id="adminOutreachCsvFile" accept=".csv,text/csv" onchange="adminOutreachLoadFile(event)" style="font-size:12px;color:#bbb;">
+        <span id="adminOutreachFileStatus" style="font-size:11px;color:#6b7094;"></span>
+      </div>
       <textarea id="adminOutreachCsv" rows="10" style="width:100%;font-family:monospace;font-size:12px;" placeholder="Name,Category,Submission Type,Submission Value,Website,Phone,Notes&#10;..."></textarea>
       <div style="display:flex;gap:8px;margin-top:8px;">
         <button class="btn-action" onclick="adminOutreachDryRun()" style="font-size:12px;padding:6px 14px;">Dry Run (Preview Diff)</button>
@@ -6967,6 +6971,32 @@ async function adminLoadData() {
 }
 
 // --- Outreach List importer (admin) ---
+// File-upload convenience — reads the selected CSV into the textarea so the
+// existing Dry Run / Publish path (which posts `{csv: <string>}` as JSON)
+// works unchanged. Cap at 5MB to avoid pasting something absurd; the server
+// still enforces its own parse limits.
+function adminOutreachLoadFile(ev) {
+  const input = ev && ev.target;
+  const statusEl = document.getElementById('adminOutreachFileStatus');
+  const file = input && input.files && input.files[0];
+  if (!file) { if (statusEl) statusEl.textContent = ''; return; }
+  if (file.size > 5 * 1024 * 1024) {
+    if (statusEl) statusEl.textContent = 'File too large (max 5MB).';
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function() {
+    const ta = document.getElementById('adminOutreachCsv');
+    if (ta) ta.value = String(reader.result || '');
+    if (statusEl) statusEl.textContent = 'Loaded ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB). Click Dry Run to preview.';
+  };
+  reader.onerror = function() {
+    if (statusEl) statusEl.textContent = 'Failed to read file.';
+  };
+  reader.readAsText(file);
+}
+
 async function adminOutreachLoadStatus() {
   const el = document.getElementById('adminOutreachStatus');
   if (!el) return;
