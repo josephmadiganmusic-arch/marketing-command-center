@@ -759,6 +759,9 @@ async function sendVerificationEmail(email, token) {
 // --- Middleware ---
 app.use((req, res, next) => {
   if (req.path === '/webhook') return next(); // raw body for Stripe
+  // Audio transcription needs a bigger cap (base64 MP3s inflate ~33%);
+  // it gets its own route-level parser at the endpoint.
+  if (req.path === '/api/intake/transcribe-lyrics') return next();
   express.json({ limit: '10mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true }));
@@ -862,6 +865,10 @@ const rlOutreachIntro = rateLimit({ name: 'outreach_intro', windowMs: 60 * 60 * 
 // the intro generator because users will click through many social contacts
 // in a single session while prospecting.
 const rlSocialDm = rateLimit({ name: 'social_dm', windowMs: 60 * 60 * 1000, max: 120 });
+// Intake — audio-to-lyrics transcription via Groq Whisper. Tight cap
+// because each request costs Groq free-tier audio-seconds and most
+// users only transcribe a handful of songs per release cycle.
+const rlTranscribe = rateLimit({ name: 'transcribe', windowMs: 60 * 60 * 1000, max: 20 });
 
 // Health check endpoint (must respond before any redirects)
 app.get('/health', (req, res) => res.status(200).send('OK'));
@@ -2703,6 +2710,79 @@ app.post('/api/outreach/social-dm', requireOutreachUnlocked, rlSocialDm, async (
     res.status(502).json({ error: 'AI request failed', fallback: true });
   }
 });
+
+// Intake — audio-to-lyrics transcription via Groq Whisper-large-v3.
+// Accepts a base64-encoded audio file (mp3/wav/m4a/etc), posts it to
+// Groq as multipart/form-data, returns the raw transcript text.
+// Genius-format section headers are added in a separate Claude step
+// (see /api/intake/format-lyrics-genius). Rate-limited via rlTranscribe
+// (20/hr/user) and access-gated via requireAccess (trial users get full
+// intake per R11). Route-specific body parser lifts the JSON cap to
+// 30MB to accommodate base64-inflated audio (~22MB raw audio ceiling,
+// well below Groq's 25MB binary limit).
+app.post('/api/intake/transcribe-lyrics',
+  express.json({ limit: '30mb' }),
+  requireAccess,
+  rlTranscribe,
+  async (req, res) => {
+    const GROQ_KEY = process.env.GROQ_API_KEY || '';
+    if (!GROQ_KEY) return res.status(503).json({ error: 'Transcription not configured' });
+
+    const body = req.body || {};
+    const audioBase64 = typeof body.audioBase64 === 'string' ? body.audioBase64 : '';
+    const mimeType = typeof body.mimeType === 'string' ? body.mimeType.slice(0, 100) : '';
+    const filename = typeof body.filename === 'string' ? body.filename.slice(0, 200).replace(/[^\w.\-]/g, '_') : 'audio.mp3';
+
+    if (!audioBase64) return res.status(400).json({ error: 'audioBase64 required' });
+    if (!mimeType.startsWith('audio/')) return res.status(400).json({ error: 'mimeType must be audio/*' });
+
+    let buf;
+    try {
+      buf = Buffer.from(audioBase64, 'base64');
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid base64 audio payload' });
+    }
+    // Groq hard limit is 25MB for the uploaded file itself.
+    if (buf.length === 0) return res.status(400).json({ error: 'Empty audio payload' });
+    if (buf.length > 25 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Audio file too large (max 25MB). Try compressing to 128kbps MP3.' });
+    }
+
+    try {
+      const form = new FormData();
+      form.append('file', new Blob([buf], { type: mimeType }), filename);
+      form.append('model', 'whisper-large-v3');
+      form.append('response_format', 'text');
+      form.append('temperature', '0');
+
+      const groqResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${GROQ_KEY}` },
+        body: form,
+        signal: AbortSignal.timeout(120000)
+      });
+
+      if (!groqResp.ok) {
+        const errText = await groqResp.text();
+        console.error('[TRANSCRIBE] Groq error:', groqResp.status, errText.slice(0, 500));
+        if (groqResp.status === 429) return res.status(429).json({ error: 'Transcription rate limit hit, try again in a minute' });
+        return res.status(502).json({ error: 'Transcription service unavailable' });
+      }
+
+      // response_format=text returns a plain string body, not JSON.
+      const text = (await groqResp.text()).trim();
+      if (!text) return res.status(502).json({ error: 'Empty transcription' });
+
+      // Strip em/en dashes even on raw transcription (project-wide rule,
+      // see feedback_no_em_dashes_in_ai_output.md).
+      const cleaned = text.replace(/\u2014/g, ', ').replace(/\u2013/g, '-');
+      res.json({ text: cleaned, model: 'whisper-large-v3', bytes: buf.length });
+    } catch (err) {
+      console.error('[TRANSCRIBE] fetch error:', err.message);
+      res.status(502).json({ error: 'Transcription request failed' });
+    }
+  }
+);
 
 // Mark a submission as complete + grant +25 XP inline. Unique index on
 // (user_id, contact_id) means repeat submissions for the same contact are

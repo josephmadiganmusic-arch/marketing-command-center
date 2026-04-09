@@ -1056,7 +1056,12 @@
           <div class="form-group" style="margin-top:16px;">
             <label>Lyrics (Genius format)</label>
             <textarea id="in-lyrics" rows="12" oninput="intakeUpdate()" placeholder="Paste or upload lyrics. Use Genius-style section headers in square brackets:&#10;&#10;[Intro]&#10;...&#10;&#10;[Verse 1]&#10;...&#10;&#10;[Chorus]&#10;...&#10;&#10;[Verse 2]&#10;...&#10;&#10;[Bridge]&#10;...&#10;&#10;[Outro]&#10;...&#10;&#10;Required by stations like God's House of Hip Hop and used for genius.com registration."></textarea>
-            <p style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.5;">Used for radio submissions that require a lyric sheet and for your genius.com upload. Upload-audio and Format-for-Genius buttons are coming next.</p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+              <input type="file" id="in-lyricsAudioInput" accept="audio/*" style="display:none;" onchange="transcribeLyricsFromAudio(this)">
+              <button type="button" id="in-lyricsUploadBtn" style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="document.getElementById('in-lyricsAudioInput').click()">Upload Audio to Transcribe</button>
+              <span id="in-lyricsStatus" style="font-size:11px;color:#6b7280;"></span>
+            </div>
+            <p style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.5;">Upload an MP3/WAV/M4A of your song and Whisper will transcribe it. Edit any mistakes, then use Format for Genius (coming next) to add section headers. Required by radio stations like God's House of Hip Hop, also used for your genius.com upload.</p>
           </div>
         </div>
 
@@ -2959,6 +2964,83 @@ Return ONLY the paragraph text. No quotes, no labels, no bullet points, no em da
     btn.disabled = false;
     btn.textContent = origText;
     btn.style.opacity = '1';
+  }
+}
+
+// Read a File as base64 without the "data:...;base64," prefix.
+function _fileToBase64Stripped(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result || '');
+      const comma = s.indexOf(',');
+      resolve(comma >= 0 ? s.slice(comma + 1) : s);
+    };
+    reader.onerror = () => reject(new Error('Failed to read audio file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function transcribeLyricsFromAudio(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+
+  const btn = document.getElementById('in-lyricsUploadBtn');
+  const status = document.getElementById('in-lyricsStatus');
+  const textarea = document.getElementById('in-lyrics');
+  const origLabel = btn ? btn.textContent : '';
+
+  // 25MB client-side cap matches the server check.
+  if (file.size > 25 * 1024 * 1024) {
+    if (status) { status.textContent = 'File too large (max 25MB). Compress to 128kbps MP3 and retry.'; status.style.color = '#f87171'; }
+    input.value = '';
+    return;
+  }
+  if (!/^audio\//.test(file.type)) {
+    if (status) { status.textContent = 'Please choose an audio file (MP3, WAV, M4A, etc).'; status.style.color = '#f87171'; }
+    input.value = '';
+    return;
+  }
+
+  // Warn before wiping existing lyrics so a misclick can't destroy manual edits.
+  if (textarea && textarea.value.trim()) {
+    if (!confirm('This will replace the current lyrics with the transcription. Continue?')) {
+      input.value = '';
+      return;
+    }
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Transcribing...'; btn.style.opacity = '0.5'; }
+  if (status) { status.textContent = 'Uploading and transcribing (10 to 60 seconds)...'; status.style.color = '#00d4ff'; }
+
+  try {
+    const audioBase64 = await _fileToBase64Stripped(file);
+    const resp = await fetch('/api/intake/transcribe-lyrics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ audioBase64, mimeType: file.type, filename: file.name })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const msg = (data && data.error) || ('Transcription failed (' + resp.status + ')');
+      throw new Error(msg);
+    }
+    const text = (data.text || '').trim();
+    if (!text) throw new Error('Empty transcription');
+
+    if (textarea) {
+      textarea.value = text;
+      intakeUpdate();
+    }
+    if (status) { status.textContent = 'Transcribed ' + (file.name || 'audio') + '. Edit as needed, then use Format for Genius.'; status.style.color = '#4ade80'; }
+    showToast('Lyrics transcribed!');
+  } catch (err) {
+    if (status) { status.textContent = 'Error: ' + err.message; status.style.color = '#f87171'; }
+    showToast('Transcription failed: ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origLabel || 'Upload Audio to Transcribe'; btn.style.opacity = '1'; }
+    input.value = '';
   }
 }
 
