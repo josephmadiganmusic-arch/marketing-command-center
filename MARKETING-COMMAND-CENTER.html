@@ -1055,14 +1055,14 @@
           </div>
           <div class="form-group" style="margin-top:16px;">
             <label>Lyrics (Genius format)</label>
-            <textarea id="in-lyrics" rows="12" oninput="intakeUpdate()" placeholder="Paste or upload lyrics. Use Genius-style section headers in square brackets:&#10;&#10;[Intro]&#10;...&#10;&#10;[Verse 1]&#10;...&#10;&#10;[Chorus]&#10;...&#10;&#10;[Verse 2]&#10;...&#10;&#10;[Bridge]&#10;...&#10;&#10;[Outro]&#10;...&#10;&#10;Required by stations like God's House of Hip Hop and used for genius.com registration."></textarea>
+            <textarea id="in-lyrics" rows="12" oninput="intakeUpdate()" placeholder="Paste or upload lyrics. Use Genius-style section headers in square brackets:&#10;&#10;[Intro]&#10;...&#10;&#10;[Verse 1]&#10;...&#10;&#10;[Chorus]&#10;...&#10;&#10;[Verse 2]&#10;...&#10;&#10;[Bridge]&#10;...&#10;&#10;[Outro]&#10;...&#10;&#10;Required by stations like God's House of Hip Hop, used for genius.com registration, and fed into Musixmatch (timed lyrics on Spotify / Apple Music / Instagram / TikTok)."></textarea>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
               <input type="file" id="in-lyricsAudioInput" accept="audio/*" style="display:none;" onchange="transcribeLyricsFromAudio(this)">
               <button type="button" id="in-lyricsUploadBtn" title="For best accuracy, upload the vocal stem (acapella bounce) instead of the full mix. Fill Song Title + Artist in intake first so Whisper knows what names to expect." style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="document.getElementById('in-lyricsAudioInput').click()">Upload Audio to Transcribe</button>
               <button type="button" id="in-lyricsFormatBtn" style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="formatLyricsForGenius(this)">Format for Genius</button>
               <span id="in-lyricsStatus" style="font-size:11px;color:#6b7280;"></span>
             </div>
-            <p style="font-size:11px;color:#f87171;margin-top:6px;line-height:1.5;"><strong style="color:#fca5a5;">Tip for best accuracy:</strong> fill Song Title + Artist (+ Featured Artist, Producer) in the fields above BEFORE uploading, and upload the <strong style="color:#fca5a5;">vocal stem / acapella</strong> if you have one instead of the full mix. Whisper uses the intake metadata to pre-learn the names in your song so they transcribe correctly. Works on the full mix too, just with more edits needed. No vocal stem on hand? Isolate one for free — no install needed with <a href="https://vocalremover.org" target="_blank" rel="noopener" style="color:#fca5a5;text-decoration:underline;font-weight:600;">vocalremover.org</a> (browser tool, no signup) or best-quality results with <a href="https://ultimatevocalremover.com" target="_blank" rel="noopener" style="color:#fca5a5;text-decoration:underline;font-weight:600;">Ultimate Vocal Remover 5</a> (free Win/Mac desktop app) — then upload the resulting vocal track here for dramatically cleaner results. Required by radio stations like God's House of Hip Hop, also used for your genius.com upload.</p>
+            <p style="font-size:11px;color:#f87171;margin-top:6px;line-height:1.5;"><strong style="color:#fca5a5;">Tip for best accuracy:</strong> fill Song Title + Artist (+ Featured Artist, Producer) in the fields above BEFORE uploading, and upload the <strong style="color:#fca5a5;">vocal stem / acapella</strong> if you have one instead of the full mix. Whisper uses the intake metadata to pre-learn the names in your song so they transcribe correctly. Works on the full mix too, just with more edits needed. No vocal stem on hand? Isolate one for free — no install needed with <a href="https://vocalremover.org" target="_blank" rel="noopener" style="color:#fca5a5;text-decoration:underline;font-weight:600;">vocalremover.org</a> (browser tool, no signup) or best-quality results with <a href="https://ultimatevocalremover.com" target="_blank" rel="noopener" style="color:#fca5a5;text-decoration:underline;font-weight:600;">Ultimate Vocal Remover 5</a> (free Win/Mac desktop app) — then upload the resulting vocal track here for dramatically cleaner results. Required by radio stations like God's House of Hip Hop, used for your genius.com upload, and fed into Musixmatch so timed lyrics appear on Spotify, Apple Music, Instagram, and TikTok.</p>
           </div>
         </div>
 
@@ -1261,10 +1261,11 @@
     <p class="subtitle">Complete each step to fully register your release. Your intake data auto-fills the fields below.</p>
     <div class="reg-progress-bar" id="regProgressBar">
       <div class="reg-progress-step" id="reg-prog-0"><span class="reg-step-num">1</span>PRO</div>
-      <div class="reg-progress-step" id="reg-prog-1"><span class="reg-step-num">2</span>SoundExchange</div>
-      <div class="reg-progress-step" id="reg-prog-2"><span class="reg-step-num">3</span>The MLC</div>
-      <div class="reg-progress-step" id="reg-prog-3"><span class="reg-step-num">4</span>Songtrust</div>
-      <div class="reg-progress-step" id="reg-prog-4"><span class="reg-step-num">5</span>Distribution</div>
+      <div class="reg-progress-step" id="reg-prog-1"><span class="reg-step-num">2</span>Distribution</div>
+      <div class="reg-progress-step" id="reg-prog-2"><span class="reg-step-num">3</span>Musixmatch</div>
+      <div class="reg-progress-step" id="reg-prog-3"><span class="reg-step-num">4</span>SoundExchange</div>
+      <div class="reg-progress-step" id="reg-prog-4"><span class="reg-step-num">5</span>The MLC</div>
+      <div class="reg-progress-step" id="reg-prog-5"><span class="reg-step-num">6</span>Songtrust</div>
     </div>
     <div id="regCards"></div>
   </div><!-- end panel-registration -->
@@ -2328,72 +2329,6 @@ const regPlatforms = [
     ]
   },
   {
-    id: 'soundexchange', name: 'SoundExchange', desc: 'Register sound recording for digital performance royalties',
-    urls: [{ name: 'SoundExchange', url: 'https://www.soundexchange.com/' }],
-    cost: 'Free',
-    steps: [
-      'Log in at soundexchange.com',
-      'Go to "Repertoire" then "Register Sound Recordings"',
-      'Enter the track title and featured artist name',
-      'Add the album/single title and ISRC code',
-      'Enter the release date and label name',
-      'Submit the recording registration'
-    ],
-    fields: [
-      { label: 'Track Title', key: 'songTitle' },
-      { label: 'Artist Name', key: 'primaryArtist' },
-      { label: 'Album Title', key: 'albumName' },
-      { label: 'ISRC', key: 'isrc' },
-      { label: 'Release Date', key: 'releaseDate' },
-      { label: 'Label', key: 'label' }
-    ]
-  },
-  {
-    id: 'mlc', name: 'The MLC', desc: 'Claim mechanical licensing royalties for streams and downloads',
-    urls: [{ name: 'The MLC Portal', url: 'https://portal.themlc.com' }],
-    cost: 'Free',
-    steps: [
-      'Log in at portal.themlc.com',
-      'Navigate to "Musical Works" then "Register New Work"',
-      'Enter the song title',
-      'Add each songwriter with their IPI number',
-      'Add each publisher with their IPI number',
-      'Enter ownership percentages for each party',
-      'Add ISWC and ISRC codes if available',
-      'Submit the work registration'
-    ],
-    fields: [
-      { label: 'Song Title', key: 'songTitle' },
-      { label: 'Writers + IPI', key: 'writersIPI' },
-      { label: 'Publishers + IPI', key: 'publishersIPI' },
-      { label: 'Ownership %', key: 'splits' },
-      { label: 'ISWC', key: 'iswc' },
-      { label: 'ISRC', key: 'isrc' }
-    ]
-  },
-  {
-    id: 'songtrust', name: 'Songtrust', desc: 'Global publishing administration — collect royalties worldwide',
-    urls: [{ name: 'Songtrust', url: 'https://www.songtrust.com' }],
-    cost: '$100 setup + 15%',
-    steps: [
-      'Log in at songtrust.com',
-      'Go to "Songs" then "Add a Song"',
-      'Enter the song title and release date',
-      'Add each songwriter with their IPI number and PRO affiliation',
-      'Enter the publisher and ownership split percentages',
-      'Add the ISRC code',
-      'Submit for global registration'
-    ],
-    fields: [
-      { label: 'Song Title', key: 'songTitle' },
-      { label: 'Writers + IPI + PRO', key: 'writersIPI' },
-      { label: 'Publisher', key: 'publishers' },
-      { label: 'Splits %', key: 'splits' },
-      { label: 'ISRC', key: 'isrc' },
-      { label: 'Release Date', key: 'releaseDate' }
-    ]
-  },
-  {
     id: 'distribution', name: 'Distribution', desc: 'Upload and distribute your music to all streaming platforms',
     urls: [
       { name: 'DistroKid', url: 'https://distrokid.com/dashboard', cost: '$22.99/yr' },
@@ -2430,6 +2365,103 @@ const regPlatforms = [
       { label: 'ISRC', key: 'isrc' },
       { label: 'UPC', key: 'upc' },
       { label: 'Language', key: 'language' }
+    ]
+  },
+  {
+    id: 'musixmatch', name: 'Musixmatch (Timed Lyrics)',
+    desc: 'Submit lyrics with synced timecodes — powers lyrics on Spotify, Apple Music, Instagram, TikTok',
+    urls: [
+      { name: 'Musixmatch for Artists', url: 'https://artists.musixmatch.com' },
+      { name: 'Musixmatch Pro (Sync Studio)', url: 'https://curators.musixmatch.com' }
+    ],
+    cost: 'Free',
+    steps: [
+      'Distribution must be live first — Musixmatch finds your song by ISRC once it\'s on DSPs.',
+      'Log in at artists.musixmatch.com and verify as the artist (first time only).',
+      'Search your song in the catalog. If it is not there yet, wait 24-48h after distribution.',
+      'Paste the lyrics from your Intake tab Lyrics field into the lyrics editor.',
+      'Open the Sync Studio — Musixmatch plays the audio and you tap each line to set its timecode. It also attempts an AI transcription you can accept or overwrite.',
+      'Edit any mistranscribed lines against your own lyrics for accuracy (Musixmatch\'s AI is helpful but imperfect on hip hop cadences).',
+      'Submit for review — once approved, timed lyrics show up everywhere (Spotify, Apple Music, Instagram Reels, TikTok search, Shazam).'
+    ],
+    fields: [
+      { label: 'Song Title', key: 'songTitle' },
+      { label: 'Primary Artist', key: 'primaryArtist' },
+      { label: 'Feat. Artist', key: 'featArtist' },
+      { label: 'ISRC', key: 'isrc' },
+      { label: 'Lyrics (Genius format)', key: 'lyrics' }
+    ]
+  },
+  {
+    id: 'soundexchange', name: 'SoundExchange', desc: 'Register sound recording for digital performance royalties',
+    urls: [{ name: 'SoundExchange', url: 'https://www.soundexchange.com/' }],
+    cost: 'Free',
+    steps: [
+      'Log in at soundexchange.com',
+      'Go to "Repertoire" then "Register Sound Recordings"',
+      'Enter the track title and featured artist name',
+      'Add the album/single title and ISRC code',
+      'Enter the release date and label name',
+      'Submit the recording registration'
+    ],
+    fields: [
+      { label: 'Track Title', key: 'songTitle' },
+      { label: 'Artist Name', key: 'primaryArtist' },
+      { label: 'Album Title', key: 'albumName' },
+      { label: 'ISRC', key: 'isrc' },
+      { label: 'Release Date', key: 'releaseDate' },
+      { label: 'Label', key: 'label' }
+    ]
+  },
+  {
+    id: 'mlc', name: 'The MLC (before + after release)',
+    desc: 'Register the musical work BEFORE release, then link the sound recording AFTER it goes live',
+    urls: [{ name: 'The MLC Portal', url: 'https://portal.themlc.com' }],
+    cost: 'Free',
+    steps: [
+      'BEFORE RELEASE — register the musical work:',
+      'Log in at portal.themlc.com',
+      'Navigate to "Musical Works" then "Register New Work"',
+      'Enter the song title',
+      'Add each songwriter with their IPI number',
+      'Add each publisher with their IPI number',
+      'Enter ownership percentages for each party',
+      'Add ISWC if available (ISRC comes later from your distributor)',
+      'Submit the work registration',
+      'AFTER RELEASE — link the sound recording:',
+      'Once the song is live on streaming, return to the MLC portal',
+      'Find the work you registered and add the sound recording (match by ISRC)',
+      'This connects streaming mechanicals back to your work so royalties flow correctly'
+    ],
+    fields: [
+      { label: 'Song Title', key: 'songTitle' },
+      { label: 'Writers + IPI', key: 'writersIPI' },
+      { label: 'Publishers + IPI', key: 'publishersIPI' },
+      { label: 'Ownership %', key: 'splits' },
+      { label: 'ISWC', key: 'iswc' },
+      { label: 'ISRC', key: 'isrc' }
+    ]
+  },
+  {
+    id: 'songtrust', name: 'Songtrust', desc: 'Global publishing administration — collect royalties worldwide',
+    urls: [{ name: 'Songtrust', url: 'https://www.songtrust.com' }],
+    cost: '$100 setup + 15%',
+    steps: [
+      'Log in at songtrust.com',
+      'Go to "Songs" then "Add a Song"',
+      'Enter the song title and release date',
+      'Add each songwriter with their IPI number and PRO affiliation',
+      'Enter the publisher and ownership split percentages',
+      'Add the ISRC code',
+      'Submit for global registration'
+    ],
+    fields: [
+      { label: 'Song Title', key: 'songTitle' },
+      { label: 'Writers + IPI + PRO', key: 'writersIPI' },
+      { label: 'Publisher', key: 'publishers' },
+      { label: 'Splits %', key: 'splits' },
+      { label: 'ISRC', key: 'isrc' },
+      { label: 'Release Date', key: 'releaseDate' }
     ]
   }
 ];
@@ -3968,6 +4000,7 @@ function getIntakeFieldValue(key) {
     case 'featArtist': return d.featArtist || '';
     case 'producer': return d.producer || '';
     case 'explicit': return d.explicit || 'No';
+    case 'lyrics': return d.lyrics || '';
     default: return '';
   }
 }
