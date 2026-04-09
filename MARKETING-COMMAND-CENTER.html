@@ -1418,6 +1418,7 @@
           <button class="category-btn" data-cat="fm_am" onclick="egSetCategory('fm_am')" title="FM/AM intro">FM / AM</button>
           <button class="category-btn" data-cat="online_radio" onclick="egSetCategory('online_radio')" title="Online Radio intro">Online Radio</button>
           <button class="category-btn" data-cat="press" onclick="egSetCategory('press')" title="Press intro">Press</button>
+          <button class="category-btn" data-cat="press_release" onclick="egSetCategory('press_release')" title="Press release wire copy">Press Release</button>
           <button class="category-btn" data-cat="blog" onclick="egSetCategory('blog')" title="Blog intro">Blog</button>
           <button class="category-btn" data-cat="spotify_playlist" onclick="egSetCategory('spotify_playlist')" title="Spotify Playlist intro">Spotify Playlist</button>
           <button class="category-btn" data-cat="podcast" onclick="egSetCategory('podcast')" title="Podcast intro">Podcast</button>
@@ -1458,6 +1459,71 @@
   <div class="panel" id="panel-outreach">
     <h2>Outreach Templates</h2>
     <p class="subtitle">Playlist curators, radio stations, blogs, podcasts. Copy and send.</p>
+    <!-- Submission Tracker — Outreach List phase commit 7. Pinned to top of
+         panel-outreach so the 125+ CHH list is the first thing users see.
+         When locked, the tracker renders grayed out behind a hover-promoted
+         sales overlay that surfaces dynamic pricing (trial $250, Pro $100).
+         Admin users always see it unlocked via buildOutreachState(). -->
+    <div class="section" id="submissionTrackerWrap" style="position:relative;">
+      <div class="section-title">Submission Tracker — Rollout Heaven 125+ CHH Submission List</div>
+      <div id="stUnlockedWrap">
+        <div id="stCategoryTabs" class="st-tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+          <button class="st-tab active" data-cat="all" onclick="stFilterCategory('all')">All</button>
+          <button class="st-tab" data-cat="sirius" onclick="stFilterCategory('sirius')">Sirius XM</button>
+          <button class="st-tab" data-cat="iheart" onclick="stFilterCategory('iheart')">iHeart</button>
+          <button class="st-tab" data-cat="fm_am" onclick="stFilterCategory('fm_am')">FM / AM</button>
+          <button class="st-tab" data-cat="online_radio" onclick="stFilterCategory('online_radio')">Online Radio</button>
+          <button class="st-tab" data-cat="press" onclick="stFilterCategory('press')">Press</button>
+          <button class="st-tab" data-cat="press_release" onclick="stFilterCategory('press_release')">Press Release</button>
+          <button class="st-tab" data-cat="blog" onclick="stFilterCategory('blog')">Blog</button>
+          <button class="st-tab" data-cat="spotify_playlist" onclick="stFilterCategory('spotify_playlist')">Spotify Playlist</button>
+          <button class="st-tab" data-cat="podcast" onclick="stFilterCategory('podcast')">Podcast</button>
+          <div style="flex:1;"></div>
+          <div style="position:relative;">
+            <button class="st-tab" id="stExportBtn" onclick="stToggleExportMenu(event)" title="Export category as Google Contacts CSV">Export CSV \u25BE</button>
+            <div id="stExportMenu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#1a1a1f;border:1px solid #333;border-radius:8px;padding:6px;min-width:180px;z-index:50;box-shadow:0 8px 28px rgba(0,0,0,0.45);">
+              <a href="/api/outreach/export/sirius.csv" class="st-export-link">Sirius XM</a>
+              <a href="/api/outreach/export/iheart.csv" class="st-export-link">iHeart</a>
+              <a href="/api/outreach/export/fm_am.csv" class="st-export-link">FM / AM</a>
+              <a href="/api/outreach/export/online_radio.csv" class="st-export-link">Online Radio</a>
+              <a href="/api/outreach/export/press.csv" class="st-export-link">Press</a>
+              <a href="/api/outreach/export/press_release.csv" class="st-export-link">Press Release</a>
+              <a href="/api/outreach/export/blog.csv" class="st-export-link">Blog</a>
+              <a href="/api/outreach/export/spotify_playlist.csv" class="st-export-link">Spotify Playlist</a>
+              <a href="/api/outreach/export/podcast.csv" class="st-export-link">Podcast</a>
+            </div>
+          </div>
+        </div>
+        <div id="stSubTabs" class="st-subtabs" style="display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #2a2a32;">
+          <button class="st-subtab active" data-kind="forms_emails" onclick="stFilterSubTab('forms_emails')">Forms &amp; Emails</button>
+          <button class="st-subtab" data-kind="direct_outreach" onclick="stFilterSubTab('direct_outreach')">Social</button>
+        </div>
+        <div id="stSummary" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
+        <div id="stList"></div>
+      </div>
+      <!-- Locked overlay — only visible when OUTREACH_STATE.unlocked is false. -->
+      <div id="stLockedMsg" class="st-lock-overlay" style="display:none;">
+        <div class="st-lock-card">
+          <div class="st-lock-badge">LOCKED</div>
+          <div class="st-lock-title">Rollout Heaven 125+ CHH Submission List</div>
+          <div class="st-lock-sub">125+ hand-curated Christian Hip-Hop contacts across Sirius XM, iHeart, FM/AM, Online Radio, Press, Press Release, Blogs, Spotify Playlists, and Podcasts. One purchase, lifetime updates, submission tracker included.</div>
+          <div class="st-lock-prices">
+            <div class="st-lock-price" id="stLockPriceTrial">
+              <div class="st-lock-price-label">Trial users</div>
+              <div class="st-lock-price-amount">$250</div>
+              <div class="st-lock-price-note">one-time</div>
+            </div>
+            <div class="st-lock-price" id="stLockPricePro">
+              <div class="st-lock-price-label">Pro / Elite <span style="color:#4ade80;font-size:10px;">(60% OFF)</span></div>
+              <div class="st-lock-price-amount">$100</div>
+              <div class="st-lock-price-note">one-time</div>
+            </div>
+          </div>
+          <a href="/subscribe#outreach-list" class="st-lock-cta" id="stLockCta">Unlock Now</a>
+          <div class="st-lock-hover-hint">Hover to see your price &middot; click to purchase</div>
+        </div>
+      </div>
+    </div>
     <div class="inline-ai-section">
       <div class="section-title">AI Outreach Generation</div>
       <div class="inline-ai">
@@ -1517,49 +1583,27 @@
         </div>
       </div>
     </div>
-    <!-- Submission Tracker — Outreach List phase commit 7 -->
-    <div class="section" id="submissionTrackerWrap">
-      <div class="section-title">Submission Tracker</div>
-      <div id="stLockedMsg" style="display:none;padding:20px;text-align:center;background:rgba(0,212,255,0.06);border:1px dashed rgba(0,212,255,0.35);border-radius:10px;color:#bbb;">
-        <div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:6px;">Outreach List locked</div>
-        <div style="font-size:13px;margin-bottom:12px;">Unlock the curated Outreach List to track your submissions to Sirius, iHeart, FM/AM, Online Radio, Press, Blogs, Spotify Playlists, and Podcasts \u2014 all in one place.</div>
-        <a href="/subscribe#outreach-list" style="display:inline-block;padding:10px 18px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:700;">Unlock Outreach List</a>
-      </div>
-      <div id="stUnlockedWrap" style="display:none;">
-        <div id="stCategoryTabs" class="st-tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
-          <button class="st-tab active" data-cat="all" onclick="stFilterCategory('all')">All</button>
-          <button class="st-tab" data-cat="sirius" onclick="stFilterCategory('sirius')">Sirius XM</button>
-          <button class="st-tab" data-cat="iheart" onclick="stFilterCategory('iheart')">iHeart</button>
-          <button class="st-tab" data-cat="fm_am" onclick="stFilterCategory('fm_am')">FM / AM</button>
-          <button class="st-tab" data-cat="online_radio" onclick="stFilterCategory('online_radio')">Online Radio</button>
-          <button class="st-tab" data-cat="press" onclick="stFilterCategory('press')">Press</button>
-          <button class="st-tab" data-cat="blog" onclick="stFilterCategory('blog')">Blog</button>
-          <button class="st-tab" data-cat="spotify_playlist" onclick="stFilterCategory('spotify_playlist')">Spotify Playlist</button>
-          <button class="st-tab" data-cat="podcast" onclick="stFilterCategory('podcast')">Podcast</button>
-          <div style="flex:1;"></div>
-          <div style="position:relative;">
-            <button class="st-tab" id="stExportBtn" onclick="stToggleExportMenu(event)" title="Export category as Google Contacts CSV">Export CSV \u25BE</button>
-            <div id="stExportMenu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#1a1a1f;border:1px solid #333;border-radius:8px;padding:6px;min-width:180px;z-index:50;box-shadow:0 8px 28px rgba(0,0,0,0.45);">
-              <a href="/api/outreach/export/sirius.csv" class="st-export-link">Sirius XM</a>
-              <a href="/api/outreach/export/iheart.csv" class="st-export-link">iHeart</a>
-              <a href="/api/outreach/export/fm_am.csv" class="st-export-link">FM / AM</a>
-              <a href="/api/outreach/export/online_radio.csv" class="st-export-link">Online Radio</a>
-              <a href="/api/outreach/export/press.csv" class="st-export-link">Press</a>
-              <a href="/api/outreach/export/blog.csv" class="st-export-link">Blog</a>
-              <a href="/api/outreach/export/spotify_playlist.csv" class="st-export-link">Spotify Playlist</a>
-              <a href="/api/outreach/export/podcast.csv" class="st-export-link">Podcast</a>
-            </div>
-          </div>
-        </div>
-        <div id="stSubTabs" class="st-subtabs" style="display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #2a2a32;">
-          <button class="st-subtab active" data-kind="forms_emails" onclick="stFilterSubTab('forms_emails')">Forms &amp; Emails</button>
-          <button class="st-subtab" data-kind="direct_outreach" onclick="stFilterSubTab('direct_outreach')">Social</button>
-        </div>
-        <div id="stSummary" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
-        <div id="stList"></div>
-      </div>
-    </div>
     <style>
+      /* Locked-state overlay for the Submission Tracker. The underlying
+         tracker gets .st-locked (grayscale + pointer-events:none) so the
+         category tabs act as a preview of what you're missing, and the
+         overlay sits on top with a hover lift. */
+      .st-locked { filter:grayscale(1) blur(1px);opacity:.45;pointer-events:none;user-select:none; }
+      .st-lock-overlay { position:absolute;inset:40px 0 0 0;display:flex;align-items:flex-start;justify-content:center;padding:12px;z-index:5;pointer-events:none; }
+      .st-lock-card { pointer-events:auto;max-width:560px;width:100%;background:linear-gradient(160deg,rgba(10,12,28,0.96),rgba(20,10,40,0.96));border:1px solid rgba(0,212,255,0.35);border-radius:14px;padding:22px 24px;text-align:center;box-shadow:0 12px 48px rgba(0,0,0,0.6),0 0 0 1px rgba(123,47,247,0.15);transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease; }
+      .st-lock-card:hover { transform:translateY(-4px);border-color:rgba(0,212,255,0.8);box-shadow:0 20px 60px rgba(0,212,255,0.25),0 0 0 1px rgba(123,47,247,0.35); }
+      .st-lock-badge { display:inline-block;padding:3px 10px;font-size:10px;font-weight:800;letter-spacing:2px;color:#080b1e;background:linear-gradient(135deg,#ffd700,#ffed4a);border-radius:4px;margin-bottom:10px; }
+      .st-lock-title { font-size:17px;font-weight:800;color:#fff;margin-bottom:6px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+      .st-lock-sub { font-size:12px;color:#aab;line-height:1.5;margin-bottom:14px; }
+      .st-lock-prices { display:flex;gap:10px;margin-bottom:14px;justify-content:center; }
+      .st-lock-price { flex:1;max-width:180px;padding:12px 10px;border:1px solid #2a2a32;border-radius:10px;background:rgba(255,255,255,0.02);transition:all .2s; }
+      .st-lock-price.active { border-color:rgba(0,212,255,0.7);background:rgba(0,212,255,0.08);box-shadow:0 0 0 1px rgba(0,212,255,0.3); }
+      .st-lock-price-label { font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:4px; }
+      .st-lock-price-amount { font-size:22px;font-weight:800;color:#fff; }
+      .st-lock-price-note { font-size:10px;color:#666; }
+      .st-lock-cta { display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:800;letter-spacing:.5px;transition:all .25s;box-shadow:0 4px 16px rgba(123,47,247,0.3); }
+      .st-lock-card:hover .st-lock-cta { box-shadow:0 8px 30px rgba(0,212,255,0.55),0 0 0 2px rgba(0,212,255,0.4);transform:scale(1.03); }
+      .st-lock-hover-hint { font-size:10px;color:#666;margin-top:10px;font-style:italic; }
       .st-tab { padding:6px 12px;font-size:12px;font-weight:600;border:1px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.06);color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .2s; }
       .st-tab:hover { background:rgba(0,212,255,0.14);border-color:rgba(0,212,255,0.55); }
       .st-tab.active { background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;border-color:transparent; }
@@ -3973,7 +4017,7 @@ window.OUTREACH_STATE = {
   current_version: 0,
   banner_dismissed_version: 0,
   last_change_summary: null,
-  categories: ['sirius','iheart','fm_am','online_radio','press','blog','spotify_playlist','podcast'],
+  categories: ['sirius','iheart','fm_am','online_radio','press','press_release','blog','spotify_playlist','podcast'],
   category_labels: {}
 };
 // Cache key: `${releaseSignature}_${category}`. Cycling between categories
@@ -4096,8 +4140,28 @@ function stApplyLockState() {
   const wrap = document.getElementById('submissionTrackerWrap');
   if (!wrap) return;
   const unlocked = !!window.OUTREACH_STATE.unlocked;
-  document.getElementById('stLockedMsg').style.display = unlocked ? 'none' : '';
-  document.getElementById('stUnlockedWrap').style.display = unlocked ? '' : 'none';
+  const lockEl = document.getElementById('stLockedMsg');
+  const unlockedWrap = document.getElementById('stUnlockedWrap');
+  if (lockEl) lockEl.style.display = unlocked ? 'none' : '';
+  // The unlocked wrap always stays in the DOM flow so its grayed-out preview
+  // (category tabs + empty list shell) shows behind the overlay when locked.
+  if (unlockedWrap) {
+    unlockedWrap.style.display = '';
+    unlockedWrap.classList.toggle('st-locked', !unlocked);
+  }
+  if (unlocked) return;
+  // Dynamic pricing — Pro / Elite / Elite Plus subscribers get the $100
+  // discount, everyone else (trial, expired, none) pays $250. Admin is
+  // auto-unlocked via buildOutreachState() so we never reach this branch
+  // for them. Highlight the price tier that applies to the current user.
+  const isProPriced = (typeof SUB_STATUS !== 'undefined' && SUB_STATUS === 'active')
+    || (typeof USER_TIER !== 'undefined' && (USER_TIER === 'pro' || USER_TIER === 'elite' || USER_TIER === 'elite_plus'));
+  const trialCard = document.getElementById('stLockPriceTrial');
+  const proCard = document.getElementById('stLockPricePro');
+  const cta = document.getElementById('stLockCta');
+  if (trialCard) trialCard.classList.toggle('active', !isProPriced);
+  if (proCard) proCard.classList.toggle('active', isProPriced);
+  if (cta) cta.textContent = isProPriced ? 'Unlock for $100' : 'Unlock for $250';
 }
 
 async function stInit() {
@@ -4546,6 +4610,7 @@ const EG_FALLBACK_SEEDS = {
   fm_am: 'Hi, reaching out from the {artist_name} camp about a new single, "{song_title}". It\'s {genre} with crossover appeal and we\'d love to get it in front of your FM/AM audience.',
   online_radio: 'Hey, I\'m sending over my latest single "{song_title}" ({genre}, out {release_date}). I think this track lines up with what you\'ve been playing on the show.',
   press: 'Hi, quick pitch: "{song_title}" is a new {genre} release from {artist_name} dropping {release_date}. Happy to send more context if you\'d like to write it up.',
+  press_release: 'FOR IMMEDIATE RELEASE \u2014 {artist_name} announces "{song_title}", a new {genre} single arriving {release_date}. Full press kit, artwork, and streaming links available on request.',
   blog: 'Hey, longtime reader. I wanted to put my new single "{song_title}" on your radar \u2014 {genre}, out {release_date}.',
   spotify_playlist: 'Hi, I\'d love to pitch my new single "{song_title}" for your playlist. It\'s {genre}, releases {release_date}, and fits alongside the artists you\'ve been curating.',
   podcast: 'Hey, big fan of the show. I\'d love to come on and talk about my new single "{song_title}" and the story behind it.'

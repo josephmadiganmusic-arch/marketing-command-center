@@ -626,13 +626,14 @@ const STRIPE_OUTREACH_PRICE_PRO = process.env.STRIPE_OUTREACH_PRICE_PRO || '';
 // Canonical category slugs. Order here drives button order in the Email
 // Generator category bar. `podcast` ships even though the first CSV upload
 // has zero podcast rows — the UI shows a "No contacts yet" placeholder.
-const OUTREACH_CATEGORIES = ['sirius', 'iheart', 'fm_am', 'online_radio', 'press', 'blog', 'spotify_playlist', 'podcast'];
+const OUTREACH_CATEGORIES = ['sirius', 'iheart', 'fm_am', 'online_radio', 'press', 'press_release', 'blog', 'spotify_playlist', 'podcast'];
 const OUTREACH_CATEGORY_LABELS = {
   sirius: 'Sirius XM',
   iheart: 'iHeart',
   fm_am: 'FM / AM',
   online_radio: 'Online Radio',
   press: 'Press',
+  press_release: 'Press Release',
   blog: 'Blog',
   spotify_playlist: 'Spotify Playlist',
   podcast: 'Podcast'
@@ -2172,6 +2173,13 @@ const OUTREACH_CATEGORY_LABEL_MAP = {
   'internet radio': 'online_radio',
   'press': 'press',
   'media': 'press',
+  'press release': 'press_release',
+  'press releases': 'press_release',
+  'press_release': 'press_release',
+  'press-release': 'press_release',
+  'pr': 'press_release',
+  'pr wire': 'press_release',
+  'newswire': 'press_release',
   'blog': 'blog',
   'blogs': 'blog',
   'spotify playlist': 'spotify_playlist',
@@ -2392,6 +2400,7 @@ const OUTREACH_SEED_INTROS = {
   fm_am: `Hi {curator_name}, reaching out from the {artist_name} camp about a new single, "{song_title}". It's {genre} with crossover appeal and we'd love to get it in front of the {station_context} audience.`,
   online_radio: `Hey {curator_name}, I'm sending over my latest single "{song_title}" ({genre}, out {release_date}). I follow what you're doing on the show and think this track lines up with the sound you've been playing.`,
   press: `Hi {curator_name}, quick pitch: "{song_title}" is a new {genre} release from {artist_name} dropping {release_date}. The story behind it is {story_hook} — happy to send more context if you'd like to write it up.`,
+  press_release: `FOR IMMEDIATE RELEASE — {artist_name} announces the release of "{song_title}", a new {genre} single arriving {release_date}. The record leans into {mood} and {story_hook}. Full press kit, artwork, and streaming links available on request. Contact: {artist_name} management.`,
   blog: `Hey {curator_name}, longtime reader. I wanted to put my new single "{song_title}" on your radar — {genre}, out {release_date}. {story_hook}`,
   spotify_playlist: `Hi {curator_name}, I'd love to pitch my new single "{song_title}" for {playlist_name}. It's {genre} with a {mood} feel, releases {release_date}, and I think it sits well next to the artists you've been curating.`,
   podcast: `Hey {curator_name}, big fan of the show. I'd love to come on and talk about my new single "{song_title}" and the story behind it — {story_hook}. Available {release_window}.`
