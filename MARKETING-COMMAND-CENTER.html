@@ -3157,16 +3157,29 @@ async function transcribeLyricsFromAudio(input) {
         continue;
       }
 
-      // Hallucination filter. language=en is pinned server-side, so any
-      // non-Latin script in the output is Whisper's multilingual fallback
-      // firing on silence (Arabic/Hebrew/CJK characters were the actual
-      // symptom on Madigan's "Room" test). Also catches the classic
-      // Whisper credit-line fabrications. Empty + punctuation-only chunks
-      // are skipped too. Short real lines ("Run it up") are preserved.
-      const t = chunkText;
-      const nonLatin = /[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\u4E00-\u9FFF]/;
-      const fabrications = /written and directed|subtitles by|thanks for watching|jay beats/i;
-      if (!t || /^[\s.,\-!?'"]*$/.test(t) || nonLatin.test(t) || fabrications.test(t)) {
+      // Strip Whisper contamination in place rather than dropping the
+      // whole chunk. A real verse polluted with one stray Arabic word
+      // or a "Written and Directed by Jay Beats" tail should keep the
+      // verse and lose only the noise. language=en is pinned server-
+      // side, so any non-Latin script is multilingual-fallback noise.
+      let t = chunkText;
+      t = t.replace(/[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\u4E00-\u9FFF]+/g, ' ');
+      t = t.replace(/written and directed[^.!?\n]*[.!?]?/gi, ' ');
+      t = t.replace(/subtitles by[^.!?\n]*[.!?]?/gi, ' ');
+      t = t.replace(/thanks for watching[^.!?\n]*[.!?]?/gi, ' ');
+      t = t.replace(/jay beats[^.!?\n]*[.!?]?/gi, ' ');
+      t = t.replace(/\s+/g, ' ').trim();
+
+      // Diagnostic: per-chunk raw-vs-filtered so F12 console reveals
+      // what got dropped if the output still looks wrong in practice.
+      console.info('[transcribe] chunk ' + chunkNum + '/' + totalChunks, {
+        rawLen: chunkText.length,
+        filteredLen: t.length,
+        preview: t.slice(0, 140)
+      });
+
+      // Drop only if nothing usable remains after stripping.
+      if (!t || /^[\s.,\-!?'"]*$/.test(t)) {
         skippedSilent++;
         continue;
       }
