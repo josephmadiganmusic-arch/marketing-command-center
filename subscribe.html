@@ -174,6 +174,20 @@
     <button class="rp-btn" onclick="window.location.href='/redemption'">Learn More</button>
   </div>
 
+  <!-- Outreach List Add-On (one-time) -->
+  <div class="redemption-promo" id="outreach-list" style="margin-top:16px;border-color:rgba(0,212,255,0.35);background:rgba(0,212,255,0.06);">
+    <div class="rp-text">
+      <div class="rp-title">Outreach List Add-On &mdash; <span id="outreachPrice">$250</span> one-time</div>
+      <div class="rp-desc">
+        Unlocks the curated outreach contact list (Sirius XM, iHeart, FM/AM, Online Radio, Press, Blog, Spotify Playlists, Podcasts),
+        per-category Google Contacts CSV export, the Submission Tracker with XP rewards, and AI-tweaked category intros in the
+        Email Generator. One-time purchase &mdash; no refunds, unlocked forever.
+        <span id="outreachProPricingNote" style="display:none;color:#00d4ff;font-weight:600;"> (Pro subscribers pay $100.)</span>
+      </div>
+    </div>
+    <button class="rp-btn" id="outreachBuyBtn" onclick="outreachPurchase(this)">Get Outreach List</button>
+  </div>
+
   <div class="footer-actions">
     <span class="logout-link" onclick="logout()">Log out</span>
   </div>
@@ -188,6 +202,14 @@ if (params.get('success')) {
   showStatus('info', 'Checkout canceled. Subscribe when you\'re ready.');
 }
 
+// If the user landed here specifically to buy the Outreach List (anchor
+// hash set by the in-app CTA), don't bounce active subscribers back to
+// the app — they're the $100 buyer pool.
+var __outreachAnchor = window.location.hash === '#outreach-list' || params.get('outreach_canceled');
+if (params.get('outreach_canceled')) {
+  showStatus('info', 'Outreach List checkout canceled. Try again whenever you\'re ready.');
+}
+
 // Check if user already has a paid subscription
 fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
   if (!data || !data.loggedIn) return;
@@ -196,8 +218,15 @@ fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
     window.location.href = '/elite-onboarding';
     return;
   }
+  // Active (Pro) users: show the Outreach List price as $100 and keep
+  // them on the page if they came for the outreach anchor.
   if (data.subscription_status === 'active') {
-    window.location.href = '/';
+    document.getElementById('outreachPrice').textContent = '$100';
+    document.getElementById('outreachProPricingNote').style.display = 'inline';
+    if (!__outreachAnchor) {
+      window.location.href = '/';
+      return;
+    }
   } else if (data.subscription_status === 'trialing' && data.trialDaysLeft > 0) {
     showStatus('info', 'You have ' + data.trialDaysLeft + ' day' + (data.trialDaysLeft !== 1 ? 's' : '') + ' left on your free trial. Upgrade anytime.');
   } else if (data.subscription_status === 'trialing' && data.trialDaysLeft === 0) {
@@ -241,6 +270,39 @@ async function startCheckout(tier, btn) {
     btn.textContent = orig;
   }
 }
+
+// Outreach List add-on — one-time purchase, $250 trial / $100 Pro.
+async function outreachPurchase(btn) {
+  var orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Redirecting...';
+  try {
+    var res = await fetch('/api/outreach/purchase', { method: 'POST' });
+    var data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else if (data.alreadyUnlocked) {
+      btn.textContent = 'Already Unlocked';
+      showStatus('success', 'You already have the Outreach List. Open the Email Generator to use it.');
+    } else {
+      showStatus('error', data.error || 'Failed to start checkout. Please try again.');
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  } catch (err) {
+    showStatus('error', 'Something went wrong. Please try again.');
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// On load, check if the user already owns the Outreach List and lock the button.
+fetch('/api/outreach/status').then(function(r){ return r.ok ? r.json() : null; }).then(function(s){
+  if (s && s.unlocked) {
+    var b = document.getElementById('outreachBuyBtn');
+    if (b) { b.textContent = 'Already Unlocked'; b.disabled = true; }
+  }
+}).catch(function(){});
 
 async function logout() {
   await fetch('/api/logout', { method: 'POST' });
