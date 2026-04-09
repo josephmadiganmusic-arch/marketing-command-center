@@ -5042,10 +5042,17 @@ function stOpenSubmission(contactId) {
     try { window.ST_OVERLAY.popupRef.close(); } catch(_) {}
   }
   window.ST_OVERLAY.popupRef = null;
+  // Detach any stale onload handler from the previous contact.
+  iframe.onload = null;
 
-  // Right pane is now always the Email Generator preview (compose view) —
-  // the submission site opens in a popup window via the header button (or
-  // automatically for known popup-only hosts). We never iframe the site.
+  // Default behavior: attempt to load the submission site inside the iframe.
+  // Only hosts on ST_POPUP_ONLY_HOSTS (known iframe-hostile — X-Frame-Options
+  // DENY/SAMEORIGIN or CSP frame-ancestors) skip the iframe and open a popup
+  // immediately. For everything else we set iframe.src + a 3s loadTimer; if
+  // the iframe's onload fires first the load is considered successful; if
+  // the timer fires first the host is treated as hostile and we fall back
+  // to a popup (same UX as ST_POPUP_ONLY_HOSTS). Compose view stays
+  // toggleable via the header Site / Compose pill regardless.
   iframe.style.display = 'none';
   iframe.src = 'about:blank';
   nonUrlMsg.style.display = 'none';
@@ -5058,18 +5065,42 @@ function stOpenSubmission(contactId) {
     document.getElementById('stOverlayPopupBtn').style.display = 'none';
   } else {
     rightNotice.style.display = '';
-    rightNotice.innerHTML = '<span style="color:#888;">Submission site:</span> <a href="' + url + '" target="_blank" rel="noopener" style="color:#00d4ff;text-decoration:none;">' + url + '</a> &nbsp;&middot;&nbsp; <span style="color:#888;">click "Open in Popup" to load it in a side window.</span>';
     document.getElementById('stOverlayPopupBtn').style.display = '';
     document.getElementById('stOverlayPopupBtn').onclick = function() { stOverlayOpenPopup(url); };
-    // Known popup-only hosts: auto-open the popup immediately since there's
-    // no iframe fallback anymore. Amen Worldwide gets a special construction
-    // notice in addition.
+    // Stash the URL so mode toggles (stSetOverlayRightMode) can re-show
+    // the iframe without re-running stOpenSubmission.
+    window.ST_OVERLAY.currentUrl = url;
+
     if (stIsPopupOnlyHost(url)) {
+      // Known iframe-hostile host — skip the iframe attempt entirely.
+      rightNotice.innerHTML = '<span style="color:#888;">Submission site:</span> <a href="' + url + '" target="_blank" rel="noopener" style="color:#00d4ff;text-decoration:none;">' + url + '</a> &nbsp;&middot;&nbsp; <span style="color:#ffb347;">This site refuses iframe embedding - opening in popup.</span>';
       stOverlayOpenPopup(url);
       const _host = stGetHost(url);
       if (_host === 'amenworldwide.com') {
         rightNotice.innerHTML += ' <span style="color:#ffb347;">Note: site is under construction.</span>';
       }
+    } else {
+      // Try the iframe first with a 3s load-timer fallback.
+      rightNotice.innerHTML = '<span style="color:#888;">Submission site:</span> <a href="' + url + '" target="_blank" rel="noopener" style="color:#00d4ff;text-decoration:none;">' + url + '</a> &nbsp;&middot;&nbsp; <span style="color:#888;">loading in iframe&hellip;</span>';
+      iframe.style.display = '';
+      iframe.onload = function() {
+        if (window.ST_OVERLAY.loadTimer) {
+          clearTimeout(window.ST_OVERLAY.loadTimer);
+          window.ST_OVERLAY.loadTimer = null;
+        }
+        rightNotice.innerHTML = '<span style="color:#888;">Submission site:</span> <a href="' + url + '" target="_blank" rel="noopener" style="color:#00d4ff;text-decoration:none;">' + url + '</a> &nbsp;&middot;&nbsp; <span style="color:#4ade80;">Loaded.</span> <span style="color:#888;">Doesn\'t look right? Click "Open in Popup" above.</span>';
+      };
+      iframe.src = url;
+      window.ST_OVERLAY.loadTimer = setTimeout(function() {
+        window.ST_OVERLAY.loadTimer = null;
+        // Timer fired without onload - host is almost certainly blocking
+        // X-Frame-Options / CSP. Fall back to popup and hide the iframe.
+        iframe.onload = null;
+        iframe.style.display = 'none';
+        iframe.src = 'about:blank';
+        rightNotice.innerHTML = '<span style="color:#888;">Submission site:</span> <a href="' + url + '" target="_blank" rel="noopener" style="color:#00d4ff;text-decoration:none;">' + url + '</a> &nbsp;&middot;&nbsp; <span style="color:#ffb347;">Iframe blocked - opened in popup.</span>';
+        stOverlayOpenPopup(url);
+      }, 3000);
     }
   }
 
@@ -5209,12 +5240,13 @@ function stOverlayOpenPopup(url) {
   const popup = window.open(url, 'outreachSubmissionPopup', features);
   window.ST_OVERLAY.popupRef = popup;
   const notice = document.getElementById('stOverlayRightNotice');
-  if (popup) {
-    notice.innerHTML = '<span style="color:#00d4ff;">Opened in popup window</span> \u2014 complete your submission there, then click Mark Submitted.';
-    document.getElementById('stOverlayIframe').style.display = 'none';
-  } else {
+  if (!popup) {
     notice.innerHTML = '<span style="color:#ffb347;">Popup blocked.</span> Allow popups for this site and <a href="' + url + '" target="_blank" rel="noopener" style="color:#00d4ff;">click here to open the submission page</a>.';
   }
+  // NOTE: intentionally does NOT hide the iframe - user may click "Open in
+  // Popup" while the iframe is successfully loaded, and we want both open
+  // at the same time. The iframe is only hidden by the loadTimer fallback
+  // path in stOpenSubmission (when the host is detected as iframe-hostile).
 }
 
 function stOverlayClose() {
@@ -5226,7 +5258,10 @@ function stOverlayClose() {
   }
   window.ST_OVERLAY.popupRef = null;
   window.ST_OVERLAY.contactId = null;
+  window.ST_OVERLAY.currentUrl = null;
   window.ST_OVERLAY.rightMode = 'site';
+  const _frame = document.getElementById('stOverlayIframe');
+  if (_frame) { _frame.onload = null; _frame.style.display = 'none'; }
   // Tear down the compose mirror hook so the EG tab's normal side effects
   // (toast/XP/scroll) come back the next time the user runs egGenerateEmail.
   window.__egRefreshListener = null;
