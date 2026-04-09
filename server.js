@@ -1889,6 +1889,244 @@ app.post('/api/admin/redemptions/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// --- Outreach List admin importer ---
+// Admin-only CSV ingest for the curated contact list. Two-step flow:
+//   1. POST /api/admin/outreach/import — dry run. Parses the CSV,
+//      normalizes category labels, diffs against the current published
+//      version, and returns a preview. Nothing is written.
+//   2. POST /api/admin/outreach/publish — commits the parsed rows as a
+//      new version, bumps outreach_list_version.current_version, and
+//      writes the change_summary JSON.
+// Admin pastes the CSV contents into a <textarea> in Master Admin; we
+// avoid a multer dependency for what is a once-per-release-cycle action.
+
+// Human-label → canonical-slug map. The source CSV uses pretty labels
+// (e.g. "SiriusXM Radio") because it's hand-curated; server storage uses
+// canonical slugs (see OUTREACH_CATEGORIES).
+const OUTREACH_CATEGORY_LABEL_MAP = {
+  'siriusxm radio': 'sirius',
+  'sirius xm radio': 'sirius',
+  'sirius': 'sirius',
+  'iheart radio': 'iheart',
+  'iheartradio': 'iheart',
+  'iheart': 'iheart',
+  'fm/am radio': 'fm_am',
+  'fm-am radio': 'fm_am',
+  'fm / am radio': 'fm_am',
+  'fm am radio': 'fm_am',
+  'fm am': 'fm_am',
+  'online radio': 'online_radio',
+  'internet radio': 'online_radio',
+  'press': 'press',
+  'media': 'press',
+  'blog': 'blog',
+  'blogs': 'blog',
+  'spotify playlist': 'spotify_playlist',
+  'spotify playlists': 'spotify_playlist',
+  'playlist': 'spotify_playlist',
+  'podcast': 'podcast',
+  'podcasts': 'podcast'
+};
+function normalizeCategoryLabel(raw) {
+  if (!raw) return '';
+  const k = String(raw).trim().toLowerCase();
+  return OUTREACH_CATEGORY_LABEL_MAP[k] || '';
+}
+
+// Minimal RFC-4180-ish CSV parser. Handles quoted fields, embedded commas,
+// escaped quotes ("") and CRLF line endings. Good enough for the curated
+// outreach CSV; not a general-purpose replacement for `csv-parse`.
+function parseCsv(text) {
+  const rows = [];
+  let field = '';
+  let row = [];
+  let i = 0;
+  let inQuotes = false;
+  const pushField = () => { row.push(field); field = ''; };
+  const pushRow = () => { rows.push(row); row = []; };
+  while (i < text.length) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQuotes = true; i++; continue; }
+    if (c === ',') { pushField(); i++; continue; }
+    if (c === '\r') { i++; continue; }
+    if (c === '\n') { pushField(); pushRow(); i++; continue; }
+    field += c; i++;
+  }
+  // Tail flush — last field/row without trailing newline.
+  if (field.length || row.length) { pushField(); pushRow(); }
+  // Drop entirely-empty trailing rows.
+  while (rows.length && rows[rows.length - 1].every(f => !f || !f.trim())) rows.pop();
+  return rows;
+}
+
+// Parse the raw CSV text into a list of contact records using the known
+// column headers. Returns {rows, errors} where errors is per-row context
+// so the admin can fix source data rather than silently dropping rows.
+function parseOutreachCsv(csvText) {
+  const out = { rows: [], errors: [] };
+  const grid = parseCsv(String(csvText || ''));
+  if (!grid.length) { out.errors.push('CSV is empty'); return out; }
+  const header = grid[0].map(h => String(h || '').trim().toLowerCase());
+  const colIdx = {
+    name: header.indexOf('name'),
+    category: header.indexOf('category'),
+    submission_type: header.indexOf('submission type'),
+    submission_value: header.indexOf('submission value'),
+    website: header.indexOf('website'),
+    phone: header.indexOf('phone'),
+    notes: header.indexOf('notes')
+  };
+  if (colIdx.name < 0 || colIdx.category < 0) {
+    out.errors.push('CSV must include Name and Category columns');
+    return out;
+  }
+  for (let r = 1; r < grid.length; r++) {
+    const g = grid[r];
+    const get = (k) => (colIdx[k] >= 0 && g[colIdx[k]] != null) ? String(g[colIdx[k]]).trim() : '';
+    const name = get('name');
+    const rawCat = get('category');
+    if (!name && !rawCat) continue; // skip blank line
+    const cat = normalizeCategoryLabel(rawCat);
+    if (!name) { out.errors.push(`Row ${r + 1}: missing Name`); continue; }
+    if (!cat) { out.errors.push(`Row ${r + 1}: unknown Category "${rawCat}"`); continue; }
+    out.rows.push({
+      name: name.slice(0, 200),
+      category: cat,
+      submission_type: get('submission_type').slice(0, 40).toLowerCase() || 'unknown',
+      submission_value: get('submission_value').slice(0, 500),
+      website: get('website').slice(0, 500),
+      phone: get('phone').slice(0, 80),
+      notes: get('notes').slice(0, 1000)
+    });
+  }
+  return out;
+}
+
+// Build a diff between the currently-published contact set (by category)
+// and an incoming parsed set. "Added" = name not in current set for that
+// category; "removed" = name in current set but not in incoming. Case-
+// insensitive name comparison so minor capitalization drift doesn't churn.
+function diffOutreachContacts(incomingRows) {
+  const currentVersion = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = currentVersion ? currentVersion.current_version : 0;
+  const current = version > 0
+    ? dbHelpers.prepare('SELECT category, name FROM outreach_contacts WHERE version = ?').all(version)
+    : [];
+  const byCatCurrent = {};
+  for (const cat of OUTREACH_CATEGORIES) byCatCurrent[cat] = new Set();
+  for (const r of current) {
+    if (byCatCurrent[r.category]) byCatCurrent[r.category].add(String(r.name).toLowerCase());
+  }
+  const byCatIncoming = {};
+  for (const cat of OUTREACH_CATEGORIES) byCatIncoming[cat] = new Set();
+  for (const r of incomingRows) {
+    byCatIncoming[r.category].add(String(r.name).toLowerCase());
+  }
+  const by_category = {};
+  let added_total = 0;
+  let removed_total = 0;
+  for (const cat of OUTREACH_CATEGORIES) {
+    const added = [...byCatIncoming[cat]].filter(n => !byCatCurrent[cat].has(n));
+    const removed = [...byCatCurrent[cat]].filter(n => !byCatIncoming[cat].has(n));
+    by_category[cat] = {
+      incoming: byCatIncoming[cat].size,
+      current: byCatCurrent[cat].size,
+      added: added.length,
+      removed: removed.length
+    };
+    added_total += added.length;
+    removed_total += removed.length;
+  }
+  return { current_version: version, added_total, removed_total, by_category };
+}
+
+app.get('/api/admin/outreach/status', requireAdmin, (req, res) => {
+  const row = dbHelpers.prepare("SELECT current_version, change_summary, updated_at FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = row ? row.current_version : 0;
+  const counts = dbHelpers.prepare('SELECT category, COUNT(*) as n FROM outreach_contacts WHERE version = ? GROUP BY category').all(version);
+  const byCategory = {};
+  for (const cat of OUTREACH_CATEGORIES) byCategory[cat] = 0;
+  for (const c of counts) { if (byCategory.hasOwnProperty(c.category)) byCategory[c.category] = c.n; }
+  let changeSummary = null;
+  try { changeSummary = row && row.change_summary ? JSON.parse(row.change_summary) : null; } catch(_) {}
+  res.json({
+    current_version: version,
+    updated_at: row ? row.updated_at : null,
+    total_contacts: counts.reduce((s, c) => s + c.n, 0),
+    by_category: byCategory,
+    last_change_summary: changeSummary
+  });
+});
+
+app.post('/api/admin/outreach/import', requireAdmin, (req, res) => {
+  const csvText = String((req.body && req.body.csv) || '');
+  if (!csvText.trim()) return res.status(400).json({ error: 'CSV body is empty' });
+  if (csvText.length > 2 * 1024 * 1024) return res.status(413).json({ error: 'CSV too large (max 2MB)' });
+  const parsed = parseOutreachCsv(csvText);
+  const diff = diffOutreachContacts(parsed.rows);
+  res.json({
+    dry_run: true,
+    parsed_count: parsed.rows.length,
+    parse_errors: parsed.errors,
+    diff
+  });
+});
+
+app.post('/api/admin/outreach/publish', requireAdmin, (req, res) => {
+  const csvText = String((req.body && req.body.csv) || '');
+  if (!csvText.trim()) return res.status(400).json({ error: 'CSV body is empty' });
+  if (csvText.length > 2 * 1024 * 1024) return res.status(413).json({ error: 'CSV too large (max 2MB)' });
+  const parsed = parseOutreachCsv(csvText);
+  if (!parsed.rows.length) {
+    return res.status(400).json({ error: 'No valid rows to publish', parse_errors: parsed.errors });
+  }
+
+  const diff = diffOutreachContacts(parsed.rows);
+  const newVersion = diff.current_version + 1;
+
+  // Transactional publish: insert all rows with the new version number,
+  // then bump the version pointer + change summary. sql.js doesn't support
+  // BEGIN/COMMIT through prepare(), so we run raw SQL transaction statements.
+  try {
+    db.run('BEGIN');
+    const stmt = dbHelpers.prepare(`
+      INSERT INTO outreach_contacts
+        (version, category, name, submission_type, submission_value, website, phone, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const r of parsed.rows) {
+      stmt.run(newVersion, r.category, r.name, r.submission_type, r.submission_value, r.website, r.phone, r.notes);
+    }
+    const summary = { version: newVersion, ...diff };
+    dbHelpers.prepare(`
+      UPDATE outreach_list_version
+      SET current_version = ?, change_summary = ?, updated_at = datetime('now')
+      WHERE singleton_key = 'current'
+    `).run(newVersion, JSON.stringify(summary));
+    db.run('COMMIT');
+  } catch (e) {
+    try { db.run('ROLLBACK'); } catch(_) {}
+    console.error('[OUTREACH] publish error:', e.message);
+    return res.status(500).json({ error: 'Publish failed: ' + e.message });
+  }
+  flushDbNow();
+
+  res.json({
+    success: true,
+    published_version: newVersion,
+    inserted: parsed.rows.length,
+    parse_errors: parsed.errors,
+    diff
+  });
+});
+
 // Support tickets — user submits a ticket
 app.post('/api/support/submit', requireAuth, rlSupport, async (req, res) => {
   let { subject, message } = req.body;

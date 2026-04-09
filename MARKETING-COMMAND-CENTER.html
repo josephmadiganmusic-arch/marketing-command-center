@@ -1862,6 +1862,19 @@
       <div id="adminTicketList" style="display:flex;flex-direction:column;gap:12px;"></div>
     </div>
 
+    <!-- Outreach List Importer -->
+    <div class="section">
+      <div class="section-title">Outreach List Importer</div>
+      <div id="adminOutreachStatus" style="font-size:13px;color:#bbb;margin-bottom:12px;">Loading&hellip;</div>
+      <p style="font-size:12px;color:#888;margin-bottom:8px;">Paste the cleaned CSV below. Dry Run shows the diff against the current version. Publish commits it as the next version and triggers the "List Updated" banner for all unlocked users.</p>
+      <textarea id="adminOutreachCsv" rows="10" style="width:100%;font-family:monospace;font-size:12px;" placeholder="Name,Category,Submission Type,Submission Value,Website,Phone,Notes&#10;..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn-action" onclick="adminOutreachDryRun()" style="font-size:12px;padding:6px 14px;">Dry Run (Preview Diff)</button>
+        <button class="btn-action" onclick="adminOutreachPublish()" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#080b1e;">Publish New Version</button>
+      </div>
+      <div id="adminOutreachPreview" style="margin-top:12px;font-size:12px;"></div>
+    </div>
+
     <!-- Redemption Requests -->
     <div class="section">
       <div class="section-title">Redemption Requests</div>
@@ -6255,6 +6268,70 @@ async function adminLoadData() {
 
   adminLoadTickets('all');
   adminLoadRedemptions('all');
+  adminOutreachLoadStatus();
+}
+
+// --- Outreach List importer (admin) ---
+async function adminOutreachLoadStatus() {
+  const el = document.getElementById('adminOutreachStatus');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/admin/outreach/status');
+    if (!r.ok) { el.textContent = 'Status unavailable.'; return; }
+    const s = await r.json();
+    const cats = Object.keys(s.by_category || {}).map(k => k + ': ' + s.by_category[k]).join(' &middot; ');
+    el.innerHTML = 'Current version: <b>' + (s.current_version || 0) + '</b> &middot; total contacts: <b>' + (s.total_contacts || 0) + '</b><br><span style="font-size:11px;color:#6b7094;">' + cats + '</span>';
+  } catch(e) { el.textContent = 'Status error.'; }
+}
+
+function _adminOutreachRenderDiff(resp) {
+  const d = resp.diff || {};
+  const by = d.by_category || {};
+  const rows = Object.keys(by).map(k =>
+    '<tr><td>' + k + '</td><td>' + by[k].current + '</td><td>' + by[k].incoming + '</td>' +
+    '<td style="color:#4ade80;">+' + by[k].added + '</td><td style="color:#ff6b6b;">-' + by[k].removed + '</td></tr>'
+  ).join('');
+  const errs = (resp.parse_errors || []).length
+    ? '<div style="color:#ff6b6b;margin-top:8px;">Parse warnings:<ul>' + (resp.parse_errors.map(e => '<li>' + String(e).replace(/</g,'&lt;') + '</li>').join('')) + '</ul></div>'
+    : '';
+  return '<div style="color:#bbb;margin-bottom:6px;">Parsed <b>' + resp.parsed_count + '</b> rows. Current version: <b>' + (d.current_version || 0) + '</b>. Totals: <b style="color:#4ade80;">+' + (d.added_total || 0) + '</b> / <b style="color:#ff6b6b;">-' + (d.removed_total || 0) + '</b></div>' +
+    '<table class="calendar-table" style="width:100%;font-size:12px;"><thead><tr><th>Category</th><th>Current</th><th>Incoming</th><th>Added</th><th>Removed</th></tr></thead><tbody>' + rows + '</tbody></table>' + errs;
+}
+
+async function adminOutreachDryRun() {
+  const csv = (document.getElementById('adminOutreachCsv') || {}).value || '';
+  if (!csv.trim()) { alert('Paste a CSV first.'); return; }
+  const preview = document.getElementById('adminOutreachPreview');
+  preview.innerHTML = '<em>Parsing&hellip;</em>';
+  try {
+    const r = await fetch('/api/admin/outreach/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csv })
+    });
+    const j = await r.json();
+    if (!r.ok) { preview.innerHTML = '<div style="color:#ff6b6b;">' + (j.error || 'Import failed') + '</div>'; return; }
+    preview.innerHTML = _adminOutreachRenderDiff(j);
+  } catch(e) { preview.innerHTML = '<div style="color:#ff6b6b;">' + e.message + '</div>'; }
+}
+
+async function adminOutreachPublish() {
+  const csv = (document.getElementById('adminOutreachCsv') || {}).value || '';
+  if (!csv.trim()) { alert('Paste a CSV first.'); return; }
+  if (!confirm('Publish this CSV as the next Outreach List version? All unlocked users will see an update banner.')) return;
+  const preview = document.getElementById('adminOutreachPreview');
+  preview.innerHTML = '<em>Publishing&hellip;</em>';
+  try {
+    const r = await fetch('/api/admin/outreach/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csv })
+    });
+    const j = await r.json();
+    if (!r.ok) { preview.innerHTML = '<div style="color:#ff6b6b;">' + (j.error || 'Publish failed') + '</div>'; return; }
+    preview.innerHTML = '<div style="color:#4ade80;margin-bottom:8px;">Published version <b>' + j.published_version + '</b> &middot; inserted <b>' + j.inserted + '</b> contacts.</div>' + _adminOutreachRenderDiff(j);
+    adminOutreachLoadStatus();
+  } catch(e) { preview.innerHTML = '<div style="color:#ff6b6b;">' + e.message + '</div>'; }
 }
 
 let _adminRedemptionsCache = [];
