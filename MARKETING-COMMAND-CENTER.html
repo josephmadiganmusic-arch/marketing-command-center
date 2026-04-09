@@ -1108,6 +1108,12 @@
                 <option value="Yes">Yes</option>
               </select>
             </div>
+            <div class="form-group full-width"><label>Hometown (where you are based)</label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" id="in-hometownCity" oninput="intakeUpdate()" placeholder="City" style="flex:2;">
+                <input type="text" id="in-hometownState" oninput="intakeUpdate()" placeholder="State / Province" style="flex:1;">
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2674,6 +2680,7 @@ function intakeGetData() {
     legalName: v('in-legalName'), stageName: v('in-stageName'), email: v('in-email'), phone: v('in-phone'),
     label: v('in-label'), pro: s('in-pro'), proAccount: v('in-proAccount'),
     publisherEntity: v('in-publisherEntity'), filmTV: s('in-filmTV'),
+    hometownCity: v('in-hometownCity'), hometownState: v('in-hometownState'),
     regPRO: c('in-regPRO'), regSoundExchange: c('in-regSoundExchange'), regMLC: c('in-regMLC'),
     regSongtrust: c('in-regSongtrust'), regCopyright: c('in-regCopyright'),
     linkSpotify: v('in-linkSpotify'), linkApple: v('in-linkApple'), linkYTMusic: v('in-linkYTMusic'),
@@ -3358,6 +3365,7 @@ function intakeFillForm(d) {
   setVal('in-label', d.label); setVal('in-pro', d.pro || '');
   setVal('in-proAccount', d.proAccount); setVal('in-publisherEntity', d.publisherEntity);
   setVal('in-filmTV', d.filmTV || 'No');
+  setVal('in-hometownCity', d.hometownCity); setVal('in-hometownState', d.hometownState);
   document.getElementById('in-regPRO').checked = !!d.regPRO;
   document.getElementById('in-regSoundExchange').checked = !!d.regSoundExchange;
   document.getElementById('in-regMLC').checked = !!d.regMLC;
