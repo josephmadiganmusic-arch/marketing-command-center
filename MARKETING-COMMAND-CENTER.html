@@ -1517,6 +1517,68 @@
         </div>
       </div>
     </div>
+    <!-- Submission Tracker — Outreach List phase commit 7 -->
+    <div class="section" id="submissionTrackerWrap">
+      <div class="section-title">Submission Tracker</div>
+      <div id="stLockedMsg" style="display:none;padding:20px;text-align:center;background:rgba(0,212,255,0.06);border:1px dashed rgba(0,212,255,0.35);border-radius:10px;color:#bbb;">
+        <div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:6px;">Outreach List locked</div>
+        <div style="font-size:13px;margin-bottom:12px;">Unlock the curated Outreach List to track your submissions to Sirius, iHeart, FM/AM, Online Radio, Press, Blogs, Spotify Playlists, and Podcasts \u2014 all in one place.</div>
+        <a href="/subscribe#outreach-list" style="display:inline-block;padding:10px 18px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:700;">Unlock Outreach List</a>
+      </div>
+      <div id="stUnlockedWrap" style="display:none;">
+        <div id="stCategoryTabs" class="st-tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+          <button class="st-tab active" data-cat="all" onclick="stFilterCategory('all')">All</button>
+          <button class="st-tab" data-cat="sirius" onclick="stFilterCategory('sirius')">Sirius XM</button>
+          <button class="st-tab" data-cat="iheart" onclick="stFilterCategory('iheart')">iHeart</button>
+          <button class="st-tab" data-cat="fm_am" onclick="stFilterCategory('fm_am')">FM / AM</button>
+          <button class="st-tab" data-cat="online_radio" onclick="stFilterCategory('online_radio')">Online Radio</button>
+          <button class="st-tab" data-cat="press" onclick="stFilterCategory('press')">Press</button>
+          <button class="st-tab" data-cat="blog" onclick="stFilterCategory('blog')">Blog</button>
+          <button class="st-tab" data-cat="spotify_playlist" onclick="stFilterCategory('spotify_playlist')">Spotify Playlist</button>
+          <button class="st-tab" data-cat="podcast" onclick="stFilterCategory('podcast')">Podcast</button>
+          <div style="flex:1;"></div>
+          <div style="position:relative;">
+            <button class="st-tab" id="stExportBtn" onclick="stToggleExportMenu(event)" title="Export category as Google Contacts CSV">Export CSV \u25BE</button>
+            <div id="stExportMenu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#1a1a1f;border:1px solid #333;border-radius:8px;padding:6px;min-width:180px;z-index:50;box-shadow:0 8px 28px rgba(0,0,0,0.45);">
+              <a href="/api/outreach/export/sirius.csv" class="st-export-link">Sirius XM</a>
+              <a href="/api/outreach/export/iheart.csv" class="st-export-link">iHeart</a>
+              <a href="/api/outreach/export/fm_am.csv" class="st-export-link">FM / AM</a>
+              <a href="/api/outreach/export/online_radio.csv" class="st-export-link">Online Radio</a>
+              <a href="/api/outreach/export/press.csv" class="st-export-link">Press</a>
+              <a href="/api/outreach/export/blog.csv" class="st-export-link">Blog</a>
+              <a href="/api/outreach/export/spotify_playlist.csv" class="st-export-link">Spotify Playlist</a>
+              <a href="/api/outreach/export/podcast.csv" class="st-export-link">Podcast</a>
+            </div>
+          </div>
+        </div>
+        <div id="stSubTabs" class="st-subtabs" style="display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #2a2a32;">
+          <button class="st-subtab active" data-kind="forms_emails" onclick="stFilterSubTab('forms_emails')">Forms &amp; Emails</button>
+          <button class="st-subtab" data-kind="direct_outreach" onclick="stFilterSubTab('direct_outreach')">Direct Outreach</button>
+        </div>
+        <div id="stSummary" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
+        <div id="stList"></div>
+      </div>
+    </div>
+    <style>
+      .st-tab { padding:6px 12px;font-size:12px;font-weight:600;border:1px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.06);color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .2s; }
+      .st-tab:hover { background:rgba(0,212,255,0.14);border-color:rgba(0,212,255,0.55); }
+      .st-tab.active { background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;border-color:transparent; }
+      .st-subtab { padding:8px 14px;font-size:12px;font-weight:600;background:transparent;border:none;color:#888;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px; }
+      .st-subtab:hover { color:#ddd; }
+      .st-subtab.active { color:#00d4ff;border-bottom-color:#00d4ff; }
+      .st-export-link { display:block;padding:8px 12px;font-size:12px;color:#ddd;text-decoration:none;border-radius:4px; }
+      .st-export-link:hover { background:rgba(0,212,255,0.12);color:#00d4ff; }
+      .st-row { display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #2a2a32;border-radius:8px;margin-bottom:6px;cursor:pointer;background:rgba(255,255,255,0.02);transition:all .18s; }
+      .st-row:hover { border-color:rgba(0,212,255,0.55);background:rgba(0,212,255,0.05);transform:translateX(2px); }
+      .st-row.submitted { opacity:.6; }
+      .st-row.submitted:hover { opacity:.85; }
+      .st-status { font-size:18px;width:24px;text-align:center;flex-shrink:0; }
+      .st-main { flex:1;min-width:0; }
+      .st-name { font-size:14px;font-weight:600;color:#fff;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+      .st-meta { font-size:11px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+      .st-type { font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:4px;background:rgba(123,47,247,0.15);color:#b88fff;flex-shrink:0; }
+      .st-empty { padding:28px 16px;text-align:center;color:#666;font-size:13px;background:rgba(255,255,255,0.02);border:1px dashed #2a2a32;border-radius:8px; }
+    </style>
   </div><!-- end panel-outreach -->
 
   <!-- PLAYLISTS -->
@@ -2380,6 +2442,7 @@ function showPanel(id) {
   });
   if (id === 'registration') renderRegCards();
   if (id === 'emailgen') egLoadFromIntake(true);
+  if (id === 'outreach') { try { stInit(); } catch(_) {} }
   if (id === 'admin') adminLoadData();
   if (id === 'achievements') { loadGamification(); renderAchievementsPanel(); }
 }
@@ -3915,7 +3978,186 @@ async function outreachLoadStatus() {
     const s = await r.json();
     window.OUTREACH_STATE = Object.assign(window.OUTREACH_STATE, s);
     _egRenderCategoryLocks();
+    stApplyLockState();
   } catch(_) {}
+}
+
+// --- Submission Tracker (commit 7) ---
+// Lives inside #panel-outreach. Hydrates from /api/outreach/contacts the
+// first time the user opens the Outreach panel after unlock, then filters
+// locally by category + subTab. Row click opens the split-screen overlay
+// (commit 8). "Mark Submitted" flow posts to /api/outreach/submission/mark.
+window.ST_STATE = {
+  loaded: false,
+  loading: false,
+  version: 0,
+  contacts: [],
+  progress: {},        // keyed by contact_id
+  filter: { category: 'all', subTab: 'forms_emails' }
+};
+
+const ST_FORMS_TYPES = ['email', 'form', 'unknown'];
+const ST_DIRECT_TYPES = ['social', 'phone'];
+const ST_TYPE_LABELS = { email:'Email', form:'Form', social:'Social', phone:'Phone', unknown:'Unknown' };
+
+function stApplyLockState() {
+  const wrap = document.getElementById('submissionTrackerWrap');
+  if (!wrap) return;
+  const unlocked = !!window.OUTREACH_STATE.unlocked;
+  document.getElementById('stLockedMsg').style.display = unlocked ? 'none' : '';
+  document.getElementById('stUnlockedWrap').style.display = unlocked ? '' : 'none';
+}
+
+async function stInit() {
+  stApplyLockState();
+  if (!window.OUTREACH_STATE.unlocked) return;
+  if (window.ST_STATE.loaded || window.ST_STATE.loading) {
+    stRender();
+    return;
+  }
+  window.ST_STATE.loading = true;
+  const listEl = document.getElementById('stList');
+  if (listEl) listEl.innerHTML = '<div class="st-empty">Loading your outreach list\u2026</div>';
+  try {
+    const r = await fetch('/api/outreach/contacts');
+    if (!r.ok) {
+      if (listEl) listEl.innerHTML = '<div class="st-empty">Could not load outreach list ('+ r.status +').</div>';
+      return;
+    }
+    const j = await r.json();
+    window.ST_STATE.version = j.version || 0;
+    window.ST_STATE.contacts = Array.isArray(j.contacts) ? j.contacts : [];
+    const prog = {};
+    (j.progress || []).forEach(p => { prog[p.contact_id] = p; });
+    window.ST_STATE.progress = prog;
+    window.ST_STATE.loaded = true;
+  } catch(e) {
+    if (listEl) listEl.innerHTML = '<div class="st-empty">Network error loading outreach list.</div>';
+    return;
+  } finally {
+    window.ST_STATE.loading = false;
+  }
+  stRender();
+}
+
+function stFilterCategory(cat) {
+  window.ST_STATE.filter.category = cat;
+  document.querySelectorAll('#stCategoryTabs .st-tab[data-cat]').forEach(b => {
+    b.classList.toggle('active', b.dataset.cat === cat);
+  });
+  stRender();
+}
+
+function stFilterSubTab(kind) {
+  window.ST_STATE.filter.subTab = kind;
+  document.querySelectorAll('#stSubTabs .st-subtab').forEach(b => {
+    b.classList.toggle('active', b.dataset.kind === kind);
+  });
+  stRender();
+}
+
+function stRender() {
+  const listEl = document.getElementById('stList');
+  const summaryEl = document.getElementById('stSummary');
+  if (!listEl) return;
+  const { category, subTab } = window.ST_STATE.filter;
+  const typeSet = subTab === 'direct_outreach' ? ST_DIRECT_TYPES : ST_FORMS_TYPES;
+  let rows = window.ST_STATE.contacts.filter(c => {
+    if (category !== 'all' && c.category !== category) return false;
+    return typeSet.indexOf(c.submission_type) !== -1;
+  });
+  // Sort pending-first so users can resume where they left off, then by name.
+  const prog = window.ST_STATE.progress;
+  rows.sort((a, b) => {
+    const ap = prog[a.id] ? 1 : 0;
+    const bp = prog[b.id] ? 1 : 0;
+    if (ap !== bp) return ap - bp;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+  if (summaryEl) {
+    const total = rows.length;
+    const done = rows.filter(r => prog[r.id]).length;
+    const catLabel = category === 'all' ? 'All categories' : ((window.OUTREACH_STATE.category_labels || {})[category] || category);
+    summaryEl.textContent = catLabel + ' \u2014 ' + done + ' of ' + total + ' submitted';
+  }
+  if (rows.length === 0) {
+    listEl.innerHTML = '<div class="st-empty">No contacts in this view yet.</div>';
+    return;
+  }
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+  listEl.innerHTML = rows.map(c => {
+    const submitted = !!prog[c.id];
+    const icon = submitted ? '\u2705' : '\u23F3';
+    const typeLabel = ST_TYPE_LABELS[c.submission_type] || c.submission_type || '';
+    const catLabel = (window.OUTREACH_STATE.category_labels || {})[c.category] || c.category;
+    const metaBits = [catLabel];
+    if (c.submission_value) metaBits.push(c.submission_value);
+    else if (c.website) metaBits.push(c.website);
+    return '<div class="st-row ' + (submitted ? 'submitted' : '') + '" data-id="' + c.id + '" onclick="stOpenSubmission(' + c.id + ')">' +
+      '<div class="st-status" title="' + (submitted ? 'Submitted' : 'Pending') + '">' + icon + '</div>' +
+      '<div class="st-main">' +
+      '<div class="st-name">' + esc(c.name || 'Unnamed') + '</div>' +
+      '<div class="st-meta">' + esc(metaBits.join(' \u00B7 ')) + '</div>' +
+      '</div>' +
+      '<div class="st-type">' + esc(typeLabel) + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function stToggleExportMenu(e) {
+  if (e) e.stopPropagation();
+  const m = document.getElementById('stExportMenu');
+  if (!m) return;
+  const showing = m.style.display !== 'none';
+  m.style.display = showing ? 'none' : 'block';
+  if (!showing) {
+    setTimeout(() => {
+      document.addEventListener('click', stCloseExportMenu, { once: true });
+    }, 0);
+  }
+}
+function stCloseExportMenu() {
+  const m = document.getElementById('stExportMenu');
+  if (m) m.style.display = 'none';
+}
+
+// Placeholder for the split-screen overlay (commit 8). Commit 7 ships a
+// minimal "Mark Submitted" confirm so the tracker is functional end-to-end
+// before the overlay lands.
+function stOpenSubmission(contactId) {
+  const contact = window.ST_STATE.contacts.find(c => c.id === contactId);
+  if (!contact) return;
+  const url = (contact.submission_value && /^https?:\/\//i.test(contact.submission_value)) ? contact.submission_value : contact.website;
+  if (url) window.open(url, '_blank', 'noopener');
+  const already = !!window.ST_STATE.progress[contactId];
+  if (already) return;
+  if (!confirm('Mark "' + (contact.name || 'this contact') + '" as submitted? (+25 XP)')) return;
+  stMarkSubmitted(contactId);
+}
+
+async function stMarkSubmitted(contactId, extra) {
+  try {
+    const releaseId = (JSON.parse(localStorage.getItem(ukey('release_data')) || '{}') || {}).songTitle || null;
+    const body = Object.assign({ contact_id: contactId, release_id: releaseId }, extra || {});
+    const r = await fetch('/api/outreach/submission/mark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      showToast(j.error || 'Could not mark submission');
+      return false;
+    }
+    window.ST_STATE.progress[contactId] = { contact_id: contactId, status: 'submitted', release_id: releaseId, submitted_at: new Date().toISOString() };
+    stRender();
+    if (j.awarded_xp && typeof loadGamification === 'function') { try { loadGamification(); } catch(_) {} }
+    showToast('Submission tracked \u2014 +' + (j.awarded_xp || 25) + ' XP');
+    return true;
+  } catch(e) {
+    showToast('Network error marking submission');
+    return false;
+  }
 }
 
 function _egRenderCategoryLocks() {
