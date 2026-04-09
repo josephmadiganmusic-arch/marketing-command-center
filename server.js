@@ -128,6 +128,112 @@ function releaseInstanceLock() {
 }
 process.on('exit', () => releaseInstanceLock());
 
+// --- DB backup strategy (H2) ---
+// sql.js writes the full DB on every debounced flush, so the hot file is
+// always a complete snapshot — cp is a safe backup. Strategy:
+//   hourly snapshots for the last 48h (rolling)
+//   daily snapshots for the last 30d (one per day, kept longest-running)
+// Restore is best-effort on corrupt-DB boot: pick newest backup that
+// loads without throwing a sanity check.
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const BACKUP_HOURLY_KEEP = 48;
+const BACKUP_DAILY_KEEP = 30;
+function ensureBackupDir() {
+  try { if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true }); } catch(_) {}
+}
+function snapshotDbNow(label) {
+  if (!fs.existsSync(DB_PATH)) return null;
+  ensureBackupDir();
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+  const kind = label || 'hourly';
+  const dest = path.join(BACKUP_DIR, `users.db.${kind}.${stamp}.bak`);
+  try {
+    // Flush any in-memory state first so the snapshot is up-to-date.
+    flushDbNow();
+    fs.copyFileSync(DB_PATH, dest);
+    return dest;
+  } catch (e) {
+    console.error('[BACKUP] snapshot failed:', e.message);
+    return null;
+  }
+}
+function pruneBackups() {
+  try {
+    ensureBackupDir();
+    const files = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('users.db.') && f.endsWith('.bak'))
+      .map(f => ({ name: f, full: path.join(BACKUP_DIR, f), mtime: fs.statSync(path.join(BACKUP_DIR, f)).mtime }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    const hourly = files.filter(f => f.name.includes('.hourly.'));
+    const daily = files.filter(f => f.name.includes('.daily.'));
+
+    // Keep the N newest hourly backups, delete the rest
+    for (const stale of hourly.slice(BACKUP_HOURLY_KEEP)) {
+      try { fs.unlinkSync(stale.full); } catch(_) {}
+    }
+    for (const stale of daily.slice(BACKUP_DAILY_KEEP)) {
+      try { fs.unlinkSync(stale.full); } catch(_) {}
+    }
+  } catch (e) {
+    console.error('[BACKUP] prune failed:', e.message);
+  }
+}
+function startBackupTimers() {
+  // Hourly snapshot + prune. First snapshot runs 10 minutes after boot
+  // (not immediately, to avoid piling up on every deploy).
+  setTimeout(() => {
+    snapshotDbNow('hourly');
+    pruneBackups();
+  }, 10 * 60 * 1000);
+  setInterval(() => {
+    snapshotDbNow('hourly');
+    pruneBackups();
+  }, 60 * 60 * 1000).unref();
+
+  // Daily snapshot at next UTC midnight, then every 24h.
+  const now = new Date();
+  const nextMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 5, 0));
+  const msUntilMidnight = nextMidnight.getTime() - now.getTime();
+  setTimeout(() => {
+    snapshotDbNow('daily');
+    pruneBackups();
+    setInterval(() => {
+      snapshotDbNow('daily');
+      pruneBackups();
+    }, 24 * 60 * 60 * 1000).unref();
+  }, msUntilMidnight).unref();
+}
+// Attempt to restore from the most recent backup that actually loads.
+// Called from the corrupt-DB recovery path in startServer() before the
+// fresh-DB fallback fires. Returns a loaded sql.js db on success, or null.
+function tryRestoreFromBackup(SQL) {
+  try {
+    ensureBackupDir();
+    const files = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('users.db.') && f.endsWith('.bak'))
+      .map(f => ({ full: path.join(BACKUP_DIR, f), mtime: fs.statSync(path.join(BACKUP_DIR, f)).mtime }))
+      .sort((a, b) => b.mtime - a.mtime);
+    for (const candidate of files) {
+      try {
+        const buf = fs.readFileSync(candidate.full);
+        const restored = new SQL.Database(buf);
+        restored.exec("SELECT count(*) FROM sqlite_master"); // sanity check
+        console.error('[RESTORE] Restored from backup:', candidate.full);
+        // Write restored DB into DB_PATH so the app continues from this state.
+        fs.copyFileSync(candidate.full, DB_PATH);
+        return restored;
+      } catch (e) {
+        console.error('[RESTORE] Backup unusable:', candidate.full, '-', e.message);
+      }
+    }
+  } catch (e) {
+    console.error('[RESTORE] Scan failed:', e.message);
+  }
+  return null;
+}
+
 function initDb() {
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -2963,12 +3069,23 @@ async function startServer() {
       db.exec("SELECT count(*) FROM sqlite_master");
       console.log('[BOOT] Existing database loaded OK');
     } catch (e) {
-      console.error('[BOOT] Database corrupted, backing up and creating fresh:', e.message);
+      console.error('[BOOT] Database corrupted:', e.message);
+      // Move corrupt file aside so we can try to recover from a backup.
       try {
         fs.renameSync(DB_PATH, DB_PATH + '.corrupt.' + Date.now());
       } catch (_) {}
-      db = new SQL.Database();
-      console.log('[BOOT] Fresh database created');
+      // H2 restore path: try the most recent valid backup before giving up
+      // and creating a fresh DB. If ANY backup loads, continue from there;
+      // the operator sees a loud [RESTORE] log in Railway so they know.
+      const restored = tryRestoreFromBackup(SQL);
+      if (restored) {
+        db = restored;
+        console.error('[BOOT] Database restored from backup — continuing');
+      } else {
+        console.error('[BOOT] FATAL-ish: no usable backup, starting fresh DB. User data lost.');
+        db = new SQL.Database();
+        console.log('[BOOT] Fresh database created');
+      }
     }
   } else {
     console.log('[BOOT] Creating new database...');
@@ -2978,6 +3095,10 @@ async function startServer() {
 
   initDb();
   console.log('[BOOT] Database initialized');
+
+  // Kick off backup timers now that the DB is live (H2).
+  startBackupTimers();
+  console.log('[BOOT] Backup timers armed (hourly + daily to', BACKUP_DIR + ')');
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[BOOT] Rollout Heaven running on 0.0.0.0:${PORT}`);
