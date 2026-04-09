@@ -3979,6 +3979,72 @@ async function outreachLoadStatus() {
     window.OUTREACH_STATE = Object.assign(window.OUTREACH_STATE, s);
     _egRenderCategoryLocks();
     stApplyLockState();
+    outreachRenderBanner();
+  } catch(_) {}
+}
+
+// --- Version-diff banner (commit 9) ---
+// When the Outreach List is republished, surface a dismissible banner at
+// the top of the Email Generator and Outreach panels. Pulls counts from
+// last_change_summary.by_category and names the top 2 categories by
+// absolute change volume. Dismiss writes to /api/outreach/dismiss-banner.
+function outreachRenderBanner() {
+  const state = window.OUTREACH_STATE || {};
+  const hosts = ['panel-emailgen', 'panel-outreach']
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  // Always tear down any existing banner first so status refreshes don't
+  // stack duplicates.
+  document.querySelectorAll('.outreach-update-banner').forEach(el => el.remove());
+
+  if (!state.unlocked) return;
+  const cv = state.current_version || 0;
+  const dv = state.banner_dismissed_version || 0;
+  const cs = state.last_change_summary;
+  if (!cs || cv <= 0 || cv <= dv) return;
+
+  const addedTotal = cs.added_total || 0;
+  const removedTotal = cs.removed_total || 0;
+  if (addedTotal === 0 && removedTotal === 0) return;
+
+  // Rank categories by total absolute change (added + removed) and pick
+  // the top 2 — matches the primer spec "in [top 2 categories]".
+  const labels = state.category_labels || {};
+  const byCat = cs.by_category || {};
+  const ranked = Object.keys(byCat)
+    .map(k => ({ cat: k, delta: (byCat[k].added || 0) + (byCat[k].removed || 0) }))
+    .filter(x => x.delta > 0)
+    .sort((a, b) => b.delta - a.delta);
+  const topCats = ranked.slice(0, 2).map(x => labels[x.cat] || x.cat);
+  const catPhrase = topCats.length ? ' in ' + topCats.join(' and ') : '';
+
+  const parts = [];
+  if (addedTotal > 0) parts.push('+' + addedTotal + ' contacts added');
+  if (removedTotal > 0) parts.push(removedTotal + ' removed');
+  const msg = 'Outreach List updated: ' + parts.join(', ') + catPhrase + '.';
+
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+  const html =
+    '<div class="outreach-update-banner" style="display:flex;align-items:center;gap:12px;padding:12px 16px;margin-bottom:16px;background:linear-gradient(135deg,rgba(0,212,255,0.12),rgba(123,47,247,0.14));border:1px solid rgba(0,212,255,0.4);border-radius:10px;">' +
+      '<div style="font-size:18px;flex-shrink:0;">&#x1F4E3;</div>' +
+      '<div style="flex:1;font-size:13px;color:#ddd;">' + esc(msg) + ' <span style="color:#888;">(v' + cv + ')</span></div>' +
+      '<button onclick="outreachDismissBanner()" style="padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid #333;color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;">Dismiss</button>' +
+    '</div>';
+
+  hosts.forEach(host => {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    host.insertBefore(div.firstChild, host.firstChild);
+  });
+}
+
+async function outreachDismissBanner() {
+  // Optimistic: hide immediately, then persist server-side. If the POST
+  // fails, a future page load will re-surface the banner — acceptable.
+  document.querySelectorAll('.outreach-update-banner').forEach(el => el.remove());
+  window.OUTREACH_STATE.banner_dismissed_version = window.OUTREACH_STATE.current_version || 0;
+  try {
+    await fetch('/api/outreach/dismiss-banner', { method: 'POST' });
   } catch(_) {}
 }
 
