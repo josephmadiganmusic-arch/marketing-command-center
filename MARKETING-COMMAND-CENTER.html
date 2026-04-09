@@ -1053,6 +1053,11 @@
             <textarea id="in-songDescription" rows="4" oninput="intakeUpdate()" placeholder="One-paragraph pitch for THIS song. What is it about, what makes it stand out, why now? Used to auto-fill submission forms that ask for a song description."></textarea>
             <button type="button" style="margin-top:8px;padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#333'" onclick="generateSongDescription(this)">Generate Song Description</button>
           </div>
+          <div class="form-group" style="margin-top:16px;">
+            <label>Lyrics (Genius format)</label>
+            <textarea id="in-lyrics" rows="12" oninput="intakeUpdate()" placeholder="Paste or upload lyrics. Use Genius-style section headers in square brackets:&#10;&#10;[Intro]&#10;...&#10;&#10;[Verse 1]&#10;...&#10;&#10;[Chorus]&#10;...&#10;&#10;[Verse 2]&#10;...&#10;&#10;[Bridge]&#10;...&#10;&#10;[Outro]&#10;...&#10;&#10;Required by stations like God's House of Hip Hop and used for genius.com registration."></textarea>
+            <p style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.5;">Used for radio submissions that require a lyric sheet and for your genius.com upload. Upload-audio and Format-for-Genius buttons are coming next.</p>
+          </div>
         </div>
 
         <!-- Credits & Splits -->
@@ -2675,6 +2680,7 @@ function intakeGetData() {
     durationMin: s('in-durationMin'), durationSec: s('in-durationSec'), workContent: s('in-workContent'),
     explicit: s('in-explicit'), instrumental: c('in-instrumental'),
     songDescription: v('in-songDescription'),
+    lyrics: v('in-lyrics'),
     songwriters, publishers,
     isrc: v('in-isrc'), upc: v('in-upc'), iswc: v('in-iswc'),
     legalName: v('in-legalName'), stageName: v('in-stageName'), email: v('in-email'), phone: v('in-phone'),
@@ -3359,6 +3365,7 @@ function intakeFillForm(d) {
   setVal('in-explicit', d.explicit || 'No');
   document.getElementById('in-instrumental').checked = !!d.instrumental;
   setVal('in-songDescription', d.songDescription);
+  setVal('in-lyrics', d.lyrics);
   setVal('in-isrc', d.isrc); setVal('in-upc', d.upc); setVal('in-iswc', d.iswc);
   setVal('in-legalName', d.legalName); setVal('in-stageName', d.stageName);
   setVal('in-email', d.email); setVal('in-phone', d.phone);
