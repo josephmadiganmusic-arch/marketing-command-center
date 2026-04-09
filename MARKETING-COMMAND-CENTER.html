@@ -4218,6 +4218,36 @@ function stIsPopupOnlyHost(url) {
   return ST_POPUP_ONLY_HOSTS.some(allow => h === allow || h.endsWith('.' + allow));
 }
 
+// Per-site custom left-pane renderers. Keyed by bare hostname (lowercase,
+// no www.) -> short key string consumed by stOverlayRenderMetadata to pick
+// the right builder. Sites listed here get a bespoke email / DM generator
+// PREPENDED above the standard release-metadata fields; the metadata block
+// still renders below so Copy Song Title / Copy Artist / etc. stay wired.
+//   - rapzilla.com            -> static Rapzilla submission email (SONG/VIDEO)
+//   - jesuswired.com          -> static JesusWired email (4-type selector)
+//   - jesusfreakhideout.com   -> Claude-generated press_release intro
+// Host matching mirrors ST_POPUP_ONLY_HOSTS: exact host OR *.host subdomain.
+const ST_CUSTOM_PANE_HOSTS = {
+  'rapzilla.com': 'rapzilla',
+  'jesuswired.com': 'jesuswired',
+  'jesusfreakhideout.com': 'jesusfreakhideout',
+};
+
+// Resolve a contact+url to a custom-pane key, or '' if no custom pane
+// applies. Checks the contact's website first, then the submission_value
+// so a form-type row with its URL in either column still matches.
+function stGetCustomPaneKey(contact, url) {
+  const candidates = [url, contact && contact.website, contact && contact.submission_value];
+  for (const c of candidates) {
+    const h = stGetHost(c || '');
+    if (!h) continue;
+    for (const allow in ST_CUSTOM_PANE_HOSTS) {
+      if (h === allow || h.endsWith('.' + allow)) return ST_CUSTOM_PANE_HOSTS[allow];
+    }
+  }
+  return '';
+}
+
 function stApplyLockState() {
   const wrap = document.getElementById('submissionTrackerWrap');
   if (!wrap) return;
@@ -4622,6 +4652,404 @@ async function stFetchSocialDm(contact, d) {
   }
 }
 
+// ---------- Rapzilla custom pane ----------------------------------------
+// Static template + token-fill. SONG/VIDEO radio toggle; VIDEO appends the
+// verbatim permission clause Rapzilla requires. User copies the whole
+// email block into Gmail and attaches MP3 + art + photo per the checklist.
+// No Claude call -- Rapzilla's rules are rigid enough that AI doesn't add
+// anything, and it keeps us from duplicating the Claude-fetch boilerplate
+// a 5th time.
+window.__stRapzillaData = null;
+
+function stBuildRapzillaBody(d, type) {
+  const artist = d.primaryArtist || d.stageName || '[FILL IN: Artist Name]';
+  const song = d.songTitle || '[FILL IN: Song Title]';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Christian hip hop';
+  const bio = (d.bio || '').trim();
+  const yt = d.linkYTVideo || d.linkYTMusic || '';
+  const spotify = d.linkSpotify || '';
+  const socials = [
+    d.igHandle ? 'Instagram: ' + d.igHandle : '',
+    d.tiktokHandle ? 'TikTok: ' + d.tiktokHandle : '',
+    d.twitterHandle ? 'Twitter/X: ' + d.twitterHandle : '',
+  ].filter(Boolean).join('\n') || '[FILL IN: Social links]';
+  const lines = [
+    'Hi Rapzilla team,',
+    '',
+    'My name is ' + artist + ' and I would like to submit my new ' + genre + ' ' + (type === 'video' ? 'music video' : 'single') + ' "' + song + '" for consideration.',
+    '',
+  ];
+  if (bio) { lines.push('About me:'); lines.push(bio); lines.push(''); }
+  lines.push('Links:');
+  if (spotify) lines.push('Spotify: ' + spotify);
+  if (yt) lines.push('YouTube: ' + yt);
+  if (!spotify && !yt) lines.push('[FILL IN: Spotify link]');
+  lines.push('');
+  lines.push('Socials:');
+  lines.push(socials);
+  lines.push('');
+  lines.push('Attached:');
+  lines.push('- High-quality MP3');
+  lines.push('- Cover art (1000x1000 or larger)');
+  lines.push('- Artist photo (1000x1000 or larger)');
+  if (type === 'video') lines.push('- YouTube link to the music video');
+  lines.push('');
+  if (type === 'video') {
+    lines.push('I give Rapzilla.com permission to upload and monetize my music video for "' + song + '" to their YouTube channel and post on their website.');
+    lines.push('');
+  }
+  lines.push('Thanks for your time and consideration.');
+  lines.push('');
+  lines.push('Blessings,');
+  lines.push(artist);
+  return lines.join('\n');
+}
+
+function stBuildRapzillaPane(contact, d) {
+  const artist = d.primaryArtist || d.stageName || '[Artist]';
+  const song = d.songTitle || '[Song]';
+  const subjSong = 'SONG: ' + artist + ' - ' + song;
+  const subjVideo = 'VIDEO: ' + artist + ' - ' + song;
+  const bodySong = stBuildRapzillaBody(d, 'song');
+  const bodyVideo = stBuildRapzillaBody(d, 'video');
+  window.__stRapzillaData = {
+    to: 'me@rapzilla.com',
+    song: { subject: subjSong, body: bodySong },
+    video: { subject: subjVideo, body: bodyVideo },
+  };
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+  return (
+    '<div class="st-custom-pane st-custom-pane-rapzilla">' +
+      '<div class="st-custom-pane-head">Rapzilla Submission Email</div>' +
+      '<div class="st-custom-pane-toggle">' +
+        '<label><input type="radio" name="stRapzillaType" value="song" checked onchange="stRapzillaSwitch(\'song\')"> SONG</label>' +
+        '<label><input type="radio" name="stRapzillaType" value="video" onchange="stRapzillaSwitch(\'video\')"> VIDEO</label>' +
+      '</div>' +
+      '<div class="st-custom-pane-row"><span class="st-custom-pane-lbl">To</span><input id="stRapzillaTo" class="st-custom-pane-input" readonly value="me@rapzilla.com"><button class="st-meta-copy" onclick="stCopyFieldById(\'stRapzillaTo\', this)">Copy</button></div>' +
+      '<div class="st-custom-pane-row"><span class="st-custom-pane-lbl">Subject</span><input id="stRapzillaSubject" class="st-custom-pane-input" value="' + esc(subjSong) + '"><button class="st-meta-copy" onclick="stCopyFieldById(\'stRapzillaSubject\', this)">Copy</button></div>' +
+      '<textarea id="stRapzillaBody" class="st-custom-pane-body">' + esc(bodySong) + '</textarea>' +
+      '<div class="st-custom-pane-actions">' +
+        '<button class="st-meta-copy" onclick="stCopyFieldById(\'stRapzillaBody\', this)">Copy Body</button>' +
+        '<button class="st-meta-copy" onclick="stCopyRapzillaEmail(this)">Copy Full Email</button>' +
+      '</div>' +
+      '<div class="st-custom-pane-checklist">' +
+        '<div class="st-custom-pane-checklist-head">Before sending, attach in Gmail:</div>' +
+        '<ul>' +
+          '<li>High-quality MP3 of the track</li>' +
+          '<li>Cover art, 1000x1000 or larger</li>' +
+          '<li>Artist photo, 1000x1000 or larger</li>' +
+          '<li>YouTube link to the song (or music video for VIDEO)</li>' +
+          '<li>Social links in the body</li>' +
+          '<li>NO copyrighted instrumentals, remixes, or beats you do not own</li>' +
+        '</ul>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function stRapzillaSwitch(type) {
+  const data = window.__stRapzillaData;
+  if (!data || !data[type]) return;
+  const subj = document.getElementById('stRapzillaSubject');
+  const body = document.getElementById('stRapzillaBody');
+  if (subj) subj.value = data[type].subject;
+  if (body) body.value = data[type].body;
+}
+
+function stCopyRapzillaEmail(btn) {
+  const data = window.__stRapzillaData;
+  if (!data) return;
+  const subj = document.getElementById('stRapzillaSubject');
+  const body = document.getElementById('stRapzillaBody');
+  const full = 'To: ' + data.to + '\nSubject: ' + (subj ? subj.value : '') + '\n\n' + (body ? body.value : '');
+  stOverlayCopyValue(full, btn);
+}
+
+// ---------- JesusWired custom pane --------------------------------------
+// Static template + 4-type selector. Per-type subject + body specs come
+// from task/sweep-2026-04-09/crawl-form-submissions.md. All types share a
+// red warning banner at the top: JesusWired does NOT accept AI-generated
+// music -- that's their rule, not ours, but the user has to see it before
+// copying anything.
+window.__stJesusWiredData = null;
+
+function stBuildJesusWiredTemplates(d) {
+  const artist = d.primaryArtist || d.stageName || '[FILL IN: Artist Name]';
+  const song = d.songTitle || '[FILL IN: Song Title]';
+  const album = d.albumTitle || d.projectTitle || '[FILL IN: Project Name]';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Christian hip hop';
+  const bio = (d.bio || '').trim();
+  const releaseDate = d.releaseDate || '[FILL IN: Release Date]';
+  const yt = d.linkYTVideo || d.linkYTMusic || '[FILL IN: unlisted YouTube link]';
+  const spotify = d.linkSpotify || '';
+  const socials = [
+    d.igHandle ? 'Instagram: ' + d.igHandle : '',
+    d.tiktokHandle ? 'TikTok: ' + d.tiktokHandle : '',
+    d.twitterHandle ? 'Twitter/X: ' + d.twitterHandle : '',
+  ].filter(Boolean).join('\n') || '[FILL IN: Social links]';
+  const sig = '\nBlessings,\n' + artist;
+
+  const youtubeBody = [
+    'Hi JesusWired team,',
+    '',
+    'My name is ' + artist + ' and I would like to submit my new ' + genre + ' track "' + song + '" for a YouTube feature.',
+    '',
+    bio ? ('About me:\n' + bio + '\n') : '',
+    'High-quality track / video link (Dropbox / WeTransfer / Drive):',
+    '[FILL IN: upload link]',
+    '',
+    'Description:',
+    '[FILL IN: short description of the song and what it is about]',
+    '',
+    'I grant JesusWired permission to upload "' + song + '" to YouTube.',
+    '',
+    'Hi-res cover art and promo photo: [FILL IN: links or attached]',
+    '',
+    'Socials:',
+    socials,
+    '',
+    'Note: this is an original track. No remixes or beats I do not own.',
+    sig,
+  ].filter(l => l !== undefined).join('\n');
+
+  const premiereBody = [
+    'Hi JesusWired team,',
+    '',
+    'I would like to submit "' + song + '" by ' + artist + ' for an exclusive premiere.',
+    '',
+    'Unlisted YouTube / private SoundCloud / raw file:',
+    yt,
+    '',
+    'Exclusive details:',
+    '[FILL IN: what makes this a premiere - first single, first look, etc.]',
+    '',
+    'Desired exclusivity window:',
+    '[FILL IN: e.g. 12 hours / 2 days / 1 week]',
+    '',
+    bio ? ('Background on the song and artist:\n' + bio + '\n') : 'Background on the song: [FILL IN]\n',
+    'Hi-res cover art: [FILL IN: link or attached]',
+    '',
+    'Release date: ' + releaseDate,
+    '',
+    'Socials:',
+    socials,
+    sig,
+  ].join('\n');
+
+  const interviewBody = [
+    'Hi JesusWired team,',
+    '',
+    'My name is ' + artist + ' and I would like to request an interview.',
+    '',
+    'Brief intro:',
+    bio || '[FILL IN: 2-3 sentences about you]',
+    '',
+    'Recent / upcoming releases:',
+    '"' + song + '" (' + releaseDate + ')',
+    spotify ? ('Listen: ' + spotify) : '[FILL IN: listening link]',
+    '',
+    'Preferred interview format:',
+    '[FILL IN: email / phone / Zoom / in-person]',
+    '',
+    'Hi-res photo: [FILL IN: link or attached]',
+    '',
+    'Socials:',
+    socials,
+    sig,
+  ].join('\n');
+
+  const reviewBody = [
+    'Hi JesusWired team,',
+    '',
+    'My name is ' + artist + ' and I would like to submit "' + album + '" for a review.',
+    '',
+    bio ? ('Brief intro:\n' + bio + '\n') : '',
+    'Album details:',
+    '- Release date: ' + releaseDate,
+    '- Genre: ' + genre,
+    '- Song meanings / themes: [FILL IN]',
+    '- Key lyrics or standout tracks: [FILL IN]',
+    '',
+    'Downloadable copy of the project (essential):',
+    '[FILL IN: download link - this is required by JesusWired]',
+    '',
+    'Hi-res album cover: [FILL IN: link or attached]',
+    '',
+    'Socials:',
+    socials,
+    sig,
+  ].filter(l => l !== undefined).join('\n');
+
+  const genericBody = [
+    'Hi JesusWired team,',
+    '',
+    '[FILL IN: your message]',
+    '',
+    'My name is ' + artist + ' and I make ' + genre + ' music.',
+    bio ? ('\n' + bio) : '',
+    '',
+    'Socials:',
+    socials,
+    sig,
+  ].filter(l => l !== undefined).join('\n');
+
+  return {
+    youtube:   { subject: 'YouTube - ' + artist + ' - ' + song,         body: youtubeBody },
+    premiere:  { subject: 'Exclusive Premiere - ' + artist + ' - ' + song, body: premiereBody },
+    interview: { subject: 'Interview - ' + artist,                      body: interviewBody },
+    review:    { subject: 'Review - ' + artist + ' - ' + album,         body: reviewBody },
+    generic:   { subject: '[FILL IN: subject]',                          body: genericBody },
+  };
+}
+
+function stBuildJesusWiredPane(contact, d) {
+  const templates = stBuildJesusWiredTemplates(d);
+  window.__stJesusWiredData = { to: 'submit@jesuswired.com', templates };
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+  const def = templates.youtube;
+  return (
+    '<div class="st-custom-pane st-custom-pane-jesuswired">' +
+      '<div class="st-custom-pane-head">JesusWired Submission Email</div>' +
+      '<div class="st-custom-pane-warning">' +
+        'WARNING: JesusWired does NOT accept AI-generated music. Submissions using AI-generated music will be deleted.' +
+      '</div>' +
+      '<div class="st-custom-pane-row"><span class="st-custom-pane-lbl">Type</span>' +
+        '<select id="stJesusWiredType" class="st-custom-pane-input" onchange="stJesusWiredSwitch(this.value)">' +
+          '<option value="youtube">YouTube Feature</option>' +
+          '<option value="premiere">Exclusive Premiere</option>' +
+          '<option value="interview">Interview Request</option>' +
+          '<option value="review">Review Request</option>' +
+          '<option value="generic">Generic / Other</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="st-custom-pane-row"><span class="st-custom-pane-lbl">To</span><input id="stJesusWiredTo" class="st-custom-pane-input" readonly value="submit@jesuswired.com"><button class="st-meta-copy" onclick="stCopyFieldById(\'stJesusWiredTo\', this)">Copy</button></div>' +
+      '<div class="st-custom-pane-row"><span class="st-custom-pane-lbl">Subject</span><input id="stJesusWiredSubject" class="st-custom-pane-input" value="' + esc(def.subject) + '"><button class="st-meta-copy" onclick="stCopyFieldById(\'stJesusWiredSubject\', this)">Copy</button></div>' +
+      '<textarea id="stJesusWiredBody" class="st-custom-pane-body">' + esc(def.body) + '</textarea>' +
+      '<div class="st-custom-pane-actions">' +
+        '<button class="st-meta-copy" onclick="stCopyFieldById(\'stJesusWiredBody\', this)">Copy Body</button>' +
+        '<button class="st-meta-copy" onclick="stCopyJesusWiredEmail(this)">Copy Full Email</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function stJesusWiredSwitch(type) {
+  const data = window.__stJesusWiredData;
+  if (!data || !data.templates[type]) return;
+  const subj = document.getElementById('stJesusWiredSubject');
+  const body = document.getElementById('stJesusWiredBody');
+  if (subj) subj.value = data.templates[type].subject;
+  if (body) body.value = data.templates[type].body;
+}
+
+function stCopyJesusWiredEmail(btn) {
+  const data = window.__stJesusWiredData;
+  if (!data) return;
+  const subj = document.getElementById('stJesusWiredSubject');
+  const body = document.getElementById('stJesusWiredBody');
+  const full = 'To: ' + data.to + '\nSubject: ' + (subj ? subj.value : '') + '\n\n' + (body ? body.value : '');
+  stOverlayCopyValue(full, btn);
+}
+
+// ---------- JesusFreakHideout (Claude-generated) ------------------------
+// Unlike Rapzilla and JesusWired, JFH wants an intro email pasted into
+// their on-page JotForm staff-email input -- so we generate a press_release
+// intro via Claude and let the user copy the body, not a full mailto. This
+// duplicates the social-DM loader pattern for the 5th Claude fetch site;
+// keep it deliberate until the callClaudeApi() extraction happens.
+window.ST_JFH_CACHE = window.ST_JFH_CACHE || {};
+
+function stJfhFallback(d) {
+  const artist = d.primaryArtist || d.stageName || '[Artist]';
+  const song = d.songTitle || '[Song]';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Christian hip hop';
+  const bio = (d.bio || '').trim();
+  const releaseDate = d.releaseDate || '';
+  const listen = d.linkSpotify || d.linkApple || d.linkYTVideo || '';
+  const parts = [
+    'Hi JesusFreakHideout team,',
+    '',
+    'My name is ' + artist + '. I would like to submit my new ' + genre + ' release "' + song + '"' + (releaseDate ? ' (out ' + releaseDate + ')' : '') + ' for your consideration.',
+  ];
+  if (bio) parts.push('', bio);
+  if (listen) parts.push('', 'Listen: ' + listen);
+  parts.push('', 'Thanks for your time.', '', 'Blessings,', artist);
+  return parts.join('\n');
+}
+
+async function stFetchJfhEmail(contact, d) {
+  const cacheKey = contact.id + '::' + (d.songTitle || '');
+  if (window.ST_JFH_CACHE[cacheKey]) return window.ST_JFH_CACHE[cacheKey];
+  try {
+    const resp = await fetch('/api/outreach/generate-intro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: 'press_release', releaseData: d }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data || !data.intro) throw new Error('Empty response');
+    const result = { body: data.intro, source: 'ai' };
+    window.ST_JFH_CACHE[cacheKey] = result;
+    return result;
+  } catch (e) {
+    console.error('[stFetchJfhEmail] falling back to template:', e?.message || e);
+    return { body: stJfhFallback(d), source: 'fallback' };
+  }
+}
+
+function stBuildJesusFreakHideoutPane(contact, d) {
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+  return (
+    '<div class="st-custom-pane st-custom-pane-jfh">' +
+      '<div class="st-custom-pane-head">JesusFreakHideout Intro Email ' +
+        '<span id="stJfhStatus" style="font-weight:normal;font-size:10px;color:#888;">(generating...)</span>' +
+      '</div>' +
+      '<div class="st-custom-pane-hint">Paste the body below into the staff-email form on the right, then add your subject line "Music submission - ' + esc(d.primaryArtist || d.stageName || 'your name') + '".</div>' +
+      '<textarea id="stJfhBody" class="st-custom-pane-body" placeholder="Generating a press-release intro tailored to your release..."></textarea>' +
+      '<div class="st-custom-pane-actions">' +
+        '<button class="st-meta-copy" onclick="stCopyFieldById(\'stJfhBody\', this)">Copy Body</button>' +
+        '<button class="st-meta-copy" onclick="stRegenerateJfhEmail()">Regenerate</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function stLoadJfhEmailInto(contact, d) {
+  const loadingForContactId = contact.id;
+  stFetchJfhEmail(contact, d).then(result => {
+    if (window.ST_OVERLAY.contactId !== loadingForContactId) return;
+    const body = document.getElementById('stJfhBody');
+    const status = document.getElementById('stJfhStatus');
+    if (body) body.value = result.body;
+    if (status) {
+      status.textContent = result.source === 'ai' ? '(Claude)' : '(template - AI unavailable)';
+      status.style.color = result.source === 'ai' ? '#0a7a2a' : '#a06c00';
+    }
+  });
+}
+
+function stRegenerateJfhEmail() {
+  const contact = (window.ST_STATE.contacts || []).find(c => c.id === window.ST_OVERLAY.contactId);
+  if (!contact) return;
+  let d = {};
+  try { d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}') || {}; } catch(_) {}
+  delete window.ST_JFH_CACHE[contact.id + '::' + (d.songTitle || '')];
+  const body = document.getElementById('stJfhBody');
+  const status = document.getElementById('stJfhStatus');
+  if (body) body.value = '';
+  if (status) { status.textContent = '(generating...)'; status.style.color = '#888'; }
+  stLoadJfhEmailInto(contact, d);
+}
+
+// Shared helper: copy the value of an input/textarea by id. Used by all
+// three custom-pane renderers above for their To/Subject/Body fields.
+function stCopyFieldById(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  stOverlayCopyValue(el.value, btn);
+}
+
 function stOverlayRenderMetadata() {
   // Pull from intake release_data (localStorage). If empty, show a prompt
   // to fill the Intake tab first.
@@ -4630,9 +5058,13 @@ function stOverlayRenderMetadata() {
   const host = document.getElementById('stOverlayMetaFields');
   const emptyMsg = document.getElementById('stOverlayMetaEmpty');
   // Look up the current contact so we can inject a social DM template at
-  // the top when reaching out on socials.
+  // the top when reaching out on socials, or a per-site custom email
+  // generator (Rapzilla / JesusWired / JesusFreakHideout) when the
+  // contact's URL matches ST_CUSTOM_PANE_HOSTS.
   const contact = (window.ST_STATE.contacts || []).find(c => c.id === window.ST_OVERLAY.contactId);
   const isSocial = contact && contact.submission_type === 'social';
+  const customPaneUrl = contact ? (contact.website || contact.submission_value || '') : '';
+  const customPaneKey = contact ? stGetCustomPaneKey(contact, customPaneUrl) : '';
   if (!d.songTitle && !d.primaryArtist) {
     host.innerHTML = '';
     emptyMsg.style.display = '';
@@ -4684,7 +5116,17 @@ function stOverlayRenderMetadata() {
       '<div style="font-size:10px;color:#666;margin-top:6px;font-style:italic;">Tweak the copy before sending. Generated by Claude from your release metadata + this contact.</div>' +
       '</div>';
   }
-  host.innerHTML = socialBlock + fields.filter(([, v]) => v && String(v).trim()).map(([label, value]) => {
+  // Per-site custom pane (Rapzilla / JesusWired / JesusFreakHideout).
+  // Prepended ABOVE the socialBlock and metadata fields so the standard
+  // Copy Song Title / Copy Artist buttons still render below. Mirror the
+  // socialBlock pattern exactly: build HTML here, fire any async loader
+  // after host.innerHTML is set.
+  let customBlock = '';
+  if (customPaneKey === 'rapzilla')              customBlock = stBuildRapzillaPane(contact, d);
+  else if (customPaneKey === 'jesuswired')       customBlock = stBuildJesusWiredPane(contact, d);
+  else if (customPaneKey === 'jesusfreakhideout') customBlock = stBuildJesusFreakHideoutPane(contact, d);
+
+  host.innerHTML = customBlock + socialBlock + fields.filter(([, v]) => v && String(v).trim()).map(([label, value]) => {
     const isLong = label === 'Bio' || String(value).length > 80;
     return '<div class="st-meta-field' + (isLong ? ' long' : '') + '">' +
       '<div class="st-meta-label">' + esc(label) + '</div>' +
@@ -4697,6 +5139,11 @@ function stOverlayRenderMetadata() {
   // rendered with a "generating…" placeholder; stLoadSocialDmInto handles
   // stale-response guarding + UI population.
   if (isSocial) stLoadSocialDmInto(contact, d);
+
+  // JFH uses the same async-loader pattern as social DM: render with a
+  // "(generating...)" status label, then populate from /api/outreach/generate-intro.
+  // Rapzilla and JesusWired are static templates -- no loader needed.
+  if (customPaneKey === 'jesusfreakhideout') stLoadJfhEmailInto(contact, d);
 }
 
 // Shared async loader — fetches a personalized DM and writes it into the
@@ -7866,6 +8313,22 @@ serverLoad().then(() => {
   #stOverlay .st-social-dm { padding:12px;margin-bottom:14px;background:linear-gradient(160deg,rgba(0,212,255,0.08),rgba(123,47,247,0.08));border:1px solid rgba(0,212,255,0.35);border-radius:10px; }
   #stOverlay .st-social-dm-head { font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#00d4ff;font-weight:700;margin-bottom:8px; }
   #stOverlay .st-social-dm-body { width:100%;min-height:140px;resize:vertical;padding:10px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#eee;font-family:inherit;font-size:12px;line-height:1.45; }
+  /* Per-site custom left pane (Rapzilla / JesusWired / JesusFreakHideout). Shares the gradient-card vibe of .st-social-dm so it feels related, but uses a warmer gold/purple accent so users can tell at a glance this is a per-site email template, not a social DM. */
+  #stOverlay .st-custom-pane { padding:12px;margin-bottom:14px;background:linear-gradient(160deg,rgba(255,193,7,0.07),rgba(123,47,247,0.10));border:1px solid rgba(255,193,7,0.32);border-radius:10px; }
+  #stOverlay .st-custom-pane-head { font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#ffc107;font-weight:700;margin-bottom:10px; }
+  #stOverlay .st-custom-pane-warning { background:rgba(220,53,69,0.18);border:1px solid rgba(220,53,69,0.55);border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:11px;line-height:1.4;color:#ffb3b8;font-weight:600; }
+  #stOverlay .st-custom-pane-hint { font-size:10px;color:#bbb;line-height:1.4;margin-bottom:10px;font-style:italic; }
+  #stOverlay .st-custom-pane-toggle { display:flex;gap:14px;margin-bottom:10px;font-size:11px;color:#ddd; }
+  #stOverlay .st-custom-pane-toggle label { display:flex;align-items:center;gap:4px;cursor:pointer; }
+  #stOverlay .st-custom-pane-row { display:flex;align-items:center;gap:6px;margin-bottom:6px; }
+  #stOverlay .st-custom-pane-lbl { font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;min-width:52px; }
+  #stOverlay .st-custom-pane-input { flex:1;min-width:0;padding:6px 8px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:5px;color:#eee;font-family:inherit;font-size:11px; }
+  #stOverlay .st-custom-pane-input:focus { outline:none;border-color:rgba(255,193,7,0.5); }
+  #stOverlay .st-custom-pane-body { width:100%;min-height:180px;resize:vertical;padding:10px;margin-top:8px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#eee;font-family:inherit;font-size:12px;line-height:1.45;white-space:pre-wrap; }
+  #stOverlay .st-custom-pane-actions { display:flex;gap:6px;margin-top:8px;flex-wrap:wrap; }
+  #stOverlay .st-custom-pane-checklist { margin-top:12px;padding:10px;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:6px; }
+  #stOverlay .st-custom-pane-checklist-head { font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#ffc107;font-weight:700;margin-bottom:6px; }
+  #stOverlay .st-custom-pane-checklist ul { margin:0;padding-left:18px;font-size:11px;line-height:1.55;color:#ccc; }
   @media (max-width: 900px) {
     #stOverlay #stOverlayHeader { flex-wrap:wrap;gap:8px;padding:10px 14px; }
     #stOverlay #stOverlayLeft { width:100%;max-width:100%;max-height:45vh;border-right:none;border-bottom:1px solid #2a2a32; }
