@@ -603,10 +603,21 @@ function initDb() {
     console.warn('[BOOT] ADMIN_PASSWORD not set — skipping admin seeding. Existing admin accounts are unaffected.');
   } else {
     for (const admin of ADMINS) {
-      const exists = dbHelpers.prepare('SELECT id FROM users WHERE email = ?').get(admin.email);
-      if (!exists) {
+      const existing = dbHelpers.prepare('SELECT id, role, subscription_status FROM users WHERE email = ?').get(admin.email);
+      if (!existing) {
         const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
         dbHelpers.prepare('INSERT INTO users (email, password, role, subscription_status) VALUES (?, ?, ?, ?)').run(admin.email, hash, 'admin', 'active');
+        console.log('[BOOT] seeded new admin account: ' + admin.email);
+      } else if (existing.role !== 'admin' || existing.subscription_status !== 'active') {
+        // Promote an existing non-admin user whose email was added to the
+        // ADMINS list after that user already registered. Without this
+        // branch, adding a new admin email to the list never takes effect
+        // for a pre-existing account because the INSERT is skipped by the
+        // !exists guard. Password is NOT touched on promotion — we only
+        // elevate role + ensure active subscription_status so the account
+        // can immediately use admin-only endpoints.
+        dbHelpers.prepare("UPDATE users SET role = 'admin', subscription_status = 'active' WHERE id = ?").run(existing.id);
+        console.log('[BOOT] promoted existing account to admin: ' + admin.email);
       }
     }
   }
