@@ -1508,7 +1508,10 @@ function cacheSet(key, data, ttlMs = 3600000) {
   }
 }
 
-app.post('/api/research', requireActive, rlResearch, async (req, res) => {
+// Trial users are allowed here — the release cap is client-side
+// (TRIAL_RELEASE_LIMIT=5) and cost is bounded by rlResearch + the
+// trialing daily token cap. See R11 in task/lessons.md.
+app.post('/api/research', requireAccess, rlResearch, async (req, res) => {
   const { action, genre, artistName, query, similarArtists } = req.body;
   if (!action) return res.status(400).json({ error: 'Missing action' });
 
@@ -2754,7 +2757,13 @@ function claudeQuotaForUser(user) {
   return 0;
 }
 
-app.post('/api/claude', requireActive, rlClaude, async (req, res) => {
+// Trial users are allowed here — blocking them broke first-release
+// generation (campaign pipeline fires 5 parallel /api/claude calls).
+// Abuse is bounded by: rlClaude (60/hr), CLAUDE_DAILY_TOKEN_CAP.trialing
+// (100k/day), the 5-release client-side cap (TRIAL_RELEASE_LIMIT in HTML),
+// and the strict request-shape validation below. Music Agent Pro stays
+// blocked via the showPanel client-side gate. See R11 in task/lessons.md.
+app.post('/api/claude', requireAccess, rlClaude, async (req, res) => {
   const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
   if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured' });
 
