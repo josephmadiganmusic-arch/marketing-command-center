@@ -4994,7 +4994,11 @@ function stOpenSubmission(contactId) {
   window.ST_OVERLAY.contactId = contactId;
   // Every open starts in Site mode (iframe of submission URL). User toggles
   // Compose via the header pill if they want the Email Generator preview.
-  window.ST_OVERLAY.rightMode = 'site';
+  // Route through stSetOverlayRightMode so composeView.display:none, pill
+  // active-state, and listener clear all fire — the raw assignment left
+  // composeView sitting on top of the iframe on the first open after a page
+  // refresh (HTML inline default is display:flex, z-index:2).
+  stSetOverlayRightMode('site', true);
   window.__egRefreshListener = null;
 
   // Populate header
