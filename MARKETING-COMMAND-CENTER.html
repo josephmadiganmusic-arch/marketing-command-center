@@ -4179,11 +4179,29 @@ const ST_TYPE_LABELS = { form:'Form', social:'Social', unknown:'Website' };
 // immediately. Add a host to this list (lowercase, no `www.`, no path) when a
 // submission site refuses to frame AND the user has confirmed the popup is
 // the right UX. Matches exact host or any `*.<host>` subdomain.
-//  - rapzilla.com        — refuses iframe; pairs with the custom Rapzilla email pane
-//  - amenworldwide.com   — site under construction; kept on the verified list
-//  - christianraps.com   — refuses iframe (Soundcloud curator contact page)
-//  - wgts919.com         — refuses iframe (hit 403 on automated crawl 2026-04-09)
-const ST_POPUP_ONLY_HOSTS = ['rapzilla.com', 'amenworldwide.com', 'christianraps.com', 'wgts919.com'];
+//  - rapzilla.com            — refuses iframe; pairs with the custom Rapzilla email pane
+//  - amenworldwide.com       — site under construction; kept on the verified list
+//  - christianraps.com       — refuses iframe (Soundcloud curator contact page)
+//  - wgts919.com             — refuses iframe (hit 403 on automated crawl 2026-04-09)
+//  - playlistpush.com        — Playlist Push (Christian Workout Music 2025), refuses iframe
+//  - clearhitsradio.com      — Clear Hits Radio, refuses iframe
+//  - submithub.com           — SubmitHub blog pages (Folded Waffle, Global Money World,
+//                              Last Day Deaf, Music For All, Roadie Music), refuses iframe
+//  - hishopnation.com        — His Hop Nation, refuses iframe
+//  - jamthehype.com          — Jam Hype Radio form page, refuses iframe
+//  - journalofgospelmusic.com — Journal of Gospel Music, refuses iframe
+const ST_POPUP_ONLY_HOSTS = [
+  'rapzilla.com',
+  'amenworldwide.com',
+  'christianraps.com',
+  'wgts919.com',
+  'playlistpush.com',
+  'clearhitsradio.com',
+  'submithub.com',
+  'hishopnation.com',
+  'jamthehype.com',
+  'journalofgospelmusic.com'
+];
 
 // Normalize a URL to its bare hostname (lowercase, no `www.` prefix) for
 // matching against the ST_POPUP_ONLY_HOSTS and ST_CUSTOM_PANE_HOSTS lists.
