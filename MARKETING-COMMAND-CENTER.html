@@ -4121,18 +4121,207 @@ function stCloseExportMenu() {
   if (m) m.style.display = 'none';
 }
 
-// Placeholder for the split-screen overlay (commit 8). Commit 7 ships a
-// minimal "Mark Submitted" confirm so the tracker is functional end-to-end
-// before the overlay lands.
+// Split-screen submission overlay (commit 8). Left pane = release metadata
+// with copy-to-clipboard buttons. Right pane = iframe loading the contact's
+// submission URL, with a 2.5s load-detection → window.open popup fallback
+// for sites that X-Frame-Options SAMEORIGIN/DENY. Mark Submitted → POST
+// /api/outreach/submission/mark, refresh local state + XP.
+window.ST_OVERLAY = { contactId: null, popupRef: null, loadTimer: null };
+
 function stOpenSubmission(contactId) {
   const contact = window.ST_STATE.contacts.find(c => c.id === contactId);
   if (!contact) return;
-  const url = (contact.submission_value && /^https?:\/\//i.test(contact.submission_value)) ? contact.submission_value : contact.website;
-  if (url) window.open(url, '_blank', 'noopener');
+  window.ST_OVERLAY.contactId = contactId;
+
+  // Populate header
+  document.getElementById('stOverlayName').textContent = contact.name || 'Unnamed';
+  const catLabel = (window.OUTREACH_STATE.category_labels || {})[contact.category] || contact.category;
+  const typeLabel = ST_TYPE_LABELS[contact.submission_type] || contact.submission_type || '';
+  document.getElementById('stOverlaySub').textContent = catLabel + ' \u00B7 ' + typeLabel;
+  const notesEl = document.getElementById('stOverlayNotes');
+  notesEl.textContent = contact.notes || '';
+  notesEl.style.display = contact.notes ? '' : 'none';
+
+  // Set submitted-state of the Mark Submitted button
+  const markBtn = document.getElementById('stOverlayMarkBtn');
   const already = !!window.ST_STATE.progress[contactId];
-  if (already) return;
-  if (!confirm('Mark "' + (contact.name || 'this contact') + '" as submitted? (+25 XP)')) return;
-  stMarkSubmitted(contactId);
+  markBtn.textContent = already ? '\u2705 Already Submitted' : 'Mark Submitted (+25 XP)';
+  markBtn.disabled = already;
+  markBtn.style.opacity = already ? '0.6' : '1';
+
+  // Render metadata pane from intake release_data
+  stOverlayRenderMetadata();
+
+  // Determine right-pane URL: prefer a real URL in submission_value, then website
+  let url = '';
+  if (contact.submission_value && /^https?:\/\//i.test(contact.submission_value)) url = contact.submission_value;
+  else if (contact.website && /^https?:\/\//i.test(contact.website)) url = contact.website;
+  else if (contact.website) url = 'https://' + contact.website;
+
+  const rightPane = document.getElementById('stOverlayRight');
+  const iframe = document.getElementById('stOverlayIframe');
+  const rightNotice = document.getElementById('stOverlayRightNotice');
+  const nonUrlMsg = document.getElementById('stOverlayNonUrl');
+
+  // Clear any prior timers / popups
+  if (window.ST_OVERLAY.loadTimer) { clearTimeout(window.ST_OVERLAY.loadTimer); window.ST_OVERLAY.loadTimer = null; }
+  if (window.ST_OVERLAY.popupRef && !window.ST_OVERLAY.popupRef.closed) {
+    try { window.ST_OVERLAY.popupRef.close(); } catch(_) {}
+  }
+  window.ST_OVERLAY.popupRef = null;
+
+  if (!url) {
+    iframe.style.display = 'none';
+    rightNotice.style.display = 'none';
+    nonUrlMsg.style.display = '';
+    const raw = contact.submission_value || '(no submission value)';
+    nonUrlMsg.innerHTML = '<div style="font-size:14px;color:#fff;margin-bottom:8px;">Direct outreach target</div>'
+      + '<div style="font-size:13px;color:#bbb;margin-bottom:14px;">This contact uses <strong>' + (ST_TYPE_LABELS[contact.submission_type] || contact.submission_type) + '</strong>. There\u2019s no form to embed.</div>'
+      + '<div style="padding:12px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);border-radius:8px;font-family:monospace;font-size:13px;color:#00d4ff;word-break:break-all;">' + raw.replace(/[<>&]/g, ch => ({ '<':'&lt;','>':'&gt;','&':'&amp;' }[ch])) + '</div>'
+      + '<button onclick="stOverlayCopyValue(' + JSON.stringify(String(raw)).replace(/"/g,'&quot;') + ')" style="margin-top:12px;padding:8px 14px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.4);color:#00d4ff;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;">Copy</button>';
+  } else {
+    nonUrlMsg.style.display = 'none';
+    iframe.style.display = '';
+    rightNotice.style.display = '';
+    rightNotice.textContent = 'Loading ' + url + '\u2026';
+    iframe.src = 'about:blank';
+    // Iframe-first with 2.5s detection. If the iframe's contentDocument is
+    // unreachable (X-Frame-Options / CSP blocking), fall back to window.open
+    // positioned on the right half of the screen.
+    let iframeLoadedOk = false;
+    iframe.onload = function() {
+      try {
+        // Same-origin check — accessing contentDocument throws on cross-origin block.
+        const doc = iframe.contentDocument;
+        if (doc && doc.location && doc.location.href && doc.location.href !== 'about:blank') {
+          iframeLoadedOk = true;
+          rightNotice.textContent = 'Loaded in-page. If the page looks blank, click "Open in Popup" to open it in a separate window.';
+        }
+      } catch(e) {
+        // Same-origin check failed — cross-origin content, but the frame may
+        // still render fine. We can't prove it, so the 2.5s timer stays as
+        // the authoritative fallback.
+      }
+    };
+    iframe.src = url;
+    window.ST_OVERLAY.loadTimer = setTimeout(function() {
+      // If the iframe didn't signal a successful same-origin load, assume
+      // the target refused to frame us and open a popup fallback.
+      if (!iframeLoadedOk) {
+        stOverlayOpenPopup(url);
+      }
+    }, 2500);
+    // Store URL for the manual "Open in Popup" button
+    document.getElementById('stOverlayPopupBtn').onclick = function() { stOverlayOpenPopup(url); };
+  }
+
+  document.getElementById('stOverlay').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function stOverlayOpenPopup(url) {
+  const w = Math.floor(window.screen.availWidth / 2);
+  const h = Math.floor(window.screen.availHeight * 0.9);
+  const left = window.screen.availWidth - w;
+  const top = 0;
+  const features = 'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes,noopener';
+  const popup = window.open(url, 'outreachSubmissionPopup', features);
+  window.ST_OVERLAY.popupRef = popup;
+  const notice = document.getElementById('stOverlayRightNotice');
+  if (popup) {
+    notice.innerHTML = '<span style="color:#00d4ff;">Opened in popup window</span> \u2014 complete your submission there, then click Mark Submitted.';
+    document.getElementById('stOverlayIframe').style.display = 'none';
+  } else {
+    notice.innerHTML = '<span style="color:#ffb347;">Popup blocked.</span> Allow popups for this site and <a href="' + url + '" target="_blank" rel="noopener" style="color:#00d4ff;">click here to open the submission page</a>.';
+  }
+}
+
+function stOverlayClose() {
+  document.getElementById('stOverlay').style.display = 'none';
+  document.body.style.overflow = '';
+  if (window.ST_OVERLAY.loadTimer) { clearTimeout(window.ST_OVERLAY.loadTimer); window.ST_OVERLAY.loadTimer = null; }
+  if (window.ST_OVERLAY.popupRef && !window.ST_OVERLAY.popupRef.closed) {
+    try { window.ST_OVERLAY.popupRef.close(); } catch(_) {}
+  }
+  window.ST_OVERLAY.popupRef = null;
+  window.ST_OVERLAY.contactId = null;
+  document.getElementById('stOverlayIframe').src = 'about:blank';
+}
+
+function stOverlayRenderMetadata() {
+  // Pull from intake release_data (localStorage). If empty, show a prompt
+  // to fill the Intake tab first.
+  let d = {};
+  try { d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}') || {}; } catch(_) {}
+  const host = document.getElementById('stOverlayMetaFields');
+  const emptyMsg = document.getElementById('stOverlayMetaEmpty');
+  if (!d.songTitle && !d.primaryArtist) {
+    host.innerHTML = '';
+    emptyMsg.style.display = '';
+    return;
+  }
+  emptyMsg.style.display = 'none';
+  const durBits = [d.durationMin, d.durationSec].filter(x => x != null && String(x).length > 0);
+  const artistStr = [d.primaryArtist || d.stageName, d.featArtist ? 'feat. ' + d.featArtist : ''].filter(Boolean).join(' ');
+  const genreStr = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ');
+  const writersStr = Array.isArray(d.songwriters) && d.songwriters.length
+    ? d.songwriters.map(w => w.name + (w.split ? ' ('+w.split+'%)' : '')).join(', ')
+    : '';
+  const fields = [
+    ['Song Title', d.songTitle],
+    ['Artist', artistStr],
+    ['Producer', d.producer],
+    ['Release Date', d.releaseDate],
+    ['Genre', genreStr],
+    ['Duration', durBits.length ? durBits.join(':') : ''],
+    ['ISRC', d.isrc],
+    ['UPC', d.upc],
+    ['Label', d.label],
+    ['Songwriters', writersStr],
+    ['Spotify', d.linkSpotify],
+    ['Apple Music', d.linkApple],
+    ['YouTube Music', d.linkYTMusic],
+    ['YouTube Video', d.linkYTVideo],
+    ['Website', d.website],
+    ['Press Kit / EPK', d.epk || d.dlPressKit],
+    ['Bio', d.bio],
+    ['Email', d.email],
+  ];
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+  host.innerHTML = fields.filter(([, v]) => v && String(v).trim()).map(([label, value]) => {
+    const isLong = label === 'Bio' || String(value).length > 80;
+    return '<div class="st-meta-field' + (isLong ? ' long' : '') + '">' +
+      '<div class="st-meta-label">' + esc(label) + '</div>' +
+      '<div class="st-meta-value">' + esc(value) + '</div>' +
+      '<button class="st-meta-copy" onclick="stOverlayCopyValue(' + JSON.stringify(String(value)).replace(/"/g,'&quot;') + ', this)">Copy</button>' +
+      '</div>';
+  }).join('');
+}
+
+function stOverlayCopyValue(value, btn) {
+  try {
+    navigator.clipboard.writeText(String(value || '')).then(() => {
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1400);
+      }
+      try { awardXP('content_copy'); } catch(_) {}
+    });
+  } catch(_) {}
+}
+
+async function stOverlayMarkSubmitted() {
+  const id = window.ST_OVERLAY.contactId;
+  if (!id) return;
+  const ok = await stMarkSubmitted(id);
+  if (ok) {
+    const btn = document.getElementById('stOverlayMarkBtn');
+    btn.textContent = '\u2705 Submitted';
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+  }
 }
 
 async function stMarkSubmitted(contactId, extra) {
@@ -7106,6 +7295,14 @@ function setupEliteOnboardingNudge() {
   document.body.style.paddingTop = (bar.offsetHeight + 'px');
 }
 
+// Close submission overlay on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const ov = document.getElementById('stOverlay');
+    if (ov && ov.style.display !== 'none') stOverlayClose();
+  }
+});
+
 // Load data from server DB first, then initialize
 serverLoad().then(() => {
   migrateOldStorage();
@@ -7117,5 +7314,57 @@ serverLoad().then(() => {
   outreachLoadStatus();
 });
 </script>
+
+<!-- Submission Overlay (commit 8) -->
+<div id="stOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:9000;align-items:stretch;justify-content:stretch;">
+  <div style="display:flex;flex-direction:column;width:100%;height:100%;">
+    <div id="stOverlayHeader" style="display:flex;align-items:center;gap:14px;padding:14px 22px;background:#0a0a12;border-bottom:1px solid #2a2a32;">
+      <div style="flex:1;min-width:0;">
+        <div id="stOverlayName" style="font-size:16px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Contact</div>
+        <div id="stOverlaySub" style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-top:2px;"></div>
+        <div id="stOverlayNotes" style="font-size:12px;color:#aaa;margin-top:4px;display:none;"></div>
+      </div>
+      <button id="stOverlayPopupBtn" style="padding:8px 14px;background:rgba(0,212,255,0.12);border:1px solid rgba(0,212,255,0.4);color:#00d4ff;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;">Open in Popup</button>
+      <button id="stOverlayMarkBtn" onclick="stOverlayMarkSubmitted()" style="padding:10px 18px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;">Mark Submitted (+25 XP)</button>
+      <button onclick="stOverlayClose()" aria-label="Close" style="padding:8px 14px;background:transparent;border:1px solid #444;color:#ddd;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;">&#x2715;</button>
+    </div>
+    <div style="flex:1;display:flex;min-height:0;">
+      <!-- Left pane: release metadata with copy buttons -->
+      <div id="stOverlayLeft" style="width:420px;max-width:42%;border-right:1px solid #2a2a32;background:#0d0d15;display:flex;flex-direction:column;">
+        <div style="padding:14px 18px;border-bottom:1px solid #1e1e28;">
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;font-weight:600;">Release Metadata</div>
+          <div style="font-size:11px;color:#666;margin-top:3px;">Copy &amp; paste into the submission form</div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:14px 18px;">
+          <div id="stOverlayMetaEmpty" style="display:none;padding:18px;text-align:center;color:#888;font-size:13px;background:rgba(255,255,255,0.02);border:1px dashed #2a2a32;border-radius:8px;">No release loaded. Fill the <strong style="color:#00d4ff;">Intake</strong> tab first so we have something to paste.</div>
+          <div id="stOverlayMetaFields"></div>
+        </div>
+      </div>
+      <!-- Right pane: iframe / popup fallback -->
+      <div id="stOverlayRight" style="flex:1;display:flex;flex-direction:column;min-width:0;background:#050509;">
+        <div id="stOverlayRightNotice" style="padding:10px 16px;background:#0a0a12;border-bottom:1px solid #1e1e28;font-size:12px;color:#888;"></div>
+        <div style="flex:1;position:relative;min-height:0;">
+          <iframe id="stOverlayIframe" src="about:blank" style="width:100%;height:100%;border:0;background:#fff;"></iframe>
+          <div id="stOverlayNonUrl" style="display:none;position:absolute;inset:0;padding:28px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  #stOverlay .st-meta-field { display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04); }
+  #stOverlay .st-meta-field.long { flex-direction:column;align-items:stretch; }
+  #stOverlay .st-meta-label { font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#666;min-width:90px;flex-shrink:0;padding-top:3px; }
+  #stOverlay .st-meta-value { flex:1;font-size:13px;color:#ddd;word-break:break-word;line-height:1.4; }
+  #stOverlay .st-meta-field.long .st-meta-value { margin-top:4px;margin-bottom:6px; }
+  #stOverlay .st-meta-copy { padding:4px 10px;font-size:11px;background:rgba(123,47,247,0.12);border:1px solid rgba(123,47,247,0.35);color:#b88fff;border-radius:4px;cursor:pointer;font-family:inherit;flex-shrink:0;align-self:flex-start; }
+  #stOverlay .st-meta-copy:hover { background:rgba(123,47,247,0.22);border-color:rgba(123,47,247,0.6); }
+  #stOverlay .st-meta-copy.copied { background:#00d4ff;border-color:#00d4ff;color:#000; }
+  @media (max-width: 900px) {
+    #stOverlay #stOverlayHeader { flex-wrap:wrap;gap:8px;padding:10px 14px; }
+    #stOverlay #stOverlayLeft { width:100%;max-width:100%;max-height:45vh;border-right:none;border-bottom:1px solid #2a2a32; }
+    #stOverlay > div > div:nth-child(2) { flex-direction:column; }
+  }
+</style>
 </body>
 </html>
