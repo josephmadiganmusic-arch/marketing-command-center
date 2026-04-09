@@ -2663,7 +2663,14 @@ function intakeGetData() {
 let _autosaveTimer = null;
 let _namedSaveTimer = null;
 
-// Force-save all intake data immediately (no debounce)
+// Force-save all intake data immediately (no debounce).
+// Returns true on success, false if any localStorage write threw (quota
+// exceeded, corrupt JSON on the existing release_data_all blob, etc.).
+// Callers (beforeunload, doLogout) consult the return value so silent
+// quota failures can no longer destroy the user's release data without
+// warning. serverFlush() itself uses navigator.sendBeacon and is
+// fire-and-forget — we can't detect a network failure from here, only
+// local storage failures.
 function intakeForceFlush() {
   try {
     const d = intakeGetData();
@@ -2681,18 +2688,46 @@ function intakeForceFlush() {
       });
       localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
     }
-    // Flush everything to server DB
+    // Flush everything to server DB (fire-and-forget sendBeacon).
     serverFlush();
-  } catch(e) {}
+    return true;
+  } catch(e) {
+    // Log a breadcrumb so quota/JSON failures are visible in devtools
+    // instead of vanishing. Also stash the last error on window so
+    // future diagnostics can inspect it without reading the console.
+    console.error('[intakeForceFlush] failed to persist release data:', e?.message || e);
+    window.__intakeFlushLastError = { when: Date.now(), message: e?.message || String(e) };
+    return false;
+  }
 }
 
 function doLogout() {
-  intakeForceFlush();
+  const ok = intakeForceFlush();
+  if (!ok) {
+    // Flush failed (almost always localStorage quota). Give the user a
+    // chance to cancel the logout and resolve the issue before losing
+    // whatever they just typed.
+    const proceed = confirm('Warning: your most recent changes may not have saved to this browser (storage quota or data corruption). Log out anyway? Your server-side copy is the last successful save.');
+    if (!proceed) return;
+  }
   fetch('/api/logout', { method: 'POST' }).then(() => location.href = '/login');
 }
 
-// Save on page close / refresh / navigate away
-window.addEventListener('beforeunload', intakeForceFlush);
+// Save on page close / refresh / navigate away. When the flush fails
+// (quota exceeded or exception in the save path), set returnValue so
+// the browser shows a "Leave site?" confirm dialog — the user gets a
+// chance to stay on the page and resolve the storage issue instead of
+// losing unsaved work. Modern browsers display a generic dialog and
+// ignore the returnValue string, but setting it is still the sanctioned
+// way to request the prompt.
+window.addEventListener('beforeunload', (e) => {
+  const ok = intakeForceFlush();
+  if (!ok) {
+    e.preventDefault();
+    e.returnValue = 'Your most recent changes may not have saved. Leave anyway?';
+    return e.returnValue;
+  }
+});
 
 // ============================
 // ARTIST PROFILE — sticky fields that carry over between releases
