@@ -2982,6 +2982,67 @@ function _fileToBase64Stripped(file) {
   });
 }
 
+// Writes an ASCII string into a DataView at the given offset. Used by the
+// WAV encoder below to lay down the "RIFF"/"WAVE"/"fmt "/"data" markers.
+function _wavWriteString(view, offset, str) {
+  for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+}
+
+// Encodes a [startSec, endSec] slice of an AudioBuffer as a 16-bit PCM
+// WAV Blob. Standard 44-byte header + interleaved Int16 samples. Clamps
+// to mono/stereo so a 5.1 upload degrades cleanly. No external lib.
+function _audioBufferSliceToWav(audioBuffer, startSec, endSec) {
+  const sampleRate = audioBuffer.sampleRate;
+  const numChannels = Math.min(audioBuffer.numberOfChannels, 2);
+  const startSample = Math.max(0, Math.floor(startSec * sampleRate));
+  const endSample = Math.min(audioBuffer.length, Math.floor(endSec * sampleRate));
+  const frameCount = endSample - startSample;
+  if (frameCount <= 0) return null;
+
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = frameCount * blockAlign;
+  const bufferSize = 44 + dataSize;
+
+  const buf = new ArrayBuffer(bufferSize);
+  const view = new DataView(buf);
+
+  _wavWriteString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  _wavWriteString(view, 8, 'WAVE');
+  _wavWriteString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  _wavWriteString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  const channels = [];
+  for (let c = 0; c < numChannels; c++) channels.push(audioBuffer.getChannelData(c));
+
+  // Int16Array view over the sample region skips DataView bounds/endian
+  // overhead on the hot path (~3-5x faster than per-sample setInt16).
+  // Platform endianness is LE on every browser host we ship to, matching
+  // the WAV spec.
+  const samples = new Int16Array(buf, 44, frameCount * numChannels);
+  let idx = 0;
+  for (let i = 0; i < frameCount; i++) {
+    const srcIdx = startSample + i;
+    for (let c = 0; c < numChannels; c++) {
+      let s = channels[c][srcIdx];
+      if (s > 1) s = 1; else if (s < -1) s = -1;
+      samples[idx++] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+  }
+
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
 async function transcribeLyricsFromAudio(input) {
   const file = input && input.files && input.files[0];
   if (!file) return;
@@ -2991,9 +3052,12 @@ async function transcribeLyricsFromAudio(input) {
   const textarea = document.getElementById('in-lyrics');
   const origLabel = btn ? btn.textContent : '';
 
-  // 25MB client-side cap matches the server check.
-  if (file.size > 25 * 1024 * 1024) {
-    if (status) { status.textContent = 'File too large (max 25MB). Compress to 128kbps MP3 and retry.'; status.style.color = '#f87171'; }
+  // Client-side cap. Chunked upload means the server's 25MB-per-request
+  // cap now applies to each 30s chunk, not the original file. 100MB is
+  // enough for a ~10min stereo CD-quality WAV and protects Web Audio API
+  // memory from runaway 500MB drops.
+  if (file.size > 100 * 1024 * 1024) {
+    if (status) { status.textContent = 'File too large (max 100MB). Compress to 192kbps MP3 and retry.'; status.style.color = '#f87171'; }
     input.value = '';
     return;
   }
@@ -3012,45 +3076,120 @@ async function transcribeLyricsFromAudio(input) {
   }
 
   if (btn) { btn.disabled = true; btn.textContent = 'Transcribing...'; btn.style.opacity = '0.5'; }
-  if (status) { status.textContent = 'Uploading and transcribing (10 to 60 seconds)...'; status.style.color = '#00d4ff'; }
+  if (status) { status.textContent = 'Decoding audio...'; status.style.color = '#00d4ff'; }
+
+  // Whisper takes an optional "prompt" parameter that primes it on
+  // expected vocabulary. Feeding it intake metadata (artist name, song
+  // title, featured artist, producer, genre, label) massively improves
+  // transcription of proper nouns that would otherwise transcribe as
+  // random words. Server builds the actual prompt string; client just
+  // sends the raw fields. Same hints ride with every chunk.
+  const intake = (typeof intakeGetData === 'function') ? intakeGetData() : {};
+  const promptHints = {
+    songTitle: intake.songTitle || '',
+    primaryArtist: intake.primaryArtist || intake.stageName || '',
+    featArtist: intake.featArtist || '',
+    producer: intake.producer || '',
+    genrePrimary: intake.genrePrimary || '',
+    label: intake.label || ''
+  };
 
   try {
-    const audioBase64 = await _fileToBase64Stripped(file);
-    // Whisper takes an optional "prompt" parameter that primes it on
-    // expected vocabulary. Feeding it intake metadata (artist name,
-    // song title, featured artist, producer, genre, label) massively
-    // improves transcription of proper nouns that would otherwise
-    // transcribe as random words. Server builds the actual prompt
-    // string; client just sends the raw fields.
-    const intake = (typeof intakeGetData === 'function') ? intakeGetData() : {};
-    const promptHints = {
-      songTitle: intake.songTitle || '',
-      primaryArtist: intake.primaryArtist || intake.stageName || '',
-      featArtist: intake.featArtist || '',
-      producer: intake.producer || '',
-      genrePrimary: intake.genrePrimary || '',
-      label: intake.label || ''
-    };
-    const resp = await fetch('/api/intake/transcribe-lyrics', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ audioBase64, mimeType: file.type, filename: file.name, promptHints })
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      const msg = (data && data.error) || ('Transcription failed (' + resp.status + ')');
-      throw new Error(msg);
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) throw new Error('This browser does not support Web Audio. Try Chrome, Edge, or Safari.');
+    const audioCtx = new AC();
+    let audioBuffer;
+    try {
+      audioBuffer = await audioCtx.decodeAudioData(await file.arrayBuffer());
+    } catch (e) {
+      throw new Error('Could not decode audio file. Try MP3, WAV, or M4A.');
+    } finally {
+      // AudioBuffer samples persist after context close; the sample loop
+      // below is pure typed-array access, no AudioNode work left.
+      if (audioCtx.close) audioCtx.close().catch(() => {});
     }
-    const text = (data.text || '').trim();
-    if (!text) throw new Error('Empty transcription');
+
+    // 30s no-overlap chunks. At 44.1kHz stereo each chunk is ~5.3MB raw
+    // PCM = ~7MB base64, well under the server's 30MB route cap.
+    const CHUNK_SEC = 30;
+    const totalSec = audioBuffer.duration;
+    const chunkStarts = [];
+    for (let t = 0; t < totalSec; t += CHUNK_SEC) chunkStarts.push(t);
+    const totalChunks = chunkStarts.length;
+
+    const pieces = [];
+    let failed = 0;
+    let skippedSilent = 0;
+
+    for (let i = 0; i < chunkStarts.length; i++) {
+      const startSec = chunkStarts[i];
+      const endSec = Math.min(startSec + CHUNK_SEC, totalSec);
+      const chunkNum = i + 1;
+
+      if (status) {
+        status.textContent = 'Transcribing chunk ' + chunkNum + '/' + totalChunks + '...';
+        status.style.color = '#00d4ff';
+      }
+
+      const wavBlob = _audioBufferSliceToWav(audioBuffer, startSec, endSec);
+      if (!wavBlob) { failed++; continue; }
+
+      let chunkText = '';
+      try {
+        const wavFile = new File([wavBlob], 'chunk_' + chunkNum + '.wav', { type: 'audio/wav' });
+        const audioBase64 = await _fileToBase64Stripped(wavFile);
+        const resp = await fetch('/api/intake/transcribe-lyrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ audioBase64, mimeType: 'audio/wav', filename: wavFile.name, promptHints })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          console.warn('[transcribe] chunk ' + chunkNum + ' failed:', resp.status, data && data.error);
+          failed++;
+          continue;
+        }
+        chunkText = (data.text || '').trim();
+      } catch (err) {
+        console.warn('[transcribe] chunk ' + chunkNum + ' error:', err && err.message);
+        failed++;
+        continue;
+      }
+
+      // Hallucination filter. language=en is pinned server-side, so any
+      // non-Latin script in the output is Whisper's multilingual fallback
+      // firing on silence (Arabic/Hebrew/CJK characters were the actual
+      // symptom on Madigan's "Room" test). Also catches the classic
+      // Whisper credit-line fabrications. Empty + punctuation-only chunks
+      // are skipped too. Short real lines ("Run it up") are preserved.
+      const t = chunkText;
+      const nonLatin = /[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\u4E00-\u9FFF]/;
+      const fabrications = /written and directed|subtitles by|thanks for watching|jay beats/i;
+      if (!t || /^[\s.,\-!?'"]*$/.test(t) || nonLatin.test(t) || fabrications.test(t)) {
+        skippedSilent++;
+        continue;
+      }
+
+      pieces.push(t);
+    }
+
+    const fullText = pieces.join('\n\n').trim();
+    if (!fullText) throw new Error('No speech detected (every chunk was silent or failed)');
 
     if (textarea) {
-      textarea.value = text;
+      textarea.value = fullText;
       intakeUpdate();
     }
-    if (status) { status.textContent = 'Transcribed ' + (file.name || 'audio') + '. Edit as needed, then use Format for Genius.'; status.style.color = '#4ade80'; }
-    showToast('Lyrics transcribed!');
+
+    const bits = [(totalChunks - failed) + '/' + totalChunks + ' chunks transcribed'];
+    if (skippedSilent) bits.push(skippedSilent + ' silent/skipped');
+    if (failed) bits.push(failed + ' failed');
+    if (status) {
+      status.textContent = bits.join(', ') + '. Edit as needed, then use Format for Genius.';
+      status.style.color = failed ? '#f59e0b' : '#4ade80';
+    }
+    showToast(failed ? 'Lyrics transcribed with ' + failed + ' failed chunks' : 'Lyrics transcribed!');
   } catch (err) {
     if (status) { status.textContent = 'Error: ' + err.message; status.style.color = '#f87171'; }
     showToast('Transcription failed: ' + err.message);
