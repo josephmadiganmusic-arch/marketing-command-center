@@ -1048,6 +1048,11 @@
               <label class="checkbox-item" style="margin-top:auto;"><input type="checkbox" id="in-instrumental" onchange="intakeUpdate()"><span>Instrumental</span></label>
             </div>
           </div>
+          <div class="form-group" style="margin-top:16px;">
+            <label>Song Description / Pitch</label>
+            <textarea id="in-songDescription" rows="4" oninput="intakeUpdate()" placeholder="One-paragraph pitch for THIS song. What is it about, what makes it stand out, why now? Used to auto-fill submission forms that ask for a song description."></textarea>
+            <button type="button" style="margin-top:8px;padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#333'" onclick="generateSongDescription(this)">Generate Song Description</button>
+          </div>
         </div>
 
         <!-- Credits & Splits -->
@@ -2658,6 +2663,7 @@ function intakeGetData() {
     genreSecondary: v('in-genreSecondary'), language: s('in-language'), releaseDate: s('in-releaseDate'),
     durationMin: s('in-durationMin'), durationSec: s('in-durationSec'), workContent: s('in-workContent'),
     explicit: s('in-explicit'), instrumental: c('in-instrumental'),
+    songDescription: v('in-songDescription'),
     songwriters, publishers,
     isrc: v('in-isrc'), upc: v('in-upc'), iswc: v('in-iswc'),
     legalName: v('in-legalName'), stageName: v('in-stageName'), email: v('in-email'), phone: v('in-phone'),
@@ -2827,6 +2833,55 @@ Return ONLY the paragraph text, nothing else. No quotes, no labels, no formattin
     document.getElementById('in-emailIntro').value = result.trim();
     intakeUpdate();
     showToast('Email intro generated!');
+  } catch(err) {
+    showToast('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+    btn.style.opacity = '1';
+  }
+}
+
+async function generateSongDescription(btn) {
+  const d = intakeGetData();
+  if (!d.songTitle || !d.primaryArtist) {
+    showToast('Fill in Song Title and Artist first');
+    return;
+  }
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  btn.style.opacity = '0.5';
+
+  const feat = d.featArtist ? ` featuring ${d.featArtist}` : '';
+  const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
+
+  try {
+    const result = await callClaude(`Write a one-paragraph song description / pitch for a music submission form. This is NOT the artist bio — it is specifically about THIS song: what it is about, what makes it stand out, and why it matters right now. Radio programmers and playlist curators will read it to decide whether to listen.
+
+SONG: "${d.songTitle}"${feat}
+ARTIST: ${d.primaryArtist}
+ALBUM/SINGLE: ${d.albumName || d.songTitle}
+GENRE: ${genre}
+RELEASE DATE: ${d.releaseDate || 'TBD'}
+PRODUCER: ${d.producer || 'N/A'}
+LABEL: ${d.label || 'Independent'}
+ARTIST BIO (context only, do not copy): ${d.bio || 'N/A'}
+EXISTING EMAIL INTRO (context, do not copy): ${d.emailIntro || 'N/A'}
+
+Write ONE paragraph (3 to 5 sentences). It should:
+- Focus on THIS song, not the artist's life story
+- Name the song title and briefly describe its sound or message
+- Explain what is distinctive about the record (production, theme, guest features, story behind it)
+- Read like a pitch, not marketing copy
+- Avoid em dashes and en dashes. Use commas or periods instead.
+
+Return ONLY the paragraph text. No quotes, no labels, no formatting, no em dashes, no en dashes.`);
+
+    const clean = result.trim().replace(/\u2014/g, ', ').replace(/\u2013/g, '-');
+    document.getElementById('in-songDescription').value = clean;
+    intakeUpdate();
+    showToast('Song description generated!');
   } catch(err) {
     showToast('Error: ' + err.message);
   } finally {
@@ -3238,6 +3293,7 @@ function intakeFillForm(d) {
   setVal('in-durationSec', d.durationSec); setVal('in-workContent', d.workContent || 'Music and Lyrics');
   setVal('in-explicit', d.explicit || 'No');
   document.getElementById('in-instrumental').checked = !!d.instrumental;
+  setVal('in-songDescription', d.songDescription);
   setVal('in-isrc', d.isrc); setVal('in-upc', d.upc); setVal('in-iswc', d.iswc);
   setVal('in-legalName', d.legalName); setVal('in-stageName', d.stageName);
   setVal('in-email', d.email); setVal('in-phone', d.phone);
