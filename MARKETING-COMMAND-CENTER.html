@@ -1064,6 +1064,16 @@
             </div>
             <p style="font-size:11px;color:#f87171;margin-top:6px;line-height:1.5;"><strong style="color:#fca5a5;">Tip for best accuracy:</strong> fill Song Title + Artist (+ Featured Artist, Producer) in the fields above BEFORE uploading, and upload the <strong style="color:#fca5a5;">vocal stem / acapella</strong> if you have one instead of the full mix. Whisper uses the intake metadata to pre-learn the names in your song so they transcribe correctly. Works on the full mix too, just with more edits needed. No vocal stem on hand? Isolate one for free — no install needed with <a href="https://vocalremover.org" target="_blank" rel="noopener" style="color:#fca5a5;text-decoration:underline;font-weight:600;">vocalremover.org</a> (browser tool, no signup) or best-quality results with <a href="https://ultimatevocalremover.com" target="_blank" rel="noopener" style="color:#fca5a5;text-decoration:underline;font-weight:600;">Ultimate Vocal Remover 5</a> (free Win/Mac desktop app) — then upload the resulting vocal track here for dramatically cleaner results. Required by radio stations like God's House of Hip Hop, used for your genius.com upload, and fed into Musixmatch so timed lyrics appear on Spotify, Apple Music, Instagram, and TikTok.</p>
           </div>
+          <div class="form-group" style="margin-top:16px;">
+            <label>Press Release</label>
+            <textarea id="in-pressRelease" rows="16" oninput="intakeUpdate()" placeholder="FOR IMMEDIATE RELEASE&#10;&#10;Headline goes here - clear, descriptive, concise&#10;&#10;City, State - Month DD, YYYY - Lead paragraph (2-4 sentences) covering who, what, when, where, why, plus one compelling detail that sets this release apart.&#10;&#10;Body paragraph (3-5 sentences) with facts, context, and what makes the song stand out. Include one direct quote from the artist if you have one.&#10;&#10;&quot;Quote from the artist about the song or release.&quot;&#10;&#10;Summary paragraph (2-3 sentences): call to action + listen link + socials.&#10;&#10;About [Artist Name]&#10;Two-to-three sentence elevator pitch about the artist.&#10;&#10;###&#10;&#10;Contact:&#10;Name&#10;Website&#10;Email"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+              <button type="button" id="in-pressReleaseGenBtn" title="Generate a 300-500 word press release from your intake metadata, following industry best practices (FOR IMMEDIATE RELEASE header, headline, dateline, lead/body/summary, boilerplate, contact)." style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="generatePressRelease(this)">Generate Press Release</button>
+              <button type="button" id="in-pressReleaseCopyBtn" style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="copyPressRelease(this)">Copy</button>
+              <span id="in-pressReleaseStatus" style="font-size:11px;color:#6b7280;"></span>
+            </div>
+            <p style="font-size:11px;color:#f87171;margin-top:6px;line-height:1.5;"><strong style="color:#fca5a5;">Press release best practices:</strong> one page max (300-500 words), written in third person, never longer than one page. Outlets like HolyCulture.net delete press releases that are too short to take seriously or too long to read. Use FOR IMMEDIATE RELEASE on top, a clear descriptive headline, a City, State - Date dateline opening the lead paragraph, a body paragraph with one direct artist quote, a summary paragraph with a call to action and links, an About boilerplate, a ### close marker, and a contact block. Once filled, this press release is automatically used by the Email Generator's <strong style="color:#fca5a5;">Press Release</strong> category and pasted into Submission Tracker outlets that accept press releases (e.g. JesusFreakHideout). Click <strong style="color:#fca5a5;">Generate Press Release</strong> to draft one from your intake metadata, then edit it before sending.</p>
+          </div>
         </div>
 
         <!-- Credits & Splits -->
@@ -2720,6 +2730,7 @@ function intakeGetData() {
     explicit: s('in-explicit'), instrumental: c('in-instrumental'),
     songDescription: v('in-songDescription'),
     lyrics: v('in-lyrics'),
+    pressRelease: v('in-pressRelease'),
     songwriters, publishers,
     isrc: v('in-isrc'), upc: v('in-upc'), iswc: v('in-iswc'),
     legalName: v('in-legalName'), stageName: v('in-stageName'), email: v('in-email'), phone: v('in-phone'),
@@ -3187,6 +3198,78 @@ async function formatLyricsForGenius(btn) {
   }
 }
 
+async function generatePressRelease(btn) {
+  const textarea = document.getElementById('in-pressRelease');
+  const status = document.getElementById('in-pressReleaseStatus');
+  const d = intakeGetData ? intakeGetData() : intakeCollect();
+  if (!d.songTitle || !d.primaryArtist) {
+    if (status) { status.textContent = 'Fill in Song Title and Artist first.'; status.style.color = '#f87171'; }
+    showToast('Fill in Song Title and Artist first');
+    return;
+  }
+  if (textarea && textarea.value.trim()) {
+    const ok = confirm('Replace the existing press release with a fresh AI-generated one?');
+    if (!ok) return;
+  }
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  btn.style.opacity = '0.5';
+  if (status) { status.textContent = 'Drafting press release from your intake metadata...'; status.style.color = '#00d4ff'; }
+  try {
+    const resp = await fetch('/api/intake/generate-press-release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ releaseData: d })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const msg = (data && data.error) || ('Generate failed (' + resp.status + ')');
+      throw new Error(msg);
+    }
+    const pr = (data.pressRelease || '').trim();
+    if (!pr) throw new Error('Empty response');
+    textarea.value = pr;
+    intakeUpdate();
+    if (status) { status.textContent = 'Generated. Edit before sending - this is a draft, not final copy.'; status.style.color = '#4ade80'; }
+    showToast('Press release generated!');
+  } catch (err) {
+    if (status) { status.textContent = 'Error: ' + err.message; status.style.color = '#f87171'; }
+    showToast('Generate failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+    btn.style.opacity = '1';
+  }
+}
+
+function copyPressRelease(btn) {
+  const textarea = document.getElementById('in-pressRelease');
+  const status = document.getElementById('in-pressReleaseStatus');
+  const text = (textarea && textarea.value || '').trim();
+  if (!text) {
+    if (status) { status.textContent = 'Press release is empty.'; status.style.color = '#f87171'; }
+    showToast('Press release is empty');
+    return;
+  }
+  const done = () => {
+    if (status) { status.textContent = 'Copied to clipboard.'; status.style.color = '#4ade80'; }
+    showToast('Press release copied');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {
+      textarea.select();
+      document.execCommand('copy');
+      done();
+    });
+  } else {
+    textarea.select();
+    document.execCommand('copy');
+    done();
+  }
+}
+
 async function generateTargets(btn) {
   const d = intakeGetData();
   if (!d.songTitle || !d.primaryArtist) {
@@ -3591,6 +3674,7 @@ function intakeFillForm(d) {
   document.getElementById('in-instrumental').checked = !!d.instrumental;
   setVal('in-songDescription', d.songDescription);
   setVal('in-lyrics', d.lyrics);
+  setVal('in-pressRelease', d.pressRelease);
   setVal('in-isrc', d.isrc); setVal('in-upc', d.upc); setVal('in-iswc', d.iswc);
   setVal('in-legalName', d.legalName); setVal('in-stageName', d.stageName);
   setVal('in-email', d.email); setVal('in-phone', d.phone);
@@ -3857,6 +3941,7 @@ function getIntakeFieldValue(key) {
     case 'producer': return d.producer || '';
     case 'explicit': return d.explicit || 'No';
     case 'lyrics': return d.lyrics || '';
+    case 'pressRelease': return d.pressRelease || '';
     default: return '';
   }
 }

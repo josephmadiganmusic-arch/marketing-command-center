@@ -2876,6 +2876,133 @@ app.post('/api/intake/format-lyrics-genius', requireAccess, rlClaude, async (req
   }
 });
 
+// Generate a 300-500 word professional press release from intake metadata.
+// Best-practice rules baked into the system prompt: FOR IMMEDIATE RELEASE
+// header, headline, City/State/Date dateline, lead/body/summary structure,
+// optional artist quote (only if metadata supports it), boilerplate, ###
+// close marker, contact block. requireAccess (R11 — trial users included).
+app.post('/api/intake/generate-press-release', requireAccess, rlClaude, async (req, res) => {
+  const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
+  if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI features not configured' });
+
+  const rd = (req.body && typeof req.body.releaseData === 'object') ? req.body.releaseData : {};
+  const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n).trim();
+  const meta = {
+    songTitle: cap(rd.songTitle, 200),
+    primaryArtist: cap(rd.primaryArtist, 200),
+    featArtist: cap(rd.featArtist, 200),
+    producer: cap(rd.producer, 200),
+    albumName: cap(rd.albumName, 200),
+    genrePrimary: cap(rd.genrePrimary, 100),
+    genreSecondary: cap(rd.genreSecondary, 100),
+    releaseDate: cap(rd.releaseDate, 50),
+    label: cap(rd.label, 200),
+    bio: cap(rd.bio, 2000),
+    songDescription: cap(rd.songDescription, 2000),
+    hometownCity: cap(rd.hometownCity, 100),
+    hometownState: cap(rd.hometownState, 100),
+    legalName: cap(rd.legalName || rd.stageName, 200),
+    stageName: cap(rd.stageName, 200),
+    email: cap(rd.email, 200),
+    website: cap(rd.website, 300),
+    linkSpotify: cap(rd.linkSpotify, 500),
+    linkApple: cap(rd.linkApple, 500),
+    linkYTVideo: cap(rd.linkYTVideo, 500),
+    instagram: cap(rd.instagram, 200),
+    tiktok: cap(rd.tiktok, 200),
+    twitter: cap(rd.twitter, 200),
+    facebook: cap(rd.facebook, 200)
+  };
+  if (!meta.songTitle) return res.status(400).json({ error: 'Song title required' });
+  if (!meta.primaryArtist) return res.status(400).json({ error: 'Primary artist required' });
+
+  const system = [
+    'You are a professional music publicist writing a press release for an indie music release. Output ONLY the press release text - no preamble, no commentary, no code fences, no markdown formatting, no quotes around the whole thing.',
+    '',
+    'STRUCTURE (exact order, blank line between each block):',
+    '1. First line: FOR IMMEDIATE RELEASE',
+    '2. A single concise headline in plain text - clear, descriptive, no clickbait, do NOT wrap the headline in quotation marks.',
+    '3. Dateline + lead paragraph as one block: "City, State - Month DD, YYYY - " followed inline by a 2-4 sentence lead covering who, what, when, where, why, plus one compelling differentiator.',
+    '4. Body paragraph (3-5 sentences) with facts, context, and what makes the song stand out. If a quote can be drawn faithfully from the song description supplied below, include exactly one direct quote from the artist on its own block, formatted as: "Quote text," says [Artist Name]. If the metadata cannot support a real quote, OMIT the quote entirely - do NOT invent one.',
+    '5. Summary paragraph (2-3 sentences) with a clear call to action and listening links / socials inline.',
+    '6. About [Artist Name] boilerplate - 2-3 sentences serving as an elevator pitch, drawn from the supplied bio.',
+    '7. A single ### line.',
+    '8. Contact block: "Contact:" line, then name / website / email each on their own line if supplied. Omit any contact line for which no value was supplied.',
+    '',
+    'HARD CONSTRAINTS:',
+    '- Total length 300-500 words. Never longer than one page.',
+    '- Third person throughout, except inside the artist quote (which is first person).',
+    '- Never invent facts not present in the supplied metadata. If a piece is missing (no hometown, no quote, no label, no link), omit it gracefully - do NOT hallucinate.',
+    '- Do NOT use em dashes (U+2014) or en dashes (U+2013) anywhere. Use a regular hyphen "-" or rewrite the sentence.',
+    '- No marketing fluff like "groundbreaking", "game-changing", "next-level", "must-listen".',
+    '- Do not make claims about chart positions, awards, or sales figures unless they are explicitly in the bio.',
+    '- If hometown is missing, use the label location if supplied; otherwise drop the city from the dateline and use just "Date - " in the dateline (still including the date).'
+  ].join('\n');
+
+  const lines = [
+    `Song title: ${meta.songTitle}`,
+    `Primary artist: ${meta.primaryArtist}`,
+    meta.featArtist ? `Featuring: ${meta.featArtist}` : '',
+    meta.producer ? `Producer: ${meta.producer}` : '',
+    meta.albumName ? `Album / single name: ${meta.albumName}` : '',
+    meta.genrePrimary ? `Primary genre: ${meta.genrePrimary}` : '',
+    meta.genreSecondary ? `Secondary genre: ${meta.genreSecondary}` : '',
+    meta.releaseDate ? `Release date: ${meta.releaseDate}` : '',
+    meta.label ? `Label: ${meta.label}` : '',
+    (meta.hometownCity || meta.hometownState) ? `Hometown: ${[meta.hometownCity, meta.hometownState].filter(Boolean).join(', ')}` : '',
+    meta.songDescription ? `Song description / pitch (use this to ground the body paragraph and any quote): ${meta.songDescription}` : '',
+    meta.bio ? `Artist bio (use this for the About boilerplate): ${meta.bio}` : '',
+    meta.linkSpotify ? `Spotify link: ${meta.linkSpotify}` : '',
+    meta.linkApple ? `Apple Music link: ${meta.linkApple}` : '',
+    meta.linkYTVideo ? `YouTube video link: ${meta.linkYTVideo}` : '',
+    meta.instagram ? `Instagram: ${meta.instagram}` : '',
+    meta.tiktok ? `TikTok: ${meta.tiktok}` : '',
+    meta.twitter ? `X / Twitter: ${meta.twitter}` : '',
+    meta.facebook ? `Facebook: ${meta.facebook}` : '',
+    meta.website ? `Website: ${meta.website}` : '',
+    meta.legalName ? `Contact name: ${meta.legalName}` : '',
+    meta.email ? `Contact email: ${meta.email}` : ''
+  ].filter(Boolean);
+
+  const userPrompt = 'Write a press release for the release described below. Follow the structure and constraints exactly.\n\n' + lines.join('\n');
+
+  try {
+    const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': CLAUDE_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: DEFAULT_CLAUDE_MODEL,
+        max_tokens: 1200,
+        system,
+        messages: [{ role: 'user', content: userPrompt }]
+      }),
+      signal: AbortSignal.timeout(90000)
+    });
+    if (!aiResp.ok) {
+      const errText = await aiResp.text();
+      console.error('[PRESS-RELEASE] Anthropic error:', aiResp.status, errText.slice(0, 500));
+      return res.status(502).json({ error: 'AI service unavailable' });
+    }
+    const data = await aiResp.json();
+    const text = (data.content && data.content[0] && data.content[0].text) || '';
+    try {
+      if (req.user.role !== 'admin') {
+        recordClaudeUsage(req.user.id, data.usage?.input_tokens || 0, data.usage?.output_tokens || 0);
+      }
+    } catch(_) {}
+    if (!text.trim()) return res.status(502).json({ error: 'Empty AI response' });
+    const cleaned = text.trim().replace(/\u2014/g, '-').replace(/\u2013/g, '-');
+    res.json({ pressRelease: cleaned, model: DEFAULT_CLAUDE_MODEL });
+  } catch (err) {
+    console.error('[PRESS-RELEASE] fetch error:', err.message);
+    res.status(502).json({ error: 'AI request failed' });
+  }
+});
+
 // Mark a submission as complete + grant +25 XP inline. Unique index on
 // (user_id, contact_id) means repeat submissions for the same contact are
 // idempotent — we don't double-grant XP on re-clicks.
