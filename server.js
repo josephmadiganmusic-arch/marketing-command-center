@@ -2732,9 +2732,36 @@ app.post('/api/intake/transcribe-lyrics',
     const audioBase64 = typeof body.audioBase64 === 'string' ? body.audioBase64 : '';
     const mimeType = typeof body.mimeType === 'string' ? body.mimeType.slice(0, 100) : '';
     const filename = typeof body.filename === 'string' ? body.filename.slice(0, 200).replace(/[^\w.\-]/g, '_') : 'audio.mp3';
+    const hints = (body.promptHints && typeof body.promptHints === 'object') ? body.promptHints : {};
 
     if (!audioBase64) return res.status(400).json({ error: 'audioBase64 required' });
     if (!mimeType.startsWith('audio/')) return res.status(400).json({ error: 'mimeType must be audio/*' });
+
+    // Build a Whisper prompt from intake metadata. Whisper uses the
+    // prompt parameter as vocabulary priming for proper nouns, slang,
+    // and project-specific terms. Artist/song/producer names that
+    // would otherwise transcribe as nonsense words land correctly
+    // when they show up verbatim here. Capped at 1000 chars (well
+    // under Whisper's ~244-token soft limit where older context gets
+    // silently truncated). Empty strings and missing fields dropped.
+    const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n).trim();
+    const promptParts = [];
+    const pSong = cap(hints.songTitle, 200);
+    const pArtist = cap(hints.primaryArtist, 150);
+    const pFeat = cap(hints.featArtist, 150);
+    const pProducer = cap(hints.producer, 150);
+    const pGenre = cap(hints.genrePrimary, 100);
+    const pLabel = cap(hints.label, 150);
+    if (pArtist) promptParts.push(pFeat ? `${pArtist} featuring ${pFeat}` : pArtist);
+    if (pSong) promptParts.push(`"${pSong}"`);
+    if (pProducer) promptParts.push(`produced by ${pProducer}`);
+    if (pGenre) promptParts.push(pGenre);
+    if (pLabel) promptParts.push(pLabel);
+    // CHH priming always appended — biases Whisper toward Christian
+    // hip hop vocabulary (Jesus, gospel, scripture names, common CHH
+    // ad-libs) since the user base is 100% CHH artists.
+    promptParts.push('Christian hip hop lyrics');
+    const whisperPrompt = (promptParts.join('. ') + '.').slice(0, 1000);
 
     let buf;
     try {
@@ -2754,6 +2781,8 @@ app.post('/api/intake/transcribe-lyrics',
       form.append('model', 'whisper-large-v3');
       form.append('response_format', 'text');
       form.append('temperature', '0');
+      form.append('language', 'en');
+      form.append('prompt', whisperPrompt);
 
       const groqResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',

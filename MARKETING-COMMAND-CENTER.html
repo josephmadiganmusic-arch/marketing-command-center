@@ -1058,11 +1058,11 @@
             <textarea id="in-lyrics" rows="12" oninput="intakeUpdate()" placeholder="Paste or upload lyrics. Use Genius-style section headers in square brackets:&#10;&#10;[Intro]&#10;...&#10;&#10;[Verse 1]&#10;...&#10;&#10;[Chorus]&#10;...&#10;&#10;[Verse 2]&#10;...&#10;&#10;[Bridge]&#10;...&#10;&#10;[Outro]&#10;...&#10;&#10;Required by stations like God's House of Hip Hop and used for genius.com registration."></textarea>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
               <input type="file" id="in-lyricsAudioInput" accept="audio/*" style="display:none;" onchange="transcribeLyricsFromAudio(this)">
-              <button type="button" id="in-lyricsUploadBtn" style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="document.getElementById('in-lyricsAudioInput').click()">Upload Audio to Transcribe</button>
+              <button type="button" id="in-lyricsUploadBtn" title="For best accuracy, upload the vocal stem (acapella bounce) instead of the full mix. Fill Song Title + Artist in intake first so Whisper knows what names to expect." style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="document.getElementById('in-lyricsAudioInput').click()">Upload Audio to Transcribe</button>
               <button type="button" id="in-lyricsFormatBtn" style="padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#1a1f4a'" onclick="formatLyricsForGenius(this)">Format for Genius</button>
               <span id="in-lyricsStatus" style="font-size:11px;color:#6b7280;"></span>
             </div>
-            <p style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.5;">Upload an MP3/WAV/M4A of your song and Whisper will transcribe it. Edit any mistakes, then use Format for Genius (coming next) to add section headers. Required by radio stations like God's House of Hip Hop, also used for your genius.com upload.</p>
+            <p style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.5;"><strong style="color:#9ca3af;">Tip for best accuracy:</strong> fill Song Title + Artist (+ Featured Artist, Producer) in the fields above BEFORE uploading, and upload the <strong style="color:#9ca3af;">vocal stem / acapella</strong> if you have one instead of the full mix. Whisper uses the intake metadata to pre-learn the names in your song so they transcribe correctly. Works on the full mix too, just with more edits needed. Required by radio stations like God's House of Hip Hop, also used for your genius.com upload.</p>
           </div>
         </div>
 
@@ -3016,11 +3016,26 @@ async function transcribeLyricsFromAudio(input) {
 
   try {
     const audioBase64 = await _fileToBase64Stripped(file);
+    // Whisper takes an optional "prompt" parameter that primes it on
+    // expected vocabulary. Feeding it intake metadata (artist name,
+    // song title, featured artist, producer, genre, label) massively
+    // improves transcription of proper nouns that would otherwise
+    // transcribe as random words. Server builds the actual prompt
+    // string; client just sends the raw fields.
+    const intake = (typeof intakeGetData === 'function') ? intakeGetData() : {};
+    const promptHints = {
+      songTitle: intake.songTitle || '',
+      primaryArtist: intake.primaryArtist || intake.stageName || '',
+      featArtist: intake.featArtist || '',
+      producer: intake.producer || '',
+      genrePrimary: intake.genrePrimary || '',
+      label: intake.label || ''
+    };
     const resp = await fetch('/api/intake/transcribe-lyrics', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ audioBase64, mimeType: file.type, filename: file.name })
+      body: JSON.stringify({ audioBase64, mimeType: file.type, filename: file.name, promptHints })
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
