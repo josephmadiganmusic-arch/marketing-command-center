@@ -4435,6 +4435,9 @@ const ST_CUSTOM_PANE_HOSTS = {
   'rapzilla.com': 'rapzilla',
   'jesuswired.com': 'jesuswired',
   'jesusfreakhideout.com': 'jesusfreakhideout',
+  // Holy Culture Radio — multi-page JotForm. URL-pattern key matches the
+  // specific form id so other JotForm-hosted submissions stay unmatched.
+  'form.jotform.com/243645540527155': 'holyculture',
 };
 
 // Per-site brand-theme mapping for the Compose right-pane preview. When the
@@ -5428,6 +5431,93 @@ function stRegenerateJfhEmail() {
   stLoadJfhEmailInto(contact, d);
 }
 
+// ---------- Holy Culture Radio custom pane -----------------------------
+// Multi-page JotForm (form.jotform.com/243645540527155). Unlike the three
+// email panes above, this is a FORM-FILL workflow: the user opens the
+// popup, then copies each value from here into the matching form field.
+// All values are sourced directly from intake release_data -- no Claude
+// call, no caching, no async. If a field is empty the row still renders
+// so the user sees which intake fields need filling.
+function stBuildHolyCulturePane(contact, d) {
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+  // Legal name split -- HC wants First / Last separately
+  const parts = (d.legalName || '').trim().split(/\s+/);
+  const firstName = parts[0] || '';
+  const lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
+  // Release date -- intake stores YYYY-MM-DD, HC form is MM-DD-YYYY
+  let releaseDate = '';
+  if (d.releaseDate && /^\d{4}-\d{2}-\d{2}$/.test(d.releaseDate)) {
+    const [y, m, day] = d.releaseDate.split('-');
+    releaseDate = m + '-' + day + '-' + y;
+  } else {
+    releaseDate = d.releaseDate || '';
+  }
+  // Album vs standalone hint
+  const albumHint = d.albumName ? 'Select "Part of an album"' : 'Select "It\'s a stand-alone song"';
+  // Row helper -- single-line text field with copy button
+  const row = (lbl, id, val) =>
+    '<div class="st-custom-pane-row">' +
+      '<span class="st-custom-pane-lbl">' + esc(lbl) + '</span>' +
+      '<input id="' + id + '" class="st-custom-pane-input" readonly value="' + esc(val) + '">' +
+      '<button class="st-meta-copy" onclick="stCopyFieldById(\'' + id + '\', this)">Copy</button>' +
+    '</div>';
+  // Textarea block -- multi-line with copy button below
+  const block = (lbl, id, val) =>
+    '<div style="margin-top:10px;">' +
+      '<div class="st-custom-pane-lbl" style="margin-bottom:4px;">' + esc(lbl) + '</div>' +
+      '<textarea id="' + id + '" class="st-custom-pane-body" style="min-height:90px;">' + esc(val) + '</textarea>' +
+      '<div class="st-custom-pane-actions"><button class="st-meta-copy" onclick="stCopyFieldById(\'' + id + '\', this)">Copy ' + esc(lbl) + '</button></div>' +
+    '</div>';
+  const sectionHead = (label) =>
+    '<div class="st-custom-pane-lbl" style="margin:12px 0 6px;color:#ffc107;font-size:11px;letter-spacing:1.2px;">' + esc(label) + '</div>';
+
+  return (
+    '<div class="st-custom-pane st-custom-pane-holyculture">' +
+      '<div class="st-custom-pane-head">Holy Culture Radio Submission</div>' +
+      '<div class="st-custom-pane-hint">3-page JotForm. Open the popup (header button) and copy each value below into the matching field. All values auto-filled from your Intake release data.</div>' +
+
+      sectionHead('Page 1 - Tell Us About Your Song') +
+      row('Song Title', 'stHcSongTitle', d.songTitle) +
+      row('Featured', 'stHcFeat', d.featArtist) +
+      row('Album/Solo', 'stHcAlbumChoice', albumHint) +
+      row('Album Name', 'stHcAlbumName', d.albumName) +
+      row('Record Label', 'stHcLabel', d.label) +
+      row('Release Date', 'stHcReleaseDate', releaseDate) +
+      row('ISRC', 'stHcIsrc', d.isrc) +
+      block('Song Description', 'stHcSongDescription', d.songDescription) +
+      block('Marketing Plan', 'stHcMarketingPlan', d.marketingPlan) +
+
+      sectionHead('Page 1 - Your Platforms') +
+      row('Website', 'stHcWebsite', d.website) +
+      row('Instagram', 'stHcIg', d.instagram) +
+      row('Facebook', 'stHcFb', d.facebook) +
+      row('Twitter/X', 'stHcTw', d.twitter) +
+      row('TikTok', 'stHcTt', d.tiktok) +
+
+      sectionHead('Page 3 - Which Child of God is This?') +
+      row('Stage Name', 'stHcStage', d.stageName) +
+      row('First Name', 'stHcFirst', firstName) +
+      row('Last Name', 'stHcLast', lastName) +
+      row('Email', 'stHcEmail', d.email) +
+      row('City', 'stHcCity', d.hometownCity) +
+      row('State', 'stHcState', d.hometownState) +
+
+      '<div class="st-custom-pane-warning" style="margin-top:12px;">' +
+        'Voice Drops required: HC asks for station-ID voice drops bundled with your instrumental. Record short drops ("You are listening to Holy Culture Radio...") before submitting. Use your existing WAV/Instrumental Drive link below as the starting point.' +
+      '</div>' +
+
+      '<div class="st-custom-pane-checklist">' +
+        '<div class="st-custom-pane-checklist-head">Files to upload on page 1:</div>' +
+        '<ul>' +
+          '<li>Song (WAV or MP3)' + (d.dlWavDirect ? ' - ' + esc(d.dlWavDirect) : ' - (no Drive link in intake)') + '</li>' +
+          '<li>Instrumental + Voice Drops package (prepare drops first)</li>' +
+          '<li>Cover Art (upload from intake cover art)</li>' +
+        '</ul>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
 // Shared helper: copy the value of an input/textarea by id. Used by all
 // three custom-pane renderers above for their To/Subject/Body fields.
 function stCopyFieldById(id, btn) {
@@ -5511,6 +5601,7 @@ function stOverlayRenderMetadata() {
   if (customPaneKey === 'rapzilla')              customBlock = stBuildRapzillaPane(contact, d);
   else if (customPaneKey === 'jesuswired')       customBlock = stBuildJesusWiredPane(contact, d);
   else if (customPaneKey === 'jesusfreakhideout') customBlock = stBuildJesusFreakHideoutPane(contact, d);
+  else if (customPaneKey === 'holyculture')       customBlock = stBuildHolyCulturePane(contact, d);
 
   host.innerHTML = customBlock + socialBlock + fields.filter(([, v]) => v && String(v).trim()).map(([label, value]) => {
     const isLong = label === 'Bio' || String(value).length > 80;
