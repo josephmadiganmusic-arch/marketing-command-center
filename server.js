@@ -298,6 +298,87 @@ function initDb() {
   try { db.run("ALTER TABLE redemption_requests ADD COLUMN pro_affiliation TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
   try { db.run("ALTER TABLE redemption_requests ADD COLUMN registrations_missing TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
+  // --- Outreach List Add-On tables ---
+  // One-time-purchase product ($250 trial / $100 Pro) that unlocks the curated
+  // outreach contact list, per-category Google Contacts CSV exports, the
+  // Submission Tracker, and AI-tweaked category intros in the Email Generator.
+  // The contact list itself is versioned: admin uploads CSVs which bump the
+  // version number and record a per-category diff so customers see an
+  // "updated" banner the next time they log in.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS outreach_contacts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      version INTEGER NOT NULL,
+      category TEXT NOT NULL,
+      name TEXT NOT NULL,
+      submission_type TEXT,
+      submission_value TEXT,
+      website TEXT,
+      phone TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_outreach_contacts_version ON outreach_contacts(version)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_outreach_contacts_category ON outreach_contacts(category)');
+
+  // Current published version + per-version change summary. Only one row
+  // with singleton_key='current' is ever updated — history lives in the
+  // change_summary JSON snapshots keyed by version (admin upload flow writes
+  // {version, added_total, removed_total, by_category} on publish).
+  db.run(`
+    CREATE TABLE IF NOT EXISTS outreach_list_version (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      singleton_key TEXT UNIQUE NOT NULL,
+      current_version INTEGER NOT NULL DEFAULT 0,
+      change_summary TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try {
+    dbHelpers.prepare("INSERT OR IGNORE INTO outreach_list_version (singleton_key, current_version, change_summary) VALUES ('current', 0, '{}')").run();
+  } catch (e) { /* first boot before helpers ready — ignore */ }
+
+  // One row per user that has purchased the Outreach List. Price paid is
+  // locked at purchase time (trial buyers pay $250, Pro buyers pay $100)
+  // so we keep the amount for support/refund lookups. No refunds per
+  // product decision — once purchased, unlocked forever for that user.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS outreach_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      stripe_session_id TEXT,
+      stripe_payment_intent_id TEXT,
+      amount_cents INTEGER,
+      price_id TEXT,
+      purchased_at TEXT DEFAULT (datetime('now')),
+      banner_dismissed_version INTEGER DEFAULT 0,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_outreach_purchases_user ON outreach_purchases(user_id)');
+
+  // Per-user submission state for the Submission Tracker list. Keyed by
+  // (user_id, contact_id) so if the admin removes a contact in a new
+  // version, the row just stops showing up in the UI but the history is
+  // preserved. XP is granted inline at mark time (+25) — no row here means
+  // "not yet submitted".
+  db.run(`
+    CREATE TABLE IF NOT EXISTS submission_progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      contact_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'submitted',
+      release_id TEXT,
+      submitted_at TEXT DEFAULT (datetime('now')),
+      notes TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (contact_id) REFERENCES outreach_contacts(id)
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_submission_progress_user ON submission_progress(user_id)');
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_submission_progress_user_contact ON submission_progress(user_id, contact_id)');
+
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
   // a known-literal password from ever being seeded into the DB.
@@ -326,6 +407,25 @@ const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
 const STRIPE_ELITE_PRICE_ID = process.env.STRIPE_ELITE_PRICE_ID || '';
 const STRIPE_ELITE_PLUS_PRICE_ID = process.env.STRIPE_ELITE_PLUS_PRICE_ID || '';
 const STRIPE_REDEMPTION_PRICE_ID = process.env.STRIPE_REDEMPTION_PRICE_ID || '';
+// Outreach List Add-On — one-time purchase, two price points. Trial users pay
+// $250 (no subscription required, purchase IS the access grant — see R9 in
+// task/lessons.md), Pro/Elite users pay $100.
+const STRIPE_OUTREACH_PRICE_TRIAL = process.env.STRIPE_OUTREACH_PRICE_TRIAL || '';
+const STRIPE_OUTREACH_PRICE_PRO = process.env.STRIPE_OUTREACH_PRICE_PRO || '';
+// Canonical category slugs. Order here drives button order in the Email
+// Generator category bar. `podcast` ships even though the first CSV upload
+// has zero podcast rows — the UI shows a "No contacts yet" placeholder.
+const OUTREACH_CATEGORIES = ['sirius', 'iheart', 'fm_am', 'online_radio', 'press', 'blog', 'spotify_playlist', 'podcast'];
+const OUTREACH_CATEGORY_LABELS = {
+  sirius: 'Sirius XM',
+  iheart: 'iHeart',
+  fm_am: 'FM / AM',
+  online_radio: 'Online Radio',
+  press: 'Press',
+  blog: 'Blog',
+  spotify_playlist: 'Spotify Playlist',
+  podcast: 'Podcast'
+};
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
 // Map Stripe price IDs to internal subscription tiers. Used by both checkout
@@ -531,6 +631,10 @@ const rlSignup = rateLimit({ name: 'signup', windowMs: 60 * 60 * 1000, max: 5 })
 const rlClaude = rateLimit({ name: 'claude', windowMs: 60 * 60 * 1000, max: 60 });
 const rlResearch = rateLimit({ name: 'research', windowMs: 60 * 60 * 1000, max: 100 });
 const rlSupport = rateLimit({ name: 'support', windowMs: 60 * 60 * 1000, max: 5 });
+// Outreach List — AI-tweaked category intro generator (see R9). Generous
+// enough that a user can cycle through all 8 categories + re-roll several
+// times while writing an email, tight enough to cap Claude cost per user.
+const rlOutreachIntro = rateLimit({ name: 'outreach_intro', windowMs: 60 * 60 * 1000, max: 40 });
 
 // Health check endpoint (must respond before any redirects)
 app.get('/health', (req, res) => res.status(200).send('OK'));
@@ -605,6 +709,33 @@ function requireActive(req, res, next) {
   if (user.role === 'admin' || user.subscription_status === 'active') return next();
   if (isApi) return res.status(402).json({ error: 'Pro subscription required', upgrade: '/subscribe', reason: 'pro_only' });
   return res.redirect('/subscribe');
+}
+
+// Outreach List unlock gate. Admins always pass. Everyone else must have a
+// row in `outreach_purchases` — the $250/$100 one-time purchase IS the access
+// grant (see R9 in task/lessons.md). DO NOT chain `requireActive` in front of
+// this: trial users who paid for the Outreach List must be able to use the
+// AI intro endpoint even though they can't hit /api/claude directly. That is
+// NOT a paywall bypass — it's a separately-sold product whose contract
+// requires it to work for any buyer.
+function requireOutreachUnlocked(req, res, next) {
+  const isApi = req.path.startsWith('/api/');
+  if (!req.session.userId) {
+    if (isApi) return res.status(401).json({ error: 'Not logged in' });
+    return res.redirect('/login');
+  }
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  if (!user) {
+    req.session.destroy();
+    if (isApi) return res.status(401).json({ error: 'Session invalid' });
+    return res.redirect('/login');
+  }
+  req.user = user;
+  if (user.role === 'admin') return next();
+  const purchase = dbHelpers.prepare('SELECT id FROM outreach_purchases WHERE user_id = ?').get(user.id);
+  if (purchase) return next();
+  if (isApi) return res.status(402).json({ error: 'Outreach List not purchased', upgrade: '/subscribe#outreach-list', reason: 'outreach_locked' });
+  return res.redirect('/subscribe#outreach-list');
 }
 
 // --- Favicon (public, no auth) ---
