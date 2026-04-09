@@ -4429,15 +4429,63 @@ function stOverlayClose() {
 
 // Detect the social platform from a URL or handle string. Used to tailor
 // the DM template wording (e.g. "Hope you're having a great week on IG").
+// Parse a social submission_value into { platform, handle, url }. Supports
+// every shape we see in practice: full URLs, bare @handle, "Platform: @handle",
+// "Platform: @h1 / @h2" (first handle wins), and bare "Platform" with no
+// handle. Both stDetectSocialPlatform and stOpenContactSocial delegate here
+// so the platform label and the click-through URL are always consistent
+// regardless of which format the imported CSV row used. Without this parser,
+// a value like "Instagram: @djwadeo" fell through to the default branch of
+// the old detect function AND was naively url-encoded wholesale into a
+// broken Instagram URL, so the "Open Instagram" button was dead for every
+// CSV-imported social row.
+function stParseSocialValue(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return { platform: 'Instagram', handle: null, url: '' };
+  const lower = s.toLowerCase();
+
+  // Detect platform from any substring / URL host / leading prefix.
+  let platform = 'Instagram'; // CHH default
+  if (lower.includes('tiktok')) platform = 'TikTok';
+  else if (lower.includes('twitter') || lower.includes('x.com')) platform = 'X (Twitter)';
+  else if (lower.includes('facebook') || lower.includes('fb.com')) platform = 'Facebook';
+  else if (lower.includes('youtube') || lower.includes('youtu.be')) platform = 'YouTube';
+  else if (lower.includes('threads')) platform = 'Threads';
+  else if (lower.includes('instagram') || lower.startsWith('@') || lower.startsWith('ig:')) platform = 'Instagram';
+
+  // Already a full URL — use as-is and pull a best-effort handle out of the
+  // last path segment for downstream use (e.g., DM greeting personalization).
+  if (/^https?:\/\//i.test(s)) {
+    const pathTail = s.replace(/[?#].*$/, '').split('/').filter(Boolean).pop() || null;
+    return { platform, handle: pathTail ? pathTail.replace(/^@/, '') : null, url: s };
+  }
+
+  // Extract the first handle-shaped token. Matches @name in "Instagram: @djwadeo"
+  // AND "Instagram: @GrittyCHH / @c4crotona_" (first @handle wins, second is
+  // ignored — one DM target per contact is the right UX anyway).
+  const handleMatch = s.match(/@([\w.]+)/);
+  const handle = handleMatch ? handleMatch[1] : null;
+  if (!handle) {
+    // No handle parsed (e.g., value is literally "Instagram"). Return an
+    // empty URL so the caller can decide on a fallback (website, search page).
+    return { platform, handle: null, url: '' };
+  }
+
+  // Build the canonical profile URL for the detected platform. encodeURIComponent
+  // is applied to the handle so stray whitespace or dots don't corrupt the URL.
+  const urlMap = {
+    'Instagram':   'https://instagram.com/' + encodeURIComponent(handle),
+    'TikTok':      'https://tiktok.com/@' + encodeURIComponent(handle),
+    'X (Twitter)': 'https://x.com/' + encodeURIComponent(handle),
+    'Facebook':    'https://facebook.com/' + encodeURIComponent(handle),
+    'YouTube':     'https://youtube.com/@' + encodeURIComponent(handle),
+    'Threads':     'https://threads.net/@' + encodeURIComponent(handle),
+  };
+  return { platform, handle, url: urlMap[platform] || urlMap['Instagram'] };
+}
+
 function stDetectSocialPlatform(raw) {
-  const s = String(raw || '').toLowerCase();
-  if (s.includes('instagram.com') || s.startsWith('@') || s.startsWith('ig:')) return 'Instagram';
-  if (s.includes('tiktok.com')) return 'TikTok';
-  if (s.includes('twitter.com') || s.includes('x.com')) return 'X (Twitter)';
-  if (s.includes('facebook.com') || s.includes('fb.com')) return 'Facebook';
-  if (s.includes('youtube.com') || s.includes('youtu.be')) return 'YouTube';
-  if (s.includes('threads.net')) return 'Threads';
-  return 'Instagram'; // sensible default for CHH outreach
+  return stParseSocialValue(raw).platform;
 }
 
 // Build a personalized DM template for a social-type contact. Used in the
@@ -4539,12 +4587,14 @@ function stOverlayRenderMetadata() {
 function stOpenContactSocial() {
   const contact = (window.ST_STATE.contacts || []).find(c => c.id === window.ST_OVERLAY.contactId);
   if (!contact) return;
-  let url = contact.submission_value || contact.website || '';
-  if (!url) return;
-  if (!/^https?:\/\//i.test(url)) {
-    // Bare handle — assume Instagram since that's the CHH default.
-    const handle = String(url).replace(/^@/, '').trim();
-    url = 'https://instagram.com/' + encodeURIComponent(handle);
+  const parsed = stParseSocialValue(contact.submission_value || '');
+  let url = parsed.url;
+  if (!url) {
+    if (contact.website && /^https?:\/\//i.test(contact.website)) {
+      url = contact.website;
+    } else {
+      url = 'https://www.instagram.com/explore/search/keyword/?q=' + encodeURIComponent(contact.name || '');
+    }
   }
   stOverlayOpenPopup(url);
 }
