@@ -1248,9 +1248,15 @@ app.post('/api/create-checkout', requireAuth, async (req, res) => {
     const subscriptionData = {
       metadata: { tier: requestedTier }
     };
-    // Only Pro gets the 7-day free trial. Elite tiers are immediate annual
-    // charge — Joseph is doing manual labor per order, no free trial.
-    if (requestedTier === 'pro') subscriptionData.trial_period_days = 7;
+    // Pro gets a 7-day free trial ONLY if the user has never had one
+    // (subscription_status is null/empty — fresh account that somehow
+    // skipped the registration trial, or a direct subscribe-page visit).
+    // Users who are already trialing (from registration) or who previously
+    // had a subscription (canceled, past_due) pay immediately — no double
+    // free trial. Elite tiers are always immediate (manual labor per order).
+    if (requestedTier === 'pro' && !req.user.subscription_status) {
+      subscriptionData.trial_period_days = 7;
+    }
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -1710,10 +1716,10 @@ app.post('/api/outreach/purchase', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Outreach List already purchased', alreadyUnlocked: true });
   }
 
-  // Pro/Elite (including trialing — the free trial IS a Pro trial, so
-  // trialing users earn the Pro discount) = $100. Everyone else
-  // (canceled, past_due, no subscription) = $250.
-  const priceId = (user.subscription_status === 'active' || user.subscription_status === 'trialing')
+  // Active Pro/Elite/Elite Plus subscribers = $100. Everyone else
+  // (trialing, canceled, past_due, no subscription) = $250. Trial
+  // users must upgrade to a paid subscription to earn the discount.
+  const priceId = user.subscription_status === 'active'
     ? STRIPE_OUTREACH_PRICE_PRO
     : STRIPE_OUTREACH_PRICE_TRIAL;
 

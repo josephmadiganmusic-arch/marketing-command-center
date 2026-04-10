@@ -112,7 +112,7 @@
       <div class="tier-tagline">Self-serve AI toolkit, monthly</div>
       <div class="tier-price">
         <div class="amount">$14.99 <span>/month</span></div>
-        <div class="note">7-day free trial included</div>
+        <div class="note">Cancel anytime</div>
       </div>
       <ul class="tier-features">
         <li>Music Agent Pro &mdash; AI-powered live research</li>
@@ -123,7 +123,7 @@
         <li>Content bank with templates</li>
         <li>Radio &amp; media outreach tools</li>
       </ul>
-      <button class="tier-btn" data-tier="pro" onclick="startCheckout('pro', this)">Start Free Trial</button>
+      <button class="tier-btn" data-tier="pro" onclick="startCheckout('pro', this)">Subscribe to Pro</button>
     </div>
 
     <!-- ─── ELITE ─── -->
@@ -218,18 +218,17 @@ fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
     window.location.href = '/elite-onboarding';
     return;
   }
-  // Active OR trialing users get the $100 Pro discount (the free trial
-  // IS a Pro trial). Show $100 and keep them on page if they came for
-  // the outreach anchor.
-  if (data.subscription_status === 'active' || data.subscription_status === 'trialing') {
+  // Active (paid) subscribers get the $100 Pro discount on the
+  // outreach list. Keep them on page if they came for the outreach
+  // anchor, otherwise redirect home.
+  if (data.subscription_status === 'active') {
     document.getElementById('outreachPrice').textContent = '$100';
     document.getElementById('outreachProPricingNote').style.display = 'inline';
-    if (data.subscription_status === 'active' && !__outreachAnchor) {
+    if (!__outreachAnchor) {
       window.location.href = '/';
       return;
     }
-  }
-  if (data.subscription_status === 'trialing' && data.trialDaysLeft > 0) {
+  } else if (data.subscription_status === 'trialing' && data.trialDaysLeft > 0) {
     showStatus('info', 'You have ' + data.trialDaysLeft + ' day' + (data.trialDaysLeft !== 1 ? 's' : '') + ' left on your free trial. Upgrade anytime.');
   } else if (data.subscription_status === 'trialing' && data.trialDaysLeft === 0) {
     showStatus('info', 'Your free trial has ended. Choose a plan to continue.');

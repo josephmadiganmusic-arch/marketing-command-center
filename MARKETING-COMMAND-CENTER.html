@@ -1575,11 +1575,11 @@
             <div class="st-lock-price" id="stLockPricePro" role="button" tabindex="0" style="cursor:pointer;" onclick="stLockBuy('pro', this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();stLockBuy('pro', this);}">
               <div class="st-lock-price-label">Pro / Elite <span style="color:#4ade80;font-size:10px;">(60% OFF)</span></div>
               <div class="st-lock-price-amount">$100</div>
-              <div class="st-lock-price-note">one-time &middot; click to buy</div>
+              <div class="st-lock-price-note">subscribe first &middot; click to upgrade</div>
             </div>
           </div>
-          <a href="/subscribe#outreach-list" class="st-lock-cta" id="stLockCta">See all plans</a>
-          <div class="st-lock-hover-hint">Click either price tile to purchase</div>
+          <a href="/subscribe" class="st-lock-cta" id="stLockCta">See all plans</a>
+          <div class="st-lock-hover-hint">Click a price tile to proceed</div>
         </div>
       </div>
     </div>
@@ -4847,29 +4847,37 @@ function stApplyLockState() {
     unlockedWrap.classList.toggle('st-locked', !unlocked);
   }
   if (unlocked) return;
-  // Dynamic pricing — Pro / Elite / Elite Plus subscribers (including
-  // trialing — the free trial IS a Pro trial) get the $100 discount.
-  // Everyone else (canceled, expired, no subscription) pays $250. Admin
-  // is auto-unlocked via buildOutreachState() so we never reach this
-  // branch for them. Highlight the price tier that applies.
-  const isProPriced = (typeof SUB_STATUS !== 'undefined' && (SUB_STATUS === 'active' || SUB_STATUS === 'trialing'));
+  // Dynamic pricing — only active (paid) Pro / Elite / Elite Plus
+  // subscribers get the $100 discount. Trial users pay $250 or can
+  // upgrade to a paid plan first. Admin is auto-unlocked via
+  // buildOutreachState() so we never reach this branch for them.
+  const isProPriced = (typeof SUB_STATUS !== 'undefined' && SUB_STATUS === 'active');
   const trialCard = document.getElementById('stLockPriceTrial');
   const proCard = document.getElementById('stLockPricePro');
   const cta = document.getElementById('stLockCta');
-  if (trialCard) trialCard.classList.toggle('active', !isProPriced);
-  if (proCard) proCard.classList.toggle('active', isProPriced);
-  // The legacy CTA is now a fallback "See all plans" link; both price tiles
-  // are independently clickable and route through stLockBuy.
-  if (cta) cta.textContent = 'See all plans';
+  if (isProPriced) {
+    // Active subscriber: hide the $250 tile, only show the $100 tile.
+    if (trialCard) trialCard.style.display = 'none';
+    if (proCard) { proCard.classList.add('active'); proCard.style.display = ''; }
+    if (cta) cta.style.display = 'none';
+  } else {
+    // Trial / unsubscribed: show both tiles. $250 highlighted as their
+    // current price, $100 shows the upgrade path.
+    if (trialCard) { trialCard.classList.add('active'); trialCard.style.display = ''; }
+    if (proCard) { proCard.classList.remove('active'); proCard.style.display = ''; }
+    if (cta) { cta.textContent = 'See all plans'; cta.style.display = ''; }
+  }
 }
 
-// Click handler for the two locked-screen price tiles. Both tiles POST to
-// /api/outreach/purchase — server-side pricing is authoritative. It picks
-// STRIPE_OUTREACH_PRICE_PRO ($100) for active OR trialing users, and
-// STRIPE_OUTREACH_PRICE_TRIAL ($250) for everyone else (canceled, expired,
-// no subscription). The tier parameter from the tile is cosmetic; the
-// server ignores it and prices from user.subscription_status.
+// Click handler for the two locked-screen price tiles.
+//   - tier='trial' ($250 tile): POST /api/outreach/purchase -> Stripe at $250.
+//   - tier='pro' ($100 tile) + user NOT active: redirect to /subscribe to
+//     upgrade to Pro/Elite/Elite Plus first. After upgrade they come back
+//     and the locked screen shows only the $100 tile.
+//   - tier='pro' ($100 tile) + user IS active: POST /api/outreach/purchase
+//     -> Stripe at $100. Server enforces price from subscription_status.
 async function stLockBuy(tier, btnEl) {
+  const isProPriced = (typeof SUB_STATUS !== 'undefined' && SUB_STATUS === 'active');
   const origHtml = btnEl ? btnEl.innerHTML : '';
   function markBusy() {
     if (!btnEl) return;
@@ -4885,6 +4893,14 @@ async function stLockBuy(tier, btnEl) {
     btnEl.style.opacity = '';
   }
 
+  // $100 tile clicked by a non-active user: they need to subscribe first.
+  if (tier === 'pro' && !isProPriced) {
+    window.location.href = '/subscribe';
+    return;
+  }
+
+  // $250 tile (trial user) or $100 tile (active subscriber): POST to
+  // /api/outreach/purchase. Server pricing is authoritative.
   markBusy();
   try {
     const res = await fetch('/api/outreach/purchase', { method: 'POST' });
