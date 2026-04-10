@@ -1567,19 +1567,19 @@
           <div class="st-lock-title">Rollout Heaven 125+ CHH Submission List</div>
           <div class="st-lock-sub">125+ hand-curated Christian Hip-Hop contacts across Sirius XM, iHeart, FM/AM, Online Radio, Press, Press Release, Blogs, Spotify Playlists, and Podcasts. One purchase, lifetime updates, submission tracker included.</div>
           <div class="st-lock-prices">
-            <div class="st-lock-price" id="stLockPriceTrial">
+            <div class="st-lock-price" id="stLockPriceTrial" role="button" tabindex="0" style="cursor:pointer;" onclick="stLockBuy('trial', this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();stLockBuy('trial', this);}">
               <div class="st-lock-price-label">Trial users</div>
               <div class="st-lock-price-amount">$250</div>
-              <div class="st-lock-price-note">one-time</div>
+              <div class="st-lock-price-note">one-time &middot; click to buy</div>
             </div>
-            <div class="st-lock-price" id="stLockPricePro">
+            <div class="st-lock-price" id="stLockPricePro" role="button" tabindex="0" style="cursor:pointer;" onclick="stLockBuy('pro', this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();stLockBuy('pro', this);}">
               <div class="st-lock-price-label">Pro / Elite <span style="color:#4ade80;font-size:10px;">(60% OFF)</span></div>
               <div class="st-lock-price-amount">$100</div>
-              <div class="st-lock-price-note">one-time</div>
+              <div class="st-lock-price-note">one-time &middot; upgrade + unlock</div>
             </div>
           </div>
-          <a href="/subscribe#outreach-list" class="st-lock-cta" id="stLockCta">Unlock Now</a>
-          <div class="st-lock-hover-hint">Hover to see your price &middot; click to purchase</div>
+          <a href="/subscribe#outreach-list" class="st-lock-cta" id="stLockCta">See all plans</a>
+          <div class="st-lock-hover-hint">Click either price tile to purchase</div>
         </div>
       </div>
     </div>
@@ -4858,7 +4858,64 @@ function stApplyLockState() {
   const cta = document.getElementById('stLockCta');
   if (trialCard) trialCard.classList.toggle('active', !isProPriced);
   if (proCard) proCard.classList.toggle('active', isProPriced);
-  if (cta) cta.textContent = isProPriced ? 'Unlock for $100' : 'Unlock for $250';
+  // The legacy CTA is now a fallback "See all plans" link; both price tiles
+  // are independently clickable and route through stLockBuy.
+  if (cta) cta.textContent = 'See all plans';
+}
+
+// Click handler for the two locked-screen price tiles. Server-side pricing
+// is authoritative (/api/outreach/purchase picks $100 vs $250 based on
+// user.subscription_status === 'active'), so the tier param is only a
+// routing hint here:
+//   - tier='trial' OR the current user already qualifies for the $100
+//     price: POST directly, redirect to Stripe. One click to checkout.
+//   - tier='pro' AND the current user is on trial: bounce to
+//     /subscribe#outreach-list where they can upgrade to Pro first (the
+//     Pro tiers render up top, the outreach add-on is right below and
+//     auto-updates to $100 once the subscription becomes active).
+async function stLockBuy(tier, btnEl) {
+  const isProPriced = (typeof SUB_STATUS !== 'undefined' && SUB_STATUS === 'active')
+    || (typeof USER_TIER !== 'undefined' && (USER_TIER === 'pro' || USER_TIER === 'elite' || USER_TIER === 'elite_plus'));
+  // Trial user asking for Pro pricing — route to subscribe page so they
+  // can buy Pro + the list add-on in one landing.
+  if (tier === 'pro' && !isProPriced) {
+    window.location.href = '/subscribe#outreach-list';
+    return;
+  }
+  // All other paths: straight to Stripe checkout. Server enforces price.
+  const origHtml = btnEl ? btnEl.innerHTML : '';
+  if (btnEl) {
+    btnEl.style.pointerEvents = 'none';
+    btnEl.style.opacity = '0.7';
+    const noteEl = btnEl.querySelector('.st-lock-price-note');
+    if (noteEl) noteEl.textContent = 'redirecting\u2026';
+  }
+  try {
+    const res = await fetch('/api/outreach/purchase', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.url) {
+      window.location.href = data.url;
+      return;
+    }
+    if (data && data.alreadyUnlocked) {
+      if (typeof showToast === 'function') showToast('Already unlocked \u2014 reloading');
+      setTimeout(function() { window.location.reload(); }, 600);
+      return;
+    }
+    // Fallback: server rejected or error. Surface to user and bounce to
+    // subscribe page so they have a manual recovery path.
+    if (typeof showToast === 'function') {
+      showToast((data && data.error) || 'Could not start checkout \u2014 opening subscribe page');
+    }
+    setTimeout(function() { window.location.href = '/subscribe#outreach-list'; }, 800);
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Network error starting checkout');
+    if (btnEl) {
+      btnEl.innerHTML = origHtml;
+      btnEl.style.pointerEvents = '';
+      btnEl.style.opacity = '';
+    }
+  }
 }
 
 async function stInit() {
