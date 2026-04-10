@@ -1710,8 +1710,10 @@ app.post('/api/outreach/purchase', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Outreach List already purchased', alreadyUnlocked: true });
   }
 
-  // Pro/Elite = $100 price, anyone else (trial, past_due, canceled) = $250.
-  const priceId = user.subscription_status === 'active'
+  // Pro/Elite (including trialing — the free trial IS a Pro trial, so
+  // trialing users earn the Pro discount) = $100. Everyone else
+  // (canceled, past_due, no subscription) = $250.
+  const priceId = (user.subscription_status === 'active' || user.subscription_status === 'trialing')
     ? STRIPE_OUTREACH_PRICE_PRO
     : STRIPE_OUTREACH_PRICE_TRIAL;
 

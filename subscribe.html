@@ -218,16 +218,18 @@ fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
     window.location.href = '/elite-onboarding';
     return;
   }
-  // Active (Pro) users: show the Outreach List price as $100 and keep
-  // them on the page if they came for the outreach anchor.
-  if (data.subscription_status === 'active') {
+  // Active OR trialing users get the $100 Pro discount (the free trial
+  // IS a Pro trial). Show $100 and keep them on page if they came for
+  // the outreach anchor.
+  if (data.subscription_status === 'active' || data.subscription_status === 'trialing') {
     document.getElementById('outreachPrice').textContent = '$100';
     document.getElementById('outreachProPricingNote').style.display = 'inline';
-    if (!__outreachAnchor) {
+    if (data.subscription_status === 'active' && !__outreachAnchor) {
       window.location.href = '/';
       return;
     }
-  } else if (data.subscription_status === 'trialing' && data.trialDaysLeft > 0) {
+  }
+  if (data.subscription_status === 'trialing' && data.trialDaysLeft > 0) {
     showStatus('info', 'You have ' + data.trialDaysLeft + ' day' + (data.trialDaysLeft !== 1 ? 's' : '') + ' left on your free trial. Upgrade anytime.');
   } else if (data.subscription_status === 'trialing' && data.trialDaysLeft === 0) {
     showStatus('info', 'Your free trial has ended. Choose a plan to continue.');
