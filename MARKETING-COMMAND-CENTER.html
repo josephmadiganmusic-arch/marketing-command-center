@@ -1575,7 +1575,7 @@
             <div class="st-lock-price" id="stLockPricePro" role="button" tabindex="0" style="cursor:pointer;" onclick="stLockBuy('pro', this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();stLockBuy('pro', this);}">
               <div class="st-lock-price-label">Pro / Elite <span style="color:#4ade80;font-size:10px;">(60% OFF)</span></div>
               <div class="st-lock-price-amount">$100</div>
-              <div class="st-lock-price-note">one-time &middot; upgrade + unlock</div>
+              <div class="st-lock-price-note">start Pro subscription</div>
             </div>
           </div>
           <a href="/subscribe#outreach-list" class="st-lock-cta" id="stLockCta">See all plans</a>
@@ -4876,20 +4876,58 @@ function stApplyLockState() {
 async function stLockBuy(tier, btnEl) {
   const isProPriced = (typeof SUB_STATUS !== 'undefined' && SUB_STATUS === 'active')
     || (typeof USER_TIER !== 'undefined' && (USER_TIER === 'pro' || USER_TIER === 'elite' || USER_TIER === 'elite_plus'));
-  // Trial user asking for Pro pricing — route to subscribe page so they
-  // can buy Pro + the list add-on in one landing.
-  if (tier === 'pro' && !isProPriced) {
-    window.location.href = '/subscribe#outreach-list';
-    return;
-  }
-  // All other paths: straight to Stripe checkout. Server enforces price.
+  // Shared optimistic-disabled helper for both paths.
   const origHtml = btnEl ? btnEl.innerHTML : '';
-  if (btnEl) {
+  function markBusy() {
+    if (!btnEl) return;
     btnEl.style.pointerEvents = 'none';
     btnEl.style.opacity = '0.7';
     const noteEl = btnEl.querySelector('.st-lock-price-note');
     if (noteEl) noteEl.textContent = 'redirecting\u2026';
   }
+  function restoreBtn() {
+    if (!btnEl) return;
+    btnEl.innerHTML = origHtml;
+    btnEl.style.pointerEvents = '';
+    btnEl.style.opacity = '';
+  }
+
+  // Trial user clicking the $100 tile: they need a Pro subscription to
+  // earn the discount. Go straight to the Pro subscription Stripe
+  // checkout instead of bouncing through /subscribe#outreach-list (prior
+  // behavior caused confusion when users then clicked the add-on button
+  // on the subscribe page and got a $250 trial-priced list checkout).
+  // After they complete Pro checkout, they can click the $100 tile
+  // again and the isProPriced branch will POST to
+  // /api/outreach/purchase at the discounted $100 price.
+  if (tier === 'pro' && !isProPriced) {
+    markBusy();
+    try {
+      const res = await fetch('/api/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier: 'pro' })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      if (typeof showToast === 'function') {
+        showToast((data && data.error) || 'Could not start Pro checkout');
+      }
+      restoreBtn();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('Network error starting Pro checkout');
+      restoreBtn();
+    }
+    return;
+  }
+
+  // All other paths: straight to Stripe outreach-list checkout. Server
+  // enforces price from user.subscription_status ($100 for active Pro,
+  // $250 otherwise).
+  markBusy();
   try {
     const res = await fetch('/api/outreach/purchase', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
@@ -4902,19 +4940,13 @@ async function stLockBuy(tier, btnEl) {
       setTimeout(function() { window.location.reload(); }, 600);
       return;
     }
-    // Fallback: server rejected or error. Surface to user and bounce to
-    // subscribe page so they have a manual recovery path.
     if (typeof showToast === 'function') {
       showToast((data && data.error) || 'Could not start checkout \u2014 opening subscribe page');
     }
     setTimeout(function() { window.location.href = '/subscribe#outreach-list'; }, 800);
   } catch (e) {
     if (typeof showToast === 'function') showToast('Network error starting checkout');
-    if (btnEl) {
-      btnEl.innerHTML = origHtml;
-      btnEl.style.pointerEvents = '';
-      btnEl.style.opacity = '';
-    }
+    restoreBtn();
   }
 }
 
