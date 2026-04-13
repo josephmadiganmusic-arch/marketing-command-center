@@ -2115,6 +2115,60 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// --- Admin Impersonation ---
+// Allows admin to log in as any non-admin user to see their view and make
+// changes on their behalf. The original admin session is preserved so they
+// can switch back. Every impersonation start/stop is audit-logged.
+
+app.post('/api/admin/impersonate/:id', requireAdmin, (req, res) => {
+  const targetId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const target = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(targetId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.role === 'admin') return res.status(403).json({ error: 'Cannot impersonate other admins' });
+
+  // Preserve the real admin identity so we can restore it later
+  req.session.realAdminId = req.session.realAdminId || req.session.userId;
+  req.session.userId = targetId;
+  req.session.impersonating = true;
+
+  logOperation(req, 'admin.impersonate_start', 'user', targetId, {
+    admin_id: req.session.realAdminId,
+    admin_email: req.user.email,
+    target_email: target.email
+  });
+  res.json({ success: true, impersonating: target.email });
+});
+
+app.post('/api/admin/stop-impersonation', (req, res) => {
+  if (!req.session.realAdminId) return res.status(400).json({ error: 'Not impersonating' });
+  const adminId = req.session.realAdminId;
+  const wasImpersonating = req.session.userId;
+
+  req.session.userId = adminId;
+  delete req.session.realAdminId;
+  delete req.session.impersonating;
+
+  logOperation(req, 'admin.impersonate_stop', 'user', wasImpersonating, { admin_id: adminId });
+  res.json({ success: true, restored: true });
+});
+
+// Expose impersonation state to the client so it can show a banner
+app.get('/api/admin/impersonation-status', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+  if (!req.session.impersonating || !req.session.realAdminId) {
+    return res.json({ impersonating: false });
+  }
+  const admin = dbHelpers.prepare('SELECT email FROM users WHERE id = ?').get(req.session.realAdminId);
+  const target = dbHelpers.prepare('SELECT email FROM users WHERE id = ?').get(req.session.userId);
+  res.json({
+    impersonating: true,
+    admin_email: admin ? admin.email : 'unknown',
+    target_email: target ? target.email : 'unknown',
+    target_id: req.session.userId
+  });
+});
+
 // --- Admin API ---
 
 // Analytics & user list
@@ -3690,6 +3744,7 @@ app.get('/', requireAuth, (req, res) => {
   if (req.user.role !== 'admin' && req.user.subscription_status === 'trialing' && req.user.trial_ends_at) {
     trialDays = Math.max(0, Math.ceil((new Date(req.user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)));
   }
+  const isImpersonating = !!(req.session.impersonating && req.session.realAdminId);
   const html = APP_HTML_TEMPLATE
     .replace('%%CLAUDE_API_KEY%%', '') // API key no longer sent to client
     .replace('%%USER_ID%%', String(req.user.id))
@@ -3698,7 +3753,8 @@ app.get('/', requireAuth, (req, res) => {
     .replace('%%SUB_STATUS%%', escHtml(req.user.subscription_status || 'none'))
     .replace('%%USER_EMAIL%%', escHtml(req.user.email || ''))
     .replace('%%USER_TIER%%', escHtml(req.user.subscription_tier || 'pro'))
-    .replace('%%ONBOARDING_COMPLETED%%', req.user.onboarding_completed ? '1' : '0');
+    .replace('%%ONBOARDING_COMPLETED%%', req.user.onboarding_completed ? '1' : '0')
+    .replace('%%IMPERSONATING%%', isImpersonating ? '1' : '0');
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.set('Pragma', 'no-cache');
   res.type('html').send(html);
