@@ -8736,7 +8736,7 @@ async function adminLoadData() {
       }
       const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : '—';
       const impersonateBtn = u.role === 'admin' ? '' :
-        '<button data-imp-user-id="' + Number(u.id) + '" data-imp-user-email="' + escAdmin(u.email) + '" style="background:#00d4ff20;color:#00d4ff;border:1px solid #00d4ff40;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;margin-right:4px;">View As</button>';
+        '<button data-imp-user-id="' + Number(u.id) + '" data-imp-user-email="' + escAdmin(u.email) + '" style="background:#00d4ff20;color:#00d4ff;border:1px solid #00d4ff40;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;margin-right:4px;">Login</button>';
       const deleteBtn = u.role === 'admin' ? '<span style="color:#6b7094;font-size:11px;">—</span>' :
         '<button data-delete-user-id="' + Number(u.id) + '" data-delete-user-email="' + escAdmin(u.email) + '" style="background:#ff444420;color:#ff4444;border:1px solid #ff444440;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Delete</button>';
       // Tier badge: highlight Elite/Plus customers; show onboarding warning if pending.
@@ -8769,7 +8769,7 @@ async function adminLoadData() {
         const id = parseInt(btn.dataset.impUserId, 10);
         const email = btn.dataset.impUserEmail || '';
         if (!Number.isInteger(id) || id <= 0) return;
-        if (!confirm('View the app as ' + email + '?\n\nYou will see their exact view and can make changes on their behalf. Use the orange banner to return to your admin account.')) return;
+        if (!confirm('Log in as ' + email + '?\n\nYou will access their account and can make changes on their behalf. Use the orange banner to return to your admin account.')) return;
         try {
           const r = await fetch('/api/admin/impersonate/' + id, { method: 'POST' });
           const d = await r.json();
