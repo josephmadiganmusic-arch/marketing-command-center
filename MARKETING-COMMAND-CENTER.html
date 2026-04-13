@@ -2086,8 +2086,10 @@
       <div class="section-title">Referral Codes</div>
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;">
         <div style="display:flex;flex-direction:column;gap:4px;">
-          <label style="font-size:11px;color:#6b7094;">User ID</label>
-          <input type="number" id="refUserId" placeholder="User ID" style="width:80px;padding:6px 10px;background:#181c3a;border:1px solid #2d325a;border-radius:6px;color:#fff;font-size:12px;">
+          <label style="font-size:11px;color:#6b7094;">User</label>
+          <select id="refUserId" style="min-width:220px;padding:6px 10px;background:#181c3a;border:1px solid #2d325a;border-radius:6px;color:#fff;font-size:12px;">
+            <option value="">Select a user...</option>
+          </select>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;">
           <label style="font-size:11px;color:#6b7094;">Code (optional)</label>
@@ -8829,6 +8831,15 @@ async function adminLoadData() {
     });
   } catch(e) { console.error('Admin load error:', e); }
 
+  // Populate referral user dropdown
+  const refSelect = document.getElementById('refUserId');
+  if (refSelect && users) {
+    refSelect.innerHTML = '<option value="">Select a user...</option>' +
+      users.filter(u => u.role !== 'admin').map(u =>
+        '<option value="' + Number(u.id) + '">#' + Number(u.id) + ' — ' + escAdmin(u.email) + '</option>'
+      ).join('');
+  }
+
   adminLoadTickets('all');
   adminLoadRedemptions('all');
   adminOutreachLoadStatus();
@@ -8900,7 +8911,7 @@ async function adminLoadReferrals() {
 
 async function adminCreateReferral() {
   const userId = parseInt(document.getElementById('refUserId').value, 10);
-  if (!userId || userId <= 0) { alert('Enter a valid User ID'); return; }
+  if (!userId || userId <= 0) { alert('Select a user first'); return; }
   const code = document.getElementById('refCode').value.trim() || undefined;
   const commission_rate = parseFloat(document.getElementById('refRate').value);
   try {
