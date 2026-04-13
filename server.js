@@ -794,17 +794,17 @@ function initDb() {
       }
     }
   }
-}
 
-// --- Test account: ensure jocejm20@gmail.com is Elite Plus for testing ---
-{
-  const testUser = dbHelpers.prepare('SELECT id, subscription_tier, subscription_status FROM users WHERE email = ? AND deleted_at IS NULL').get('jocejm20@gmail.com');
-  if (testUser && (testUser.subscription_tier !== 'elite_plus' || testUser.subscription_status !== 'active')) {
-    dbHelpers.prepare("UPDATE users SET subscription_tier = 'elite_plus', subscription_status = 'active', updated_at = datetime('now') WHERE id = ?").run(testUser.id);
-    console.log('[BOOT] promoted jocejm20@gmail.com to elite_plus (test account)');
-    flushDbNow();
-  } else if (!testUser) {
-    console.log('[BOOT] jocejm20@gmail.com not found — will be promoted on next registration');
+  // --- Test account: ensure jocejm20@gmail.com is Elite Plus for testing ---
+  {
+    const testUser = dbHelpers.prepare('SELECT id, subscription_tier, subscription_status FROM users WHERE email = ? AND deleted_at IS NULL').get('jocejm20@gmail.com');
+    if (testUser && (testUser.subscription_tier !== 'elite_plus' || testUser.subscription_status !== 'active')) {
+      dbHelpers.prepare("UPDATE users SET subscription_tier = 'elite_plus', subscription_status = 'active', updated_at = datetime('now') WHERE id = ?").run(testUser.id);
+      console.log('[BOOT] promoted jocejm20@gmail.com to elite_plus (test account)');
+      flushDbNow();
+    } else if (!testUser) {
+      console.log('[BOOT] jocejm20@gmail.com not found — will be promoted on next registration');
+    }
   }
 }
 
