@@ -639,6 +639,9 @@ function initDb() {
   try { db.run("ALTER TABLE xp_log ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
   try { db.run("ALTER TABLE support_tickets ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
   try { db.run("ALTER TABLE api_usage ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE submission_progress ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE outreach_purchases ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE redemption_requests ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
   // --- Data Safety: updated_at + version columns for change tracking ---
   try { db.run("ALTER TABLE users ADD COLUMN updated_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
@@ -2172,6 +2175,9 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   dbHelpers.prepare("UPDATE xp_log SET deleted_at = ? WHERE user_id = ?").run(now, id);
   dbHelpers.prepare("UPDATE support_tickets SET deleted_at = ? WHERE user_id = ?").run(now, id);
   dbHelpers.prepare("UPDATE api_usage SET deleted_at = ? WHERE user_id = ?").run(now, id);
+  dbHelpers.prepare("UPDATE submission_progress SET deleted_at = ? WHERE user_id = ?").run(now, id);
+  dbHelpers.prepare("UPDATE outreach_purchases SET deleted_at = ? WHERE user_id = ?").run(now, id);
+  dbHelpers.prepare("UPDATE redemption_requests SET deleted_at = ? WHERE user_id = ?").run(now, id);
 
   // Hard-delete encrypted credentials only — retaining creds after account
   // deletion is a security liability, not a safety benefit.
@@ -2234,7 +2240,7 @@ app.get('/api/admin/elite-onboarding/:userId', requireAdmin, (req, res) => {
 // Support tickets — list all
 app.get('/api/admin/tickets', requireAdmin, (req, res) => {
   const tickets = dbHelpers.prepare(`
-    SELECT * FROM support_tickets ORDER BY
+    SELECT * FROM support_tickets WHERE deleted_at IS NULL ORDER BY
       CASE WHEN status = 'open' AND escalated = 1 THEN 0
            WHEN status = 'open' THEN 1
            ELSE 2 END,
@@ -2268,6 +2274,7 @@ app.get('/api/admin/redemptions', requireAdmin, (req, res) => {
     SELECT r.*, u.email AS user_email
     FROM redemption_requests r
     LEFT JOIN users u ON u.id = r.user_id
+    WHERE r.deleted_at IS NULL
     ORDER BY
       CASE r.status
         WHEN 'paid' THEN 0
@@ -3255,7 +3262,7 @@ app.post('/api/support/submit', requireAuth, rlSupport, async (req, res) => {
 
 // User's own tickets
 app.get('/api/support/my-tickets', requireAuth, (req, res) => {
-  const tickets = dbHelpers.prepare('SELECT * FROM support_tickets WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
+  const tickets = dbHelpers.prepare('SELECT * FROM support_tickets WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC').all(req.user.id);
   res.json({ tickets });
 });
 
