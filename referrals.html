@@ -213,6 +213,71 @@
       </div>
     </div>
 
+    <!-- Payout Setup -->
+    <div class="section" id="payoutSection">
+      <div class="section-title">Payout Setup</div>
+      <!-- Not connected state -->
+      <div id="payoutNotConnected" style="display:none;">
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:240px;">
+            <h3 style="font-size:16px;color:#fff;font-weight:700;margin-bottom:6px;">Connect your bank to get paid</h3>
+            <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">Set up your payout account through Stripe in under 2 minutes. We'll deposit your commissions directly to your bank account or debit card.</p>
+          </div>
+          <button onclick="startConnectOnboard()" id="connectBtn" style="padding:14px 32px;background:var(--gradient-gold);color:#080b1e;border:none;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;white-space:nowrap;min-height:48px;min-width:180px;">
+            Set Up Payouts
+          </button>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">
+          <div style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/></svg>
+            Direct deposit to your bank
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/></svg>
+            Secure — powered by Stripe
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/></svg>
+            Takes under 2 minutes
+          </div>
+        </div>
+      </div>
+      <!-- Connected state -->
+      <div id="payoutConnected" style="display:none;">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px;">
+            <div style="width:36px;height:36px;border-radius:50%;background:rgba(74,222,128,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+              <div style="font-size:14px;color:#fff;font-weight:700;">Payouts connected</div>
+              <div style="font-size:12px;color:var(--green);">Commissions will be deposited directly to your bank</div>
+            </div>
+          </div>
+          <button onclick="openStripeDashboard()" style="padding:10px 20px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;color:var(--accent-2);transition:all 0.3s;min-height:44px;">
+            View Stripe Dashboard
+          </button>
+        </div>
+      </div>
+      <!-- Pending state (started but not complete) -->
+      <div id="payoutPending" style="display:none;">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px;">
+            <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,215,0,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="#ffd700" stroke-width="2"/><path d="M9 5v4l2.5 2.5" stroke="#ffd700" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+              <div style="font-size:14px;color:#fff;font-weight:700;">Payout setup incomplete</div>
+              <div style="font-size:12px;color:var(--gold);">Finish connecting your bank to start receiving payouts</div>
+            </div>
+          </div>
+          <button onclick="startConnectOnboard()" id="resumeConnectBtn" style="padding:10px 20px;background:var(--gradient-gold);color:#080b1e;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;min-height:44px;">
+            Finish Setup
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Your Referral Link -->
     <div class="section">
       <div class="section-title">Your Referral Link</div>
@@ -297,20 +362,20 @@
       <div class="section-title">Getting Paid</div>
       <div class="payout-grid">
         <div class="payout-card">
-          <h4><span class="icon">$</span> Payout Schedule</h4>
-          <p>Commissions are processed <span class="highlight">monthly</span>. Once your pending balance reaches <span class="highlight">$10 or more</span>, we'll initiate your payout at the start of the following month.</p>
+          <h4><span class="icon">$</span> Direct Deposit</h4>
+          <p>Commissions are paid out <span class="highlight">directly to your bank account</span> via Stripe. Connect your bank once, get paid automatically. No invoicing, no chasing payments.</p>
         </div>
         <div class="payout-card">
-          <h4><span class="icon">&#9889;</span> Payment Methods</h4>
-          <p>We send payouts via <span class="highlight">PayPal, Venmo, Zelle, or Cash App</span>. Contact the team to set up your preferred payment method for future payouts.</p>
+          <h4><span class="icon">&#9889;</span> Payout Schedule</h4>
+          <p>Stripe processes payouts on a <span class="highlight">rolling basis</span>. Once a commission is approved, funds typically arrive in your bank within <span class="highlight">2-3 business days</span>.</p>
         </div>
         <div class="payout-card">
-          <h4><span class="icon">&#128202;</span> Tracking</h4>
-          <p>Every referral is tracked in <span class="highlight">real time</span>. You'll see new commissions appear here as soon as a referred user completes their subscription checkout.</p>
+          <h4><span class="icon">&#128202;</span> Real-Time Tracking</h4>
+          <p>Every referral is tracked <span class="highlight">instantly</span>. New commissions appear here as soon as a referred user subscribes. View full payout history in your Stripe dashboard.</p>
         </div>
         <div class="payout-card">
-          <h4><span class="icon">&#9993;</span> Notifications</h4>
-          <p>You'll receive a <span class="highlight">notification</span> every time someone signs up through your link and subscribes. No need to keep checking back.</p>
+          <h4><span class="icon">&#9993;</span> Fully Automated</h4>
+          <p>No manual payouts, no follow-ups. <span class="highlight">Stripe handles everything</span> — identity verification, tax forms (1099s), and direct deposits. You just share and earn.</p>
         </div>
       </div>
     </div>
@@ -385,6 +450,24 @@ async function init() {
     document.getElementById('refCodeDisplay').textContent = data.code;
     document.getElementById('refRateDisplay').textContent = Math.round(data.commission_rate * 100) + '%';
 
+    // Payout setup status
+    if (data.payout && data.payout.stripe_connected) {
+      document.getElementById('payoutConnected').style.display = '';
+    } else if (data.payout && data.payout.stripe_onboarding_started) {
+      document.getElementById('payoutPending').style.display = '';
+    } else {
+      document.getElementById('payoutNotConnected').style.display = '';
+    }
+
+    // If returning from Stripe Connect, check status
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('connect') === 'complete') {
+      checkConnectStatus();
+      window.history.replaceState({}, '', '/referrals');
+    } else if (urlParams.get('connect') === 'retry') {
+      window.history.replaceState({}, '', '/referrals');
+    }
+
     // Commission history
     if (!data.commissions || !data.commissions.length) {
       document.getElementById('commissionTable').style.display = 'none';
@@ -436,6 +519,42 @@ function copyRefLink() {
     btn.classList.add('copied');
     setTimeout(() => { btn.textContent = 'Copy Link'; btn.classList.remove('copied'); }, 2000);
   });
+}
+
+async function startConnectOnboard() {
+  const btn = document.getElementById('connectBtn') || document.getElementById('resumeConnectBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Redirecting to Stripe...'; }
+  try {
+    const resp = await fetch('/api/referrals/connect-onboard', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) { alert(data.error || 'Failed to start setup'); return; }
+    window.location.href = data.url;
+  } catch(e) {
+    alert('Error: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.id === 'resumeConnectBtn' ? 'Finish Setup' : 'Set Up Payouts'; }
+  }
+}
+
+async function checkConnectStatus() {
+  try {
+    const resp = await fetch('/api/referrals/connect-status');
+    const data = await resp.json();
+    if (data.connected) {
+      document.getElementById('payoutNotConnected').style.display = 'none';
+      document.getElementById('payoutPending').style.display = 'none';
+      document.getElementById('payoutConnected').style.display = '';
+    }
+  } catch(e) { console.error('Connect status check error:', e); }
+}
+
+async function openStripeDashboard() {
+  try {
+    const resp = await fetch('/api/referrals/connect-dashboard');
+    const data = await resp.json();
+    if (!resp.ok) { alert(data.error || 'Failed to open dashboard'); return; }
+    window.open(data.url, '_blank');
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 init();

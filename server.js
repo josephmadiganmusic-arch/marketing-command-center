@@ -650,6 +650,12 @@ function initDb() {
   try { db.run("ALTER TABLE submission_progress ADD COLUMN updated_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
   try { db.run("ALTER TABLE user_data ADD COLUMN version INTEGER DEFAULT 1"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
+  // Stripe Connect account ID for referral payouts
+  try { db.run("ALTER TABLE referral_codes ADD COLUMN stripe_connect_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE referral_codes ADD COLUMN stripe_onboarding_complete INTEGER DEFAULT 0"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  // Track Stripe transfer ID on paid commissions
+  try { db.run("ALTER TABLE referral_commissions ADD COLUMN stripe_transfer_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+
   // --- Data Safety: deleted user archive (append-only, never truncated) ---
   // When an admin soft-deletes a user, a full JSON snapshot of all their data
   // is preserved here so the deletion can be reversed if needed.
@@ -1389,9 +1395,91 @@ app.get('/api/referrals/me', requireAuth, (req, res) => {
     code: code.code,
     commission_rate: code.commission_rate,
     referral_link: `https://${CUSTOM_DOMAIN}/login?ref=${code.code}`,
+    payout: {
+      stripe_connected: !!(code.stripe_connect_id && code.stripe_onboarding_complete),
+      stripe_onboarding_started: !!code.stripe_connect_id,
+      stripe_onboarding_complete: !!code.stripe_onboarding_complete
+    },
     stats: { total_referrals: commissions.length, total_earned: totalEarned, total_paid: totalPaid, total_pending: totalPending },
     commissions
   });
+});
+
+// --- Stripe Connect: referrer payout onboarding ---
+// Creates a Stripe Express Connected Account for the referrer and returns
+// the hosted onboarding URL. On completion, Stripe redirects back to /referrals.
+app.post('/api/referrals/connect-onboard', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Payments not configured' });
+  const code = dbHelpers.prepare('SELECT * FROM referral_codes WHERE user_id = ? AND active = 1').get(req.user.id);
+  if (!code) return res.status(403).json({ error: 'No referral code found' });
+
+  try {
+    let connectId = code.stripe_connect_id;
+
+    // Create connected account if not yet started
+    if (!connectId) {
+      const account = await stripe.accounts.create({
+        type: 'express',
+        email: req.user.email,
+        metadata: { referral_code: code.code, user_id: String(req.user.id) },
+        capabilities: { transfers: { requested: true } }
+      });
+      connectId = account.id;
+      dbHelpers.prepare('UPDATE referral_codes SET stripe_connect_id = ? WHERE id = ?').run(connectId, code.id);
+      logOperation(req, 'referral.connect_account_created', 'user', req.user.id, { code: code.code, stripe_connect_id: connectId });
+      flushDbNow();
+    }
+
+    // Generate onboarding link
+    const baseUrl = `https://${CUSTOM_DOMAIN}`;
+    const accountLink = await stripe.accountLinks.create({
+      account: connectId,
+      refresh_url: `${baseUrl}/referrals?connect=retry`,
+      return_url: `${baseUrl}/referrals?connect=complete`,
+      type: 'account_onboarding'
+    });
+
+    res.json({ url: accountLink.url });
+  } catch (err) {
+    console.error('[CONNECT] onboarding error:', err.message);
+    res.status(500).json({ error: 'Failed to start payout setup' });
+  }
+});
+
+// Check if connected account onboarding is complete (called after redirect)
+app.get('/api/referrals/connect-status', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Payments not configured' });
+  const code = dbHelpers.prepare('SELECT * FROM referral_codes WHERE user_id = ? AND active = 1').get(req.user.id);
+  if (!code || !code.stripe_connect_id) return res.json({ connected: false });
+
+  try {
+    const account = await stripe.accounts.retrieve(code.stripe_connect_id);
+    const complete = account.details_submitted && account.charges_enabled;
+    if (complete && !code.stripe_onboarding_complete) {
+      dbHelpers.prepare('UPDATE referral_codes SET stripe_onboarding_complete = 1 WHERE id = ?').run(code.id);
+      logOperation(req, 'referral.connect_onboarding_complete', 'user', req.user.id, { code: code.code, stripe_connect_id: code.stripe_connect_id });
+      flushDbNow();
+    }
+    res.json({ connected: complete, details_submitted: account.details_submitted, charges_enabled: account.charges_enabled });
+  } catch (err) {
+    console.error('[CONNECT] status check error:', err.message);
+    res.status(500).json({ error: 'Failed to check payout status' });
+  }
+});
+
+// Stripe Connect dashboard link — lets referrers view their Stripe Express dashboard
+app.get('/api/referrals/connect-dashboard', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Payments not configured' });
+  const code = dbHelpers.prepare('SELECT * FROM referral_codes WHERE user_id = ? AND active = 1').get(req.user.id);
+  if (!code || !code.stripe_connect_id) return res.status(403).json({ error: 'Payout not set up' });
+
+  try {
+    const loginLink = await stripe.accounts.createLoginLink(code.stripe_connect_id);
+    res.json({ url: loginLink.url });
+  } catch (err) {
+    console.error('[CONNECT] dashboard link error:', err.message);
+    res.status(500).json({ error: 'Failed to open payout dashboard' });
+  }
 });
 
 // --- User Data Save/Load (server-side persistence) ---
@@ -2697,16 +2785,36 @@ app.get('/api/admin/commissions', requireAdmin, (req, res) => {
 });
 
 // Mark commissions as paid
-app.post('/api/admin/commissions/:id/pay', requireAdmin, (req, res) => {
+app.post('/api/admin/commissions/:id/pay', requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
   const row = dbHelpers.prepare('SELECT * FROM referral_commissions WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ error: 'Commission not found' });
   if (row.status === 'paid') return res.status(400).json({ error: 'Already paid' });
-  dbHelpers.prepare("UPDATE referral_commissions SET status = 'paid', paid_at = datetime('now') WHERE id = ?").run(id);
-  logOperation(req, 'referral.commission_paid', 'user', row.referrer_id, { commission_id: id, cents: row.commission_cents });
+
+  // Attempt Stripe Transfer if referrer has a connected account
+  const refCode = dbHelpers.prepare('SELECT * FROM referral_codes WHERE user_id = ? AND active = 1').get(row.referrer_id);
+  let transferId = null;
+  if (stripe && refCode && refCode.stripe_connect_id && refCode.stripe_onboarding_complete) {
+    try {
+      const transfer = await stripe.transfers.create({
+        amount: row.commission_cents,
+        currency: 'usd',
+        destination: refCode.stripe_connect_id,
+        description: `Referral commission: ${row.referral_code} — ${row.subscription_tier} subscription`,
+        metadata: { commission_id: String(id), referral_code: row.referral_code }
+      });
+      transferId = transfer.id;
+    } catch (err) {
+      console.error('[CONNECT] transfer failed:', err.message);
+      return res.status(500).json({ error: 'Stripe transfer failed: ' + err.message });
+    }
+  }
+
+  dbHelpers.prepare("UPDATE referral_commissions SET status = 'paid', paid_at = datetime('now'), stripe_transfer_id = ? WHERE id = ?").run(transferId, id);
+  logOperation(req, 'referral.commission_paid', 'user', row.referrer_id, { commission_id: id, cents: row.commission_cents, transfer_id: transferId });
   flushDbNow();
-  res.json({ success: true, id, amount: '$' + (row.commission_cents / 100).toFixed(2) });
+  res.json({ success: true, id, amount: '$' + (row.commission_cents / 100).toFixed(2), stripe_transfer: !!transferId });
 });
 
 // --- Outreach List admin importer ---
