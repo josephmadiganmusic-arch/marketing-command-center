@@ -2081,6 +2081,54 @@
       </div>
       <div id="adminRedemptionList" style="display:flex;flex-direction:column;gap:12px;"></div>
     </div>
+    <!-- Referral & Commission Management -->
+    <div class="section">
+      <div class="section-title">Referral Codes</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:#6b7094;">User ID</label>
+          <input type="number" id="refUserId" placeholder="User ID" style="width:80px;padding:6px 10px;background:#181c3a;border:1px solid #2d325a;border-radius:6px;color:#fff;font-size:12px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:#6b7094;">Code (optional)</label>
+          <input type="text" id="refCode" placeholder="Auto-generated" style="width:120px;padding:6px 10px;background:#181c3a;border:1px solid #2d325a;border-radius:6px;color:#fff;font-size:12px;text-transform:uppercase;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:#6b7094;">Rate</label>
+          <select id="refRate" style="padding:6px 10px;background:#181c3a;border:1px solid #2d325a;border-radius:6px;color:#fff;font-size:12px;">
+            <option value="0.05">5%</option>
+            <option value="0.10" selected>10%</option>
+            <option value="0.15">15%</option>
+            <option value="0.20">20%</option>
+            <option value="0.25">25%</option>
+          </select>
+        </div>
+        <button class="btn-action" onclick="adminCreateReferral()" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;">Create Code</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="calendar-table" style="width:100%;">
+          <thead><tr><th>Code</th><th>Referrer</th><th>Rate</th><th>Referrals</th><th>Earned</th><th>Pending</th><th>Paid</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="adminReferralList"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Commissions</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <button class="btn-action" onclick="adminLoadCommissions('all')" style="font-size:12px;padding:6px 14px;">All</button>
+        <button class="btn-action" onclick="adminLoadCommissions('pending')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;">Pending</button>
+        <button class="btn-action" onclick="adminLoadCommissions('paid')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#080b1e;">Paid</button>
+      </div>
+      <div id="adminCommissionStats" style="font-size:13px;color:#bbb;margin-bottom:12px;"></div>
+      <div style="overflow-x:auto;">
+        <table class="calendar-table" style="width:100%;">
+          <thead><tr><th>Date</th><th>Subscriber</th><th>Referrer</th><th>Code</th><th>Tier</th><th>Amount</th><th>Commission</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="adminCommissionList"></tbody>
+        </table>
+      </div>
+    </div>
+
   </div><!-- end panel-admin -->
 
   </div><!-- end site-panels -->
@@ -8783,6 +8831,142 @@ async function adminLoadData() {
   adminLoadTickets('all');
   adminLoadRedemptions('all');
   adminOutreachLoadStatus();
+  adminLoadReferrals();
+  adminLoadCommissions('all');
+}
+
+// --- Referral & Commission Management (admin) ---
+const escRef = s => (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const fmtCents = c => '$' + (c / 100).toFixed(2);
+
+async function adminLoadReferrals() {
+  try {
+    const resp = await fetch('/api/admin/referrals');
+    if (!resp.ok) return;
+    const { codes } = await resp.json();
+    const tbody = document.getElementById('adminReferralList');
+    if (!codes.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="color:#6b7094;text-align:center;">No referral codes yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = codes.map(c => {
+      const statusColor = c.active ? '#4ade80' : '#ff4444';
+      const statusLabel = c.active ? 'Active' : 'Inactive';
+      const actionBtn = c.active
+        ? '<button data-deactivate-code="' + escRef(c.code) + '" style="background:#ff444420;color:#ff4444;border:1px solid #ff444440;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Deactivate</button>'
+        : '<span style="color:#6b7094;font-size:11px;">—</span>';
+      const copyBtn = '<button data-copy-link="' + escRef(c.code) + '" style="background:#7b2ff720;color:#7b2ff7;border:1px solid #7b2ff740;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;margin-right:4px;">Copy Link</button>';
+      return '<tr>' +
+        '<td style="color:#00d4ff;font-weight:700;font-family:monospace;">' + escRef(c.code) + '</td>' +
+        '<td style="color:#fff;">' + escRef(c.referrer_email) + '</td>' +
+        '<td>' + Math.round(c.commission_rate * 100) + '%</td>' +
+        '<td style="text-align:center;">' + c.total_referrals + '</td>' +
+        '<td style="color:#4ade80;">' + fmtCents(c.total_earned_cents) + '</td>' +
+        '<td style="color:#ffd700;">' + fmtCents(c.pending_cents) + '</td>' +
+        '<td style="color:#4ade80;">' + fmtCents(c.paid_cents) + '</td>' +
+        '<td><span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:600;background:' + statusColor + '20;color:' + statusColor + ';">' + statusLabel + '</span></td>' +
+        '<td style="white-space:nowrap;">' + copyBtn + actionBtn + '</td>' +
+        '</tr>';
+    }).join('');
+    // Delegated handlers
+    tbody.querySelectorAll('button[data-deactivate-code]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const code = btn.dataset.deactivateCode;
+        if (!confirm('Deactivate referral code ' + code + '? New signups will no longer be tracked.')) return;
+        try {
+          const r = await fetch('/api/admin/referrals/' + code + '/deactivate', { method: 'POST' });
+          const d = await r.json();
+          if (d.success) adminLoadReferrals();
+          else alert(d.error || 'Failed');
+        } catch(e) { alert('Error: ' + e.message); }
+      });
+    });
+    tbody.querySelectorAll('button[data-copy-link]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const code = btn.dataset.copyLink;
+        const link = window.location.origin + '/login?ref=' + code;
+        navigator.clipboard.writeText(link).then(() => {
+          btn.textContent = 'Copied!';
+          setTimeout(() => { btn.textContent = 'Copy Link'; }, 1500);
+        });
+      });
+    });
+  } catch(e) { console.error('Referral load error:', e); }
+}
+
+async function adminCreateReferral() {
+  const userId = parseInt(document.getElementById('refUserId').value, 10);
+  if (!userId || userId <= 0) { alert('Enter a valid User ID'); return; }
+  const code = document.getElementById('refCode').value.trim() || undefined;
+  const commission_rate = parseFloat(document.getElementById('refRate').value);
+  try {
+    const r = await fetch('/api/admin/referrals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, code, commission_rate })
+    });
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || 'Failed'); return; }
+    alert('Created referral code: ' + d.code + ' for ' + d.user_email + ' at ' + Math.round(d.commission_rate * 100) + '%');
+    document.getElementById('refUserId').value = '';
+    document.getElementById('refCode').value = '';
+    adminLoadReferrals();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function adminLoadCommissions(filter) {
+  try {
+    const url = filter && filter !== 'all' ? '/api/admin/commissions?status=' + filter : '/api/admin/commissions';
+    const resp = await fetch(url);
+    if (!resp.ok) return;
+    const { commissions, totals } = await resp.json();
+
+    const statsEl = document.getElementById('adminCommissionStats');
+    statsEl.innerHTML = '<span style="color:#fff;font-weight:600;">' + totals.total_commissions + '</span> total commissions &nbsp;|&nbsp; ' +
+      '<span style="color:#4ade80;font-weight:600;">' + fmtCents(totals.total_cents) + '</span> total earned &nbsp;|&nbsp; ' +
+      '<span style="color:#ffd700;font-weight:600;">' + fmtCents(totals.pending_cents) + '</span> pending &nbsp;|&nbsp; ' +
+      '<span style="color:#4ade80;font-weight:600;">' + fmtCents(totals.paid_cents) + '</span> paid';
+
+    const tbody = document.getElementById('adminCommissionList');
+    if (!commissions.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="color:#6b7094;text-align:center;">No commissions' + (filter !== 'all' ? ' (' + filter + ')' : '') + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = commissions.map(c => {
+      const statusColor = c.status === 'paid' ? '#4ade80' : '#ffd700';
+      const tierColor = c.subscription_tier === 'elite_plus' ? '#ffd700' : (c.subscription_tier === 'elite' ? '#c084fc' : '#00d4ff');
+      const tierLabel = c.subscription_tier === 'elite_plus' ? 'Elite+' : (c.subscription_tier === 'elite' ? 'Elite' : 'Pro');
+      const date = c.created_at ? new Date(c.created_at).toLocaleDateString() : '—';
+      const payBtn = c.status === 'pending'
+        ? '<button data-pay-commission="' + c.id + '" style="background:#4ade8020;color:#4ade80;border:1px solid #4ade8040;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Mark Paid</button>'
+        : '<span style="color:#4ade80;font-size:11px;">' + (c.paid_at ? new Date(c.paid_at).toLocaleDateString() : 'Paid') + '</span>';
+      return '<tr>' +
+        '<td style="color:#6b7094;">' + date + '</td>' +
+        '<td style="color:#fff;">' + escRef(c.subscriber_email) + '</td>' +
+        '<td style="color:#fff;">' + escRef(c.referrer_email) + '</td>' +
+        '<td style="color:#00d4ff;font-family:monospace;font-weight:700;">' + escRef(c.referral_code) + '</td>' +
+        '<td><span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;background:' + tierColor + '20;color:' + tierColor + ';">' + tierLabel + '</span></td>' +
+        '<td>' + fmtCents(c.amount_cents) + '</td>' +
+        '<td style="color:#4ade80;font-weight:700;">' + fmtCents(c.commission_cents) + '</td>' +
+        '<td><span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:600;background:' + statusColor + '20;color:' + statusColor + ';">' + c.status + '</span></td>' +
+        '<td>' + payBtn + '</td>' +
+        '</tr>';
+    }).join('');
+    tbody.querySelectorAll('button[data-pay-commission]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = parseInt(btn.dataset.payCommission, 10);
+        if (!confirm('Mark commission #' + id + ' as paid?')) return;
+        try {
+          const r = await fetch('/api/admin/commissions/' + id + '/pay', { method: 'POST' });
+          const d = await r.json();
+          if (d.success) {
+            adminLoadCommissions(filter);
+            adminLoadReferrals();
+          } else alert(d.error || 'Failed');
+        } catch(e) { alert('Error: ' + e.message); }
+      });
+    });
+  } catch(e) { console.error('Commission load error:', e); }
 }
 
 // --- Outreach List importer (admin) ---
