@@ -66,9 +66,22 @@ function flushDbNow() {
   if (!db) return;
   try {
     const data = db.export();
+    const buf = Buffer.from(data);
     const tmpPath = DB_PATH + '.tmp';
-    fs.writeFileSync(tmpPath, Buffer.from(data));
+    fs.writeFileSync(tmpPath, buf);
     fs.renameSync(tmpPath, DB_PATH);
+
+    // --- Data Safety: post-write integrity verification ---
+    // Catches silent filesystem corruption, disk-full truncation, and rename failures.
+    const stat = fs.statSync(DB_PATH);
+    if (stat.size === 0) {
+      console.error('[FLUSH] CRITICAL: DB file is 0 bytes after write — attempting recovery write');
+      fs.writeFileSync(DB_PATH, buf);
+    } else if (stat.size !== buf.length) {
+      console.error(`[FLUSH] CRITICAL: DB size mismatch — expected ${buf.length}, got ${stat.size} — attempting recovery write`);
+      fs.writeFileSync(tmpPath, buf);
+      fs.renameSync(tmpPath, DB_PATH);
+    }
   } catch(e) { console.error('DB save error:', e.message); }
 }
 function saveDb() {
@@ -86,6 +99,32 @@ function shutdown(signal) {
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// --- Data Safety: operation journal helper ---
+// Append-only audit trail for critical mutations. Never call DELETE/TRUNCATE
+// on this table. The journal survives soft deletes, backups, and restores.
+function logOperation(req, action, entityType, entityId, detail) {
+  try {
+    const actorId = req && req.session ? req.session.userId : null;
+    const actorEmail = req && req.user ? req.user.email : null;
+    const ip = req ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '') : '';
+    dbHelpers.prepare(`
+      INSERT INTO operation_journal (actor_id, actor_email, action, entity_type, entity_id, detail, ip)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      actorId || null,
+      actorEmail || null,
+      action,
+      entityType || null,
+      entityId != null ? String(entityId) : null,
+      typeof detail === 'object' ? JSON.stringify(detail) : (detail || null),
+      ip.split(',')[0].trim() || null
+    );
+  } catch (e) {
+    // Journal failures must NEVER break the primary operation. Log and continue.
+    console.error('[JOURNAL] logOperation failed:', e.message);
+  }
+}
 
 // --- Single-instance boot lock (C4) ---
 // sql.js + session-file-store + in-memory rate limits all assume a single
@@ -590,6 +629,57 @@ function initDb() {
   db.run('CREATE INDEX IF NOT EXISTS idx_submission_progress_user ON submission_progress(user_id)');
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_submission_progress_user_contact ON submission_progress(user_id, contact_id)');
 
+  // --- Data Safety: soft-delete columns (additive, tolerant) ---
+  // deleted_at enables soft delete: rows are marked, not destroyed. Queries
+  // that return user-facing data must include WHERE deleted_at IS NULL.
+  try { db.run("ALTER TABLE users ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE user_data ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE user_xp ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE user_achievements ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE xp_log ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE support_tickets ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE api_usage ADD COLUMN deleted_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+
+  // --- Data Safety: updated_at + version columns for change tracking ---
+  try { db.run("ALTER TABLE users ADD COLUMN updated_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE user_xp ADD COLUMN updated_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE redemption_requests ADD COLUMN updated_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE submission_progress ADD COLUMN updated_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE user_data ADD COLUMN version INTEGER DEFAULT 1"); } catch(e) { if (!isDupColErr(e)) throw e; }
+
+  // --- Data Safety: deleted user archive (append-only, never truncated) ---
+  // When an admin soft-deletes a user, a full JSON snapshot of all their data
+  // is preserved here so the deletion can be reversed if needed.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS deleted_users_archive (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      user_email TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      deleted_by INTEGER NOT NULL,
+      deleted_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // --- Data Safety: append-only operation journal ---
+  // Every critical mutation (signup, subscription change, admin delete, payment,
+  // credential access) is logged here. Rows are NEVER deleted or truncated.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS operation_journal (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT DEFAULT (datetime('now')),
+      actor_id INTEGER,
+      actor_email TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      detail TEXT,
+      ip TEXT
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_opjournal_timestamp ON operation_journal(timestamp DESC)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_opjournal_action ON operation_journal(action)');
+
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
   // a known-literal password from ever being seeded into the DB.
@@ -899,7 +989,7 @@ function hasAccess(user) {
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(req.session.userId);
   if (!user) { req.session.destroy(); return res.redirect('/login'); }
   req.user = user;
   next();
@@ -911,7 +1001,7 @@ function requireAccess(req, res, next) {
     if (isApi) return res.status(401).json({ error: 'Not logged in' });
     return res.redirect('/login');
   }
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(req.session.userId);
   if (!user) {
     req.session.destroy();
     if (isApi) return res.status(401).json({ error: 'Session invalid' });
@@ -935,7 +1025,7 @@ function requireActive(req, res, next) {
     if (isApi) return res.status(401).json({ error: 'Not logged in' });
     return res.redirect('/login');
   }
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(req.session.userId);
   if (!user) {
     req.session.destroy();
     if (isApi) return res.status(401).json({ error: 'Session invalid' });
@@ -960,7 +1050,7 @@ function requireOutreachUnlocked(req, res, next) {
     if (isApi) return res.status(401).json({ error: 'Not logged in' });
     return res.redirect('/login');
   }
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(req.session.userId);
   if (!user) {
     req.session.destroy();
     if (isApi) return res.status(401).json({ error: 'Session invalid' });
@@ -1004,7 +1094,7 @@ app.post('/api/login', rlAuth, (req, res) => {
   if (typeof email !== 'string' || typeof password !== 'string') return res.status(400).json({ error: 'Invalid input' });
   if (email.length > 254 || password.length > 200) return res.status(400).json({ error: 'Invalid input' });
 
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE email = ? AND deleted_at IS NULL').get(email.toLowerCase().trim());
   // Always run a bcrypt compare — even on miss — to flatten the timing
   // signal. Without this, attackers can enumerate registered emails by
   // measuring response time. (H1)
@@ -1044,7 +1134,7 @@ app.post('/api/signup', rlSignup, async (req, res) => {
   if (email.length > 254 || !EMAIL_RE.test(email.trim())) return res.status(400).json({ error: 'Invalid email address' });
 
   const cleanEmail = email.toLowerCase().trim();
-  const existing = dbHelpers.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
+  const existing = dbHelpers.prepare('SELECT id FROM users WHERE email = ? AND deleted_at IS NULL').get(cleanEmail);
   if (existing) return res.status(409).json({ error: 'Account already exists. Please log in.' });
 
   const hash = bcrypt.hashSync(password, 10);
@@ -1062,6 +1152,7 @@ app.post('/api/signup', rlSignup, async (req, res) => {
   // Flush the new user row to disk before we respond — signup is a durable
   // write we must not lose in the 100ms debounce window. (C2)
   flushDbNow();
+  logOperation(req, 'user.signup', 'user', null, { email: cleanEmail });
 
   if (REQUIRE_EMAIL_VERIFICATION) {
     if (resend) {
@@ -1083,14 +1174,14 @@ app.get('/api/verify-email', (req, res) => {
   const { token } = req.query;
   if (!token) return res.status(400).send('Invalid verification link.');
 
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE verification_token = ?').get(token);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE verification_token = ? AND deleted_at IS NULL').get(token);
   if (!user) return res.status(400).send('Invalid or expired verification link.');
 
   if (new Date(user.verification_expires) < new Date()) {
     return res.status(400).send('Verification link has expired. Please request a new one.');
   }
 
-  dbHelpers.prepare('UPDATE users SET email_verified = 1, verification_token = NULL, verification_expires = NULL WHERE id = ?').run(user.id);
+  dbHelpers.prepare('UPDATE users SET email_verified = 1, verification_token = NULL, verification_expires = NULL, updated_at = datetime("now") WHERE id = ?').run(user.id);
   flushDbNow(); // durable write — don't rely on the 100ms debounce (C2/L4)
 
   // Do NOT auto-login here. Auto-login on a GET request is a login-fixation
@@ -1105,7 +1196,7 @@ app.post('/api/resend-verification', rlResend, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
 
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE email = ? AND deleted_at IS NULL').get(email.toLowerCase().trim());
   if (!user) return res.json({ success: true }); // Don't reveal if account exists
   if (user.email_verified) return res.json({ success: true });
 
@@ -1132,7 +1223,7 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   if (!req.session.userId) return res.json({ loggedIn: false });
-  const user = dbHelpers.prepare('SELECT id, email, role, subscription_status, subscription_tier, onboarding_completed, trial_ends_at FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT id, email, role, subscription_status, subscription_tier, onboarding_completed, trial_ends_at FROM users WHERE id = ? AND deleted_at IS NULL').get(req.session.userId);
   if (!user) return res.json({ loggedIn: false });
 
   let daysLeft = null;
@@ -1160,8 +1251,8 @@ app.post('/api/data/save', requireAuth, (req, res) => {
     return res.status(413).json({ error: 'Value too large (max 256 KB per key)' });
   }
   dbHelpers.prepare(`
-    INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
-    ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+    INSERT INTO user_data (user_id, key, value, updated_at, version) VALUES (?, ?, ?, datetime('now'), 1)
+    ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now'), version = COALESCE(version, 0) + 1
   `).run(req.user.id, key, serialized);
   flushDbNow(); // durable user work — C2
   res.json({ success: true });
@@ -1193,8 +1284,8 @@ app.post('/api/data/save-batch', requireAuth, (req, res) => {
   const saveBatch = dbHelpers.transaction(() => {
     for (const { key, serialized } of preparedItems) {
       dbHelpers.prepare(`
-        INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
-        ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+        INSERT INTO user_data (user_id, key, value, updated_at, version) VALUES (?, ?, ?, datetime('now'), 1)
+        ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now'), version = COALESCE(version, 0) + 1
       `).run(req.user.id, key, serialized);
     }
   });
@@ -1314,20 +1405,20 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
           tier = obj.metadata.tier;
         }
         if (!tier) tier = 'pro';
-        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ?, subscription_tier = ? WHERE stripe_customer_id = ?')
+        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ?, subscription_tier = ?, updated_at = datetime("now") WHERE stripe_customer_id = ?')
           .run(status, obj.id, trialEnd, tier, obj.customer);
         break;
       }
       case 'customer.subscription.deleted': {
         // Reset tier back to 'pro' so a future re-subscribe at the monthly
         // tier doesn't inherit a stale 'elite' flag.
-        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = NULL, subscription_tier = ? WHERE stripe_customer_id = ?')
+        dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = NULL, subscription_tier = ?, updated_at = datetime("now") WHERE stripe_customer_id = ?')
           .run('canceled', 'pro', obj.customer);
         break;
       }
       case 'invoice.payment_failed': {
         // Mark as past_due so the UI can prompt the user to update billing.
-        dbHelpers.prepare('UPDATE users SET subscription_status = ? WHERE stripe_customer_id = ?')
+        dbHelpers.prepare('UPDATE users SET subscription_status = ?, updated_at = datetime("now") WHERE stripe_customer_id = ?')
           .run('past_due', obj.customer);
         break;
       }
@@ -1448,6 +1539,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
     return res.sendStatus(500);
   }
 
+  // Journal the webhook event for audit trail.
+  logOperation(null, 'stripe.webhook', 'stripe_event', event.id, { type: event.type, customer: obj.customer || null });
+
   // Flush DB to disk synchronously after a successful webhook so we don't
   // lose subscription state if the process dies inside the 100ms debounce.
   try { flushDbNow(); } catch (e) { console.error('[STRIPE] flushDbNow failed:', e.message); }
@@ -1541,7 +1635,7 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `).run(req.user.id, req.user.subscription_tier, enc.data_encrypted, enc.iv, enc.auth_tag);
   }
-  dbHelpers.prepare('UPDATE users SET onboarding_completed = 1 WHERE id = ?').run(req.user.id);
+  dbHelpers.prepare('UPDATE users SET onboarding_completed = 1, updated_at = datetime("now") WHERE id = ?').run(req.user.id);
 
   // Auto-create escalated admin ticket as the notification mechanism. Joseph
   // already monitors the admin ticket queue, so this surfaces new Elite
@@ -1573,6 +1667,7 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
     // Don't fail the request — onboarding is saved, ticket is best-effort.
   }
 
+  logOperation(req, 'elite.onboarding_submit', 'user', req.user.id, { tier: req.user.subscription_tier });
   flushDbNow();
   res.json({ success: true });
 });
@@ -1662,6 +1757,7 @@ app.post('/api/redemption/request', requireActive, async (req, res) => {
       row.isrc, row.songwriter_names, pro_affiliation, registrations_missing
     );
     const redemptionId = insert.lastInsertRowid;
+    logOperation(req, 'redemption.created', 'redemption_request', redemptionId, { release_title });
     flushDbNow();
 
     const baseUrl = `https://${CUSTOM_DOMAIN}`;
@@ -2010,7 +2106,7 @@ app.get('/api/research/status', requireAccess, (req, res) => {
 // --- Admin Middleware ---
 function requireAdmin(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(req.session.userId);
   if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   req.user = user;
   next();
@@ -2022,7 +2118,7 @@ function requireAdmin(req, res, next) {
 app.get('/api/admin/users', requireAdmin, (req, res) => {
   const users = dbHelpers.prepare(`
     SELECT id, email, role, subscription_status, subscription_tier, onboarding_completed, trial_ends_at, created_at
-    FROM users ORDER BY created_at DESC
+    FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC
   `).all();
   const total = users.length;
   const active = users.filter(u => u.subscription_status === 'active').length;
@@ -2038,23 +2134,53 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
   res.json({ users, stats: { total, active, trialing, admins, expired } });
 });
 
-// Delete user (admin only, can't delete admins)
+// Soft-delete user (admin only, can't delete admins). Preserves all data
+// with deleted_at timestamps. A full JSON snapshot is archived in
+// deleted_users_archive for recovery. Encrypted creds (elite_onboarding)
+// are hard-deleted — retaining them post-account-deletion is a liability.
 app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
-  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.role === 'admin') return res.status(403).json({ error: 'Cannot delete admin accounts' });
-  dbHelpers.prepare('DELETE FROM user_data WHERE user_id = ?').run(id);
-  dbHelpers.prepare('DELETE FROM user_xp WHERE user_id = ?').run(id);
-  dbHelpers.prepare('DELETE FROM user_achievements WHERE user_id = ?').run(id);
-  dbHelpers.prepare('DELETE FROM xp_log WHERE user_id = ?').run(id);
-  dbHelpers.prepare('DELETE FROM support_tickets WHERE user_id = ?').run(id);
-  dbHelpers.prepare('DELETE FROM api_usage WHERE user_id = ?').run(id);
+
+  // --- Snapshot all user data before soft-deleting (recovery safety net) ---
+  const snapshot = {
+    user,
+    user_data: dbHelpers.prepare('SELECT * FROM user_data WHERE user_id = ?').all(id),
+    user_xp: dbHelpers.prepare('SELECT * FROM user_xp WHERE user_id = ?').all(id),
+    user_achievements: dbHelpers.prepare('SELECT * FROM user_achievements WHERE user_id = ?').all(id),
+    xp_log: dbHelpers.prepare('SELECT * FROM xp_log WHERE user_id = ?').all(id),
+    support_tickets: dbHelpers.prepare('SELECT * FROM support_tickets WHERE user_id = ?').all(id),
+    api_usage: dbHelpers.prepare('SELECT * FROM api_usage WHERE user_id = ?').all(id),
+    submission_progress: dbHelpers.prepare('SELECT * FROM submission_progress WHERE user_id = ?').all(id),
+    outreach_purchases: dbHelpers.prepare('SELECT * FROM outreach_purchases WHERE user_id = ?').all(id),
+    redemption_requests: dbHelpers.prepare('SELECT * FROM redemption_requests WHERE user_id = ?').all(id),
+  };
+  dbHelpers.prepare(`
+    INSERT INTO deleted_users_archive (user_id, user_email, snapshot_json, deleted_by)
+    VALUES (?, ?, ?, ?)
+  `).run(id, user.email, JSON.stringify(snapshot), req.session.userId);
+
+  // --- Soft-delete: mark with timestamp instead of destroying ---
+  const now = new Date().toISOString();
+  dbHelpers.prepare("UPDATE users SET deleted_at = ?, updated_at = ? WHERE id = ?").run(now, now, id);
+  dbHelpers.prepare("UPDATE user_data SET deleted_at = ? WHERE user_id = ?").run(now, id);
+  dbHelpers.prepare("UPDATE user_xp SET deleted_at = ? WHERE user_id = ?").run(now, id);
+  dbHelpers.prepare("UPDATE user_achievements SET deleted_at = ? WHERE user_id = ?").run(now, id);
+  dbHelpers.prepare("UPDATE xp_log SET deleted_at = ? WHERE user_id = ?").run(now, id);
+  dbHelpers.prepare("UPDATE support_tickets SET deleted_at = ? WHERE user_id = ?").run(now, id);
+  dbHelpers.prepare("UPDATE api_usage SET deleted_at = ? WHERE user_id = ?").run(now, id);
+
+  // Hard-delete encrypted credentials only — retaining creds after account
+  // deletion is a security liability, not a safety benefit.
   dbHelpers.prepare('DELETE FROM elite_onboarding WHERE user_id = ?').run(id);
   dbHelpers.prepare('DELETE FROM elite_onboarding_access_log WHERE user_id = ?').run(id);
-  dbHelpers.prepare('DELETE FROM users WHERE id = ?').run(id);
-  res.json({ success: true, deleted: user.email });
+
+  logOperation(req, 'user.soft_delete', 'user', id, { email: user.email, tier: user.subscription_tier });
+  flushDbNow(); // durable admin-action write — C2
+  res.json({ success: true, deleted: user.email, recoverable: true });
 });
 
 // List all Elite/Elite Plus users with onboarding status, for the admin
@@ -2066,7 +2192,7 @@ app.get('/api/admin/elite-onboarding', requireAdmin, (req, res) => {
            u.created_at, eo.submitted_at, eo.updated_at
     FROM users u
     LEFT JOIN elite_onboarding eo ON eo.user_id = u.id
-    WHERE u.subscription_tier IN ('elite', 'elite_plus')
+    WHERE u.subscription_tier IN ('elite', 'elite_plus') AND u.deleted_at IS NULL
     ORDER BY u.created_at DESC
   `).all();
   res.json({ users: rows });
@@ -2093,6 +2219,7 @@ app.get('/api/admin/elite-onboarding/:userId', requireAdmin, (req, res) => {
       VALUES (?, ?, ?)
     `).run(userId, req.user.id, req.user.email);
   } catch (e) { console.error('[ELITE] access log write failed:', e.message); }
+  logOperation(req, 'elite.credentials_viewed', 'user', userId, { admin: req.user.email });
   const userRow = dbHelpers.prepare('SELECT email, subscription_tier FROM users WHERE id = ?').get(userId);
   res.json({
     user_id: userId,
@@ -2129,6 +2256,7 @@ app.post('/api/admin/tickets/:id', requireAdmin, (req, res) => {
   if (admin_notes !== undefined) {
     dbHelpers.prepare('UPDATE support_tickets SET admin_notes = ?, updated_at = datetime("now") WHERE id = ?').run(String(admin_notes).slice(0, 5000), id);
   }
+  logOperation(req, 'admin.ticket_update', 'support_ticket', id, { status: status || null, has_notes: admin_notes !== undefined });
   flushDbNow(); // durable admin-action write — C2
   res.json({ success: true });
 });
@@ -2162,17 +2290,30 @@ app.post('/api/admin/redemptions/:id', requireAdmin, (req, res) => {
   const { status, admin_notes } = req.body || {};
   if (status && ['pending','paid','completed','canceled'].includes(status)) {
     if (status === 'completed') {
-      dbHelpers.prepare("UPDATE redemption_requests SET status = ?, completed_at = datetime('now') WHERE id = ?").run(status, id);
+      dbHelpers.prepare("UPDATE redemption_requests SET status = ?, completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(status, id);
     } else {
-      dbHelpers.prepare('UPDATE redemption_requests SET status = ? WHERE id = ?').run(status, id);
+      dbHelpers.prepare("UPDATE redemption_requests SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id);
     }
   }
   if (admin_notes !== undefined) {
     dbHelpers.prepare('UPDATE redemption_requests SET admin_notes = ? WHERE id = ?')
       .run(String(admin_notes).slice(0, 5000), id);
   }
+  logOperation(req, 'admin.redemption_update', 'redemption_request', id, { status: status || null, prev_status: row.status });
   flushDbNow();
   res.json({ success: true });
+});
+
+// --- Operation Journal (admin read-only view) ---
+// Paginated append-only audit trail. Never exposes a delete/truncate endpoint.
+app.get('/api/admin/journal', requireAdmin, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  const rows = dbHelpers.prepare(`
+    SELECT * FROM operation_journal ORDER BY id DESC LIMIT ? OFFSET ?
+  `).all(limit, offset);
+  const total = dbHelpers.prepare('SELECT COUNT(*) AS cnt FROM operation_journal').get();
+  res.json({ entries: rows, total: total ? total.cnt : 0, limit, offset });
 });
 
 // --- Outreach List admin importer ---
@@ -2409,6 +2550,7 @@ app.post('/api/admin/outreach/publish', requireAdmin, (req, res) => {
     console.error('[OUTREACH] publish error:', e.message);
     return res.status(500).json({ error: 'Publish failed: ' + e.message });
   }
+  logOperation(req, 'admin.outreach_publish', 'outreach_list', newVersion, { inserted: parsed.rows.length, errors: parsed.errors.length });
   flushDbNow();
 
   res.json({
@@ -3244,7 +3386,7 @@ function checkAndUnlockAchievements(userId) {
         // Award bonus XP for achievement
         const newTotal = xp.total_xp + ach.xp;
         const newLevel = getLevel(newTotal);
-        dbHelpers.prepare('UPDATE user_xp SET total_xp = ?, level = ? WHERE user_id = ?').run(newTotal, newLevel, userId);
+        dbHelpers.prepare('UPDATE user_xp SET total_xp = ?, level = ?, updated_at = datetime("now") WHERE user_id = ?').run(newTotal, newLevel, userId);
         dbHelpers.prepare('INSERT INTO xp_log (user_id, action, xp_amount, description) VALUES (?, ?, ?, ?)').run(userId, 'achievement', ach.xp, 'Unlocked: ' + ach.name);
         xp.total_xp = newTotal;
         xp.level = newLevel;
@@ -3275,7 +3417,7 @@ app.get('/api/gamification', requireAuth, (req, res) => {
     const loginXp = XP_VALUES.login + (newStreak >= 3 ? XP_VALUES.streak_bonus : 0);
     const newTotal = xp.total_xp + loginXp;
     const newLevel = getLevel(newTotal);
-    dbHelpers.prepare('UPDATE user_xp SET last_active_date = ?, current_streak = ?, longest_streak = ?, logins_total = logins_total + 1, total_xp = ?, level = ? WHERE user_id = ?')
+    dbHelpers.prepare('UPDATE user_xp SET last_active_date = ?, current_streak = ?, longest_streak = ?, logins_total = logins_total + 1, total_xp = ?, level = ?, updated_at = datetime("now") WHERE user_id = ?')
       .run(today, newStreak, longest, newTotal, newLevel, req.user.id);
     dbHelpers.prepare('INSERT INTO xp_log (user_id, action, xp_amount, description) VALUES (?, ?, ?, ?)').run(req.user.id, 'login', loginXp, 'Daily login' + (newStreak >= 3 ? ' (streak bonus!)' : ''));
   }
@@ -3342,15 +3484,15 @@ app.post('/api/gamification/award', requireAuth, (req, res) => {
   // though the previous version was safe-by-construction (statMap was a
   // hardcoded object), the pattern was a future-SQLi trap. (M1)
   const STAT_UPDATE_SQL = {
-    campaign_generate: 'UPDATE user_xp SET total_xp = ?, level = ?, campaigns_generated = campaigns_generated + 1 WHERE user_id = ?',
-    task_complete:     'UPDATE user_xp SET total_xp = ?, level = ?, tasks_completed = tasks_completed + 1 WHERE user_id = ?',
-    email_generate:    'UPDATE user_xp SET total_xp = ?, level = ?, emails_generated = emails_generated + 1 WHERE user_id = ?',
-    research_run:      'UPDATE user_xp SET total_xp = ?, level = ?, research_runs = research_runs + 1 WHERE user_id = ?',
-    playlist_submit:   'UPDATE user_xp SET total_xp = ?, level = ?, playlists_submitted = playlists_submitted + 1 WHERE user_id = ?',
-    content_copy:      'UPDATE user_xp SET total_xp = ?, level = ?, content_copied = content_copied + 1 WHERE user_id = ?',
-    release_complete:  'UPDATE user_xp SET total_xp = ?, level = ?, releases_completed = releases_completed + 1 WHERE user_id = ?'
+    campaign_generate: 'UPDATE user_xp SET total_xp = ?, level = ?, campaigns_generated = campaigns_generated + 1, updated_at = datetime("now") WHERE user_id = ?',
+    task_complete:     'UPDATE user_xp SET total_xp = ?, level = ?, tasks_completed = tasks_completed + 1, updated_at = datetime("now") WHERE user_id = ?',
+    email_generate:    'UPDATE user_xp SET total_xp = ?, level = ?, emails_generated = emails_generated + 1, updated_at = datetime("now") WHERE user_id = ?',
+    research_run:      'UPDATE user_xp SET total_xp = ?, level = ?, research_runs = research_runs + 1, updated_at = datetime("now") WHERE user_id = ?',
+    playlist_submit:   'UPDATE user_xp SET total_xp = ?, level = ?, playlists_submitted = playlists_submitted + 1, updated_at = datetime("now") WHERE user_id = ?',
+    content_copy:      'UPDATE user_xp SET total_xp = ?, level = ?, content_copied = content_copied + 1, updated_at = datetime("now") WHERE user_id = ?',
+    release_complete:  'UPDATE user_xp SET total_xp = ?, level = ?, releases_completed = releases_completed + 1, updated_at = datetime("now") WHERE user_id = ?'
   };
-  const sql = STAT_UPDATE_SQL[action] || 'UPDATE user_xp SET total_xp = ?, level = ? WHERE user_id = ?';
+  const sql = STAT_UPDATE_SQL[action] || 'UPDATE user_xp SET total_xp = ?, level = ?, updated_at = datetime("now") WHERE user_id = ?';
   dbHelpers.prepare(sql).run(newTotal, newLevel, req.user.id);
 
   dbHelpers.prepare('INSERT INTO xp_log (user_id, action, xp_amount, description) VALUES (?, ?, ?, ?)').run(req.user.id, action, amount, action.replace(/_/g, ' '));
@@ -3632,6 +3774,74 @@ async function startServer() {
 
   initDb();
   console.log('[BOOT] Database initialized');
+
+  // --- Data Safety: boot-time row count validation + recovery manifest ---
+  const MANIFEST_PATH = path.join(DATA_DIR, 'recovery_manifest.json');
+  try {
+    const MANIFEST_TABLES = [
+      'users', 'user_data', 'user_xp', 'user_achievements', 'xp_log',
+      'support_tickets', 'api_usage', 'elite_onboarding', 'redemption_requests',
+      'outreach_contacts', 'outreach_purchases', 'submission_progress',
+      'stripe_events', 'operation_journal', 'deleted_users_archive'
+    ];
+    const rowCounts = {};
+    for (const t of MANIFEST_TABLES) {
+      try {
+        const r = dbHelpers.prepare(`SELECT COUNT(*) AS cnt FROM ${t}`).get();
+        rowCounts[t] = r ? r.cnt : 0;
+      } catch (_) { rowCounts[t] = -1; } // table doesn't exist yet
+    }
+
+    // Compare against previous manifest — warn on unexpected zero drops
+    if (fs.existsSync(MANIFEST_PATH)) {
+      try {
+        const prev = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
+        if (prev.row_counts) {
+          for (const t of MANIFEST_TABLES) {
+            const prevCount = prev.row_counts[t];
+            if (typeof prevCount === 'number' && prevCount > 0 && rowCounts[t] === 0) {
+              console.error(`[BOOT] WARNING: table "${t}" dropped from ${prevCount} rows to 0 — possible data loss`);
+            }
+          }
+        }
+      } catch (_) { /* stale/corrupt manifest — just overwrite */ }
+    }
+
+    // Find latest backups for the manifest
+    let latestHourly = null, latestDaily = null, hourlyCount = 0, dailyCount = 0;
+    try {
+      if (fs.existsSync(BACKUP_DIR)) {
+        const bfiles = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.bak'));
+        const hourly = bfiles.filter(f => f.includes('.hourly.')).sort().reverse();
+        const daily = bfiles.filter(f => f.includes('.daily.')).sort().reverse();
+        latestHourly = hourly[0] || null;
+        latestDaily = daily[0] || null;
+        hourlyCount = hourly.length;
+        dailyCount = daily.length;
+      }
+    } catch (_) {}
+
+    const manifest = {
+      last_boot: new Date().toISOString(),
+      db_path: DB_PATH,
+      backup_dir: BACKUP_DIR,
+      latest_hourly: latestHourly,
+      latest_daily: latestDaily,
+      backup_count: { hourly: hourlyCount, daily: dailyCount },
+      tables: MANIFEST_TABLES,
+      row_counts: rowCounts,
+      has_operation_journal: true,
+      has_deleted_users_archive: true
+    };
+    fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+
+    // Log summary
+    const countSummary = MANIFEST_TABLES.filter(t => rowCounts[t] > 0).map(t => `${t}=${rowCounts[t]}`).join(' ');
+    console.log(`[BOOT] Row counts: ${countSummary || '(empty DB)'}`);
+    console.log(`[BOOT] Recovery manifest written to ${MANIFEST_PATH}`);
+  } catch (e) {
+    console.error('[BOOT] Recovery manifest write failed (non-fatal):', e.message);
+  }
 
   // Kick off backup timers now that the DB is live (H2).
   startBackupTimers();
