@@ -1208,6 +1208,10 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'login.html'));
 });
 
+app.get('/referrals', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'referrals.html'));
+});
+
 // Pre-computed dummy hash so misses do equivalent CPU work to hits.
 // Generated once at boot so we don't burn ~50ms on every cold login miss.
 const DUMMY_BCRYPT_HASH = bcrypt.hashSync('dummy-password-for-timing-equalization', 10);
