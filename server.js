@@ -650,12 +650,6 @@ function initDb() {
   try { db.run("ALTER TABLE submission_progress ADD COLUMN updated_at TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
   try { db.run("ALTER TABLE user_data ADD COLUMN version INTEGER DEFAULT 1"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
-  // Stripe Connect account ID for referral payouts
-  try { db.run("ALTER TABLE referral_codes ADD COLUMN stripe_connect_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
-  try { db.run("ALTER TABLE referral_codes ADD COLUMN stripe_onboarding_complete INTEGER DEFAULT 0"); } catch(e) { if (!isDupColErr(e)) throw e; }
-  // Track Stripe transfer ID on paid commissions
-  try { db.run("ALTER TABLE referral_commissions ADD COLUMN stripe_transfer_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
-
   // --- Data Safety: deleted user archive (append-only, never truncated) ---
   // When an admin soft-deletes a user, a full JSON snapshot of all their data
   // is preserved here so the deletion can be reversed if needed.
@@ -728,6 +722,11 @@ function initDb() {
 
   // Add referred_by column to users (stores referral code used at signup)
   try { db.run("ALTER TABLE users ADD COLUMN referred_by TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+
+  // Stripe Connect columns (added after CREATE TABLEs above)
+  try { db.run("ALTER TABLE referral_codes ADD COLUMN stripe_connect_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE referral_codes ADD COLUMN stripe_onboarding_complete INTEGER DEFAULT 0"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE referral_commissions ADD COLUMN stripe_transfer_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
   // --- Public Submission Forms (music + playlist) ---
   db.run(`
