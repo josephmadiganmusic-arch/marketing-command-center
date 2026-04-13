@@ -683,6 +683,46 @@ function initDb() {
   db.run('CREATE INDEX IF NOT EXISTS idx_opjournal_timestamp ON operation_journal(timestamp DESC)');
   db.run('CREATE INDEX IF NOT EXISTS idx_opjournal_action ON operation_journal(action)');
 
+  // --- Referral / Commission System ---
+  // Each referrer gets a unique code. When a referred user subscribes via
+  // Stripe, a commission row is created. Payouts are tracked manually.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS referral_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      code TEXT NOT NULL UNIQUE,
+      commission_rate REAL NOT NULL DEFAULT 0.10,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_referral_codes_code ON referral_codes(code)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_referral_codes_user ON referral_codes(user_id)');
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS referral_commissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      referrer_id INTEGER NOT NULL,
+      referred_user_id INTEGER NOT NULL,
+      referral_code TEXT NOT NULL,
+      subscription_tier TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      commission_cents INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      stripe_subscription_id TEXT,
+      paid_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (referrer_id) REFERENCES users(id),
+      FOREIGN KEY (referred_user_id) REFERENCES users(id)
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_referral_commissions_referrer ON referral_commissions(referrer_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_referral_commissions_referred ON referral_commissions(referred_user_id)');
+
+  // Add referred_by column to users (stores referral code used at signup)
+  try { db.run("ALTER TABLE users ADD COLUMN referred_by TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+
   // --- Public Submission Forms (music + playlist) ---
   db.run(`
     CREATE TABLE IF NOT EXISTS music_submissions (
@@ -1211,7 +1251,7 @@ app.post('/api/login', rlAuth, (req, res) => {
 const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
 
 app.post('/api/signup', rlSignup, async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, ref } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   if (typeof email !== 'string' || typeof password !== 'string') return res.status(400).json({ error: 'Invalid input' });
   if (password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Password must be 8–200 characters' });
@@ -1221,14 +1261,21 @@ app.post('/api/signup', rlSignup, async (req, res) => {
   const existing = dbHelpers.prepare('SELECT id FROM users WHERE email = ? AND deleted_at IS NULL').get(cleanEmail);
   if (existing) return res.status(409).json({ error: 'Account already exists. Please log in.' });
 
+  // Validate referral code if provided
+  const refCode = (ref && typeof ref === 'string') ? ref.trim().toUpperCase() : null;
+  let validRef = null;
+  if (refCode) {
+    validRef = dbHelpers.prepare('SELECT * FROM referral_codes WHERE code = ? AND active = 1').get(refCode);
+  }
+
   const hash = bcrypt.hashSync(password, 10);
   const trialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const token = crypto.randomBytes(32).toString('hex');
   const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   dbHelpers.prepare(
-    'INSERT INTO users (email, password, subscription_status, trial_ends_at, verification_token, verification_expires) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(cleanEmail, hash, 'trialing', trialEnd, token, tokenExpires);
+    'INSERT INTO users (email, password, subscription_status, trial_ends_at, verification_token, verification_expires, referred_by) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(cleanEmail, hash, 'trialing', trialEnd, token, tokenExpires, validRef ? refCode : null);
 
   // Respond immediately, send email in background (don't block the request).
   // Auto-verification only happens when verification is explicitly disabled —
@@ -1316,6 +1363,31 @@ app.get('/api/me', (req, res) => {
   }
 
   res.json({ loggedIn: true, ...user, hasAccess: hasAccess(user), trialDaysLeft: daysLeft });
+});
+
+// --- Referral: user-facing earnings dashboard ---
+app.get('/api/referrals/me', requireAuth, (req, res) => {
+  const code = dbHelpers.prepare('SELECT * FROM referral_codes WHERE user_id = ? AND active = 1').get(req.user.id);
+  if (!code) return res.json({ hasCode: false });
+  const commissions = dbHelpers.prepare(`
+    SELECT rc.subscription_tier, rc.commission_cents, rc.status, rc.created_at,
+      su.email AS subscriber_email
+    FROM referral_commissions rc
+    JOIN users su ON su.id = rc.referred_user_id
+    WHERE rc.referrer_id = ?
+    ORDER BY rc.created_at DESC
+  `).all(req.user.id);
+  const totalEarned = commissions.reduce((s, c) => s + c.commission_cents, 0);
+  const totalPaid = commissions.filter(c => c.status === 'paid').reduce((s, c) => s + c.commission_cents, 0);
+  const totalPending = commissions.filter(c => c.status === 'pending').reduce((s, c) => s + c.commission_cents, 0);
+  res.json({
+    hasCode: true,
+    code: code.code,
+    commission_rate: code.commission_rate,
+    referral_link: `https://${CUSTOM_DOMAIN}/login?ref=${code.code}`,
+    stats: { total_referrals: commissions.length, total_earned: totalEarned, total_paid: totalPaid, total_pending: totalPending },
+    commissions
+  });
 });
 
 // --- User Data Save/Load (server-side persistence) ---
@@ -1491,6 +1563,47 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
         if (!tier) tier = 'pro';
         dbHelpers.prepare('UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, trial_ends_at = ?, subscription_tier = ?, updated_at = datetime("now") WHERE stripe_customer_id = ?')
           .run(status, obj.id, trialEnd, tier, obj.customer);
+
+        // --- Referral commission: create on first active subscription ---
+        if (event.type === 'customer.subscription.created' && (status === 'active' || status === 'trialing')) {
+          try {
+            const subUser = dbHelpers.prepare('SELECT id, email, referred_by FROM users WHERE stripe_customer_id = ? AND deleted_at IS NULL').get(obj.customer);
+            if (subUser && subUser.referred_by) {
+              const refRow = dbHelpers.prepare('SELECT * FROM referral_codes WHERE code = ? AND active = 1').get(subUser.referred_by);
+              if (refRow) {
+                // Prevent duplicate commission for same user+subscription
+                const existingCommission = dbHelpers.prepare('SELECT id FROM referral_commissions WHERE referred_user_id = ? AND stripe_subscription_id = ?').get(subUser.id, obj.id);
+                if (!existingCommission) {
+                  const TIER_AMOUNTS_CENTS = { pro: 1499, elite: 120000, elite_plus: 300000 };
+                  const amountCents = TIER_AMOUNTS_CENTS[tier] || 1499;
+                  const commissionCents = Math.round(amountCents * refRow.commission_rate);
+                  dbHelpers.prepare(`
+                    INSERT INTO referral_commissions (referrer_id, referred_user_id, referral_code, subscription_tier, amount_cents, commission_cents, status, stripe_subscription_id)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+                  `).run(refRow.user_id, subUser.id, refRow.code, tier, amountCents, commissionCents, obj.id);
+                  logOperation(null, 'referral.commission_created', 'user', subUser.id, {
+                    referrer_id: refRow.user_id, code: refRow.code, tier, amountCents, commissionCents
+                  });
+                  // Notify admin
+                  const referrer = dbHelpers.prepare('SELECT email FROM users WHERE id = ?').get(refRow.user_id);
+                  notifyAdmins(
+                    `Referral Commission — ${subUser.email} subscribed via ${refRow.code}`,
+                    `<h2 style="color:#fff; margin-top:0;">New Referral Commission</h2>
+                     <p><strong>New subscriber:</strong> ${subUser.email}</p>
+                     <p><strong>Referral code:</strong> ${refRow.code}</p>
+                     <p><strong>Referrer:</strong> ${referrer ? referrer.email : 'user#' + refRow.user_id}</p>
+                     <p><strong>Tier:</strong> ${tier}</p>
+                     <p><strong>Subscription amount:</strong> $${(amountCents / 100).toFixed(2)}</p>
+                     <p><strong>Commission (${Math.round(refRow.commission_rate * 100)}%):</strong> $${(commissionCents / 100).toFixed(2)}</p>`
+                  ).catch(() => {});
+                }
+              }
+            }
+          } catch (e) {
+            console.error('[REFERRAL] commission tracking error:', e.message);
+          }
+        }
+
         break;
       }
       case 'customer.subscription.deleted': {
@@ -2492,6 +2605,104 @@ app.get('/api/admin/journal', requireAdmin, (req, res) => {
   `).all(limit, offset);
   const total = dbHelpers.prepare('SELECT COUNT(*) AS cnt FROM operation_journal').get();
   res.json({ entries: rows, total: total ? total.cnt : 0, limit, offset });
+});
+
+// --- Admin: Referral Code & Commission Management ---
+
+// List all referral codes with earnings summary
+app.get('/api/admin/referrals', requireAdmin, (req, res) => {
+  const codes = dbHelpers.prepare(`
+    SELECT rc.*, u.email AS referrer_email,
+      (SELECT COUNT(*) FROM referral_commissions WHERE referral_code = rc.code) AS total_referrals,
+      (SELECT COALESCE(SUM(commission_cents), 0) FROM referral_commissions WHERE referral_code = rc.code) AS total_earned_cents,
+      (SELECT COALESCE(SUM(commission_cents), 0) FROM referral_commissions WHERE referral_code = rc.code AND status = 'pending') AS pending_cents,
+      (SELECT COALESCE(SUM(commission_cents), 0) FROM referral_commissions WHERE referral_code = rc.code AND status = 'paid') AS paid_cents
+    FROM referral_codes rc
+    JOIN users u ON u.id = rc.user_id
+    ORDER BY rc.created_at DESC
+  `).all();
+  res.json({ codes });
+});
+
+// Create a referral code for a user
+app.post('/api/admin/referrals', requireAdmin, (req, res) => {
+  const { user_id, code, commission_rate } = req.body || {};
+  const userId = parseInt(user_id, 10);
+  if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: 'Valid user_id required' });
+
+  const user = dbHelpers.prepare('SELECT id, email FROM users WHERE id = ? AND deleted_at IS NULL').get(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  // Generate or validate code
+  let refCode = code ? String(code).trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20) : null;
+  if (!refCode) {
+    // Auto-generate: first 4 chars of email username + 4 random chars
+    const prefix = user.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+    refCode = prefix + crypto.randomBytes(2).toString('hex').toUpperCase();
+  }
+
+  const rate = parseFloat(commission_rate) || 0.10;
+  if (rate <= 0 || rate > 1) return res.status(400).json({ error: 'commission_rate must be between 0 and 1' });
+
+  const existing = dbHelpers.prepare('SELECT id FROM referral_codes WHERE code = ?').get(refCode);
+  if (existing) return res.status(409).json({ error: 'Code already exists' });
+
+  dbHelpers.prepare('INSERT INTO referral_codes (user_id, code, commission_rate) VALUES (?, ?, ?)').run(userId, refCode, rate);
+  logOperation(req, 'referral.code_created', 'user', userId, { code: refCode, rate });
+  flushDbNow();
+  res.json({ success: true, code: refCode, user_email: user.email, commission_rate: rate });
+});
+
+// Deactivate a referral code
+app.post('/api/admin/referrals/:code/deactivate', requireAdmin, (req, res) => {
+  const code = String(req.params.code).toUpperCase();
+  const row = dbHelpers.prepare('SELECT * FROM referral_codes WHERE code = ?').get(code);
+  if (!row) return res.status(404).json({ error: 'Code not found' });
+  dbHelpers.prepare('UPDATE referral_codes SET active = 0 WHERE code = ?').run(code);
+  logOperation(req, 'referral.code_deactivated', 'user', row.user_id, { code });
+  flushDbNow();
+  res.json({ success: true, code });
+});
+
+// List all commissions (filterable by referrer or status)
+app.get('/api/admin/commissions', requireAdmin, (req, res) => {
+  const { referrer_id, status } = req.query;
+  let sql = `
+    SELECT rc.*,
+      ru.email AS referrer_email,
+      su.email AS subscriber_email
+    FROM referral_commissions rc
+    JOIN users ru ON ru.id = rc.referrer_id
+    JOIN users su ON su.id = rc.referred_user_id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (referrer_id) { sql += ' AND rc.referrer_id = ?'; params.push(parseInt(referrer_id, 10)); }
+  if (status) { sql += ' AND rc.status = ?'; params.push(status); }
+  sql += ' ORDER BY rc.created_at DESC';
+  const rows = dbHelpers.prepare(sql).all(...params);
+  const totals = dbHelpers.prepare(`
+    SELECT
+      COUNT(*) AS total_commissions,
+      COALESCE(SUM(commission_cents), 0) AS total_cents,
+      COALESCE(SUM(CASE WHEN status = 'pending' THEN commission_cents ELSE 0 END), 0) AS pending_cents,
+      COALESCE(SUM(CASE WHEN status = 'paid' THEN commission_cents ELSE 0 END), 0) AS paid_cents
+    FROM referral_commissions
+  `).get();
+  res.json({ commissions: rows, totals });
+});
+
+// Mark commissions as paid
+app.post('/api/admin/commissions/:id/pay', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const row = dbHelpers.prepare('SELECT * FROM referral_commissions WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ error: 'Commission not found' });
+  if (row.status === 'paid') return res.status(400).json({ error: 'Already paid' });
+  dbHelpers.prepare("UPDATE referral_commissions SET status = 'paid', paid_at = datetime('now') WHERE id = ?").run(id);
+  logOperation(req, 'referral.commission_paid', 'user', row.referrer_id, { commission_id: id, cents: row.commission_cents });
+  flushDbNow();
+  res.json({ success: true, id, amount: '$' + (row.commission_cents / 100).toFixed(2) });
 });
 
 // --- Outreach List admin importer ---
