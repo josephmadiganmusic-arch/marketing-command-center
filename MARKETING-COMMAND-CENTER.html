@@ -8746,7 +8746,7 @@ if (aiScanZone) {
 let _adminTicketsCache = [];
 
 function adminInit() {
-  if (USER_ROLE !== 'admin') return;
+  if (USER_ROLE !== 'admin' || USER_EMAIL !== 'josephmadiganmusic@gmail.com') return;
   document.getElementById('adminTab').style.display = '';
 }
 
