@@ -683,6 +683,40 @@ function initDb() {
   db.run('CREATE INDEX IF NOT EXISTS idx_opjournal_timestamp ON operation_journal(timestamp DESC)');
   db.run('CREATE INDEX IF NOT EXISTS idx_opjournal_action ON operation_journal(action)');
 
+  // --- Public Submission Forms (music + playlist) ---
+  db.run(`
+    CREATE TABLE IF NOT EXISTS music_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      artist_name TEXT NOT NULL,
+      track_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      spotify_link TEXT,
+      facebook_link TEXT,
+      instagram_link TEXT,
+      twitter_link TEXT,
+      marketing_interest TEXT,
+      interview_interest TEXT,
+      press_release_file TEXT,
+      profile_image_file TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS playlist_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      artist_name TEXT NOT NULL,
+      track_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      spotify_link TEXT,
+      playlist_selection TEXT,
+      marketing_interest TEXT,
+      challenges TEXT,
+      consent INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
   // a known-literal password from ever being seeded into the DB.
@@ -713,6 +747,18 @@ function initDb() {
         console.log('[BOOT] promoted existing account to admin: ' + admin.email);
       }
     }
+  }
+}
+
+// --- Test account: ensure jocejm20@gmail.com is Elite Plus for testing ---
+{
+  const testUser = dbHelpers.prepare('SELECT id, subscription_tier, subscription_status FROM users WHERE email = ? AND deleted_at IS NULL').get('jocejm20@gmail.com');
+  if (testUser && (testUser.subscription_tier !== 'elite_plus' || testUser.subscription_status !== 'active')) {
+    dbHelpers.prepare("UPDATE users SET subscription_tier = 'elite_plus', subscription_status = 'active', updated_at = datetime('now') WHERE id = ?").run(testUser.id);
+    console.log('[BOOT] promoted jocejm20@gmail.com to elite_plus (test account)');
+    flushDbNow();
+  } else if (!testUser) {
+    console.log('[BOOT] jocejm20@gmail.com not found — will be promoted on next registration');
   }
 }
 
@@ -808,6 +854,41 @@ function decryptOnboarding(row) {
 // --- Email Setup (Resend — HTTPS API, works on Railway) ---
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const EMAIL_FROM = process.env.EMAIL_FROM || 'Rollout Heaven <onboarding@resend.dev>';
+
+// Admin emails that receive notifications for Elite/Elite Plus activity.
+const ADMIN_NOTIFY_EMAILS = [
+  'josephmadiganmusic@gmail.com'
+];
+
+// Fire-and-forget admin email notification. Failures are logged but never
+// block the user-facing request. Skips silently if Resend is not configured.
+async function notifyAdmins(subject, htmlBody) {
+  if (!resend) return;
+  for (const to of ADMIN_NOTIFY_EMAILS) {
+    try {
+      await resend.emails.send({
+        from: EMAIL_FROM,
+        to,
+        subject: `[Rollout Heaven] ${subject}`,
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #080b1e; color: #e0e0e0; border-radius: 12px; overflow: hidden;">
+            <div style="text-align: center; padding: 24px 24px 12px;">
+              <h1 style="margin: 0; font-size: 20px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Rollout Heaven — Admin Alert</h1>
+            </div>
+            <div style="padding: 16px 32px 32px; font-size: 14px; line-height: 1.6;">
+              ${htmlBody}
+            </div>
+            <div style="padding: 12px 32px; background: #0d1029; text-align: center; font-size: 11px; color: #6b7094;">
+              <a href="https://${CUSTOM_DOMAIN}/admin" style="color: #00d4ff;">Open Admin Dashboard</a>
+            </div>
+          </div>
+        `
+      });
+    } catch (e) {
+      console.error('[NOTIFY] admin email failed for', to, ':', e.message);
+    }
+  }
+}
 
 // Independent control over verification enforcement. Defaults to ON in
 // production so a missing/expired RESEND_API_KEY can never silently disable
@@ -1672,6 +1753,21 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
 
   logOperation(req, 'elite.onboarding_submit', 'user', req.user.id, { tier: req.user.subscription_tier });
   flushDbNow();
+
+  // Email admin — fire-and-forget, never blocks the response.
+  notifyAdmins(
+    `${tierLabel} Onboarding Submitted — ${req.user.email}`,
+    `<h2 style="color:#fff; margin-top:0;">New ${tierLabel} Onboarding</h2>
+     <p><strong>Email:</strong> ${req.user.email}</p>
+     <p><strong>User ID:</strong> ${req.user.id}</p>
+     <p><strong>Tier:</strong> ${req.user.subscription_tier}</p>
+     <p style="margin-top:16px;">View encrypted credentials in <strong>Master Admin → Elite Onboarding</strong>.</p>
+     <p><strong>Manual work to start:</strong></p>
+     <ul>${req.user.subscription_tier === 'elite_plus'
+       ? '<li>Distribution + registration</li><li>Outreach emails (radio, podcasts)</li><li>Playlist curation</li>'
+       : '<li>Distribution + registration</li>'}</ul>`
+  ).catch(() => {});
+
   res.json({ success: true });
 });
 
@@ -2241,6 +2337,27 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   logOperation(req, 'user.soft_delete', 'user', id, { email: user.email, tier: user.subscription_tier });
   flushDbNow(); // durable admin-action write — C2
   res.json({ success: true, deleted: user.email, recoverable: true });
+});
+
+// Admin: update a user's subscription tier. Used for testing and manual
+// tier assignments (e.g., comp'd Elite Plus accounts).
+app.post('/api/admin/users/:id/tier', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const tier = String((req.body || {}).tier || '').toLowerCase();
+  if (!['pro', 'elite', 'elite_plus'].includes(tier)) {
+    return res.status(400).json({ error: 'tier must be pro, elite, or elite_plus' });
+  }
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const oldTier = user.subscription_tier;
+  dbHelpers.prepare(`
+    UPDATE users SET subscription_tier = ?, subscription_status = 'active', updated_at = datetime('now')
+    WHERE id = ?
+  `).run(tier, id);
+  logOperation(req, 'admin.tier_change', 'user', id, { email: user.email, from: oldTier, to: tier });
+  flushDbNow();
+  res.json({ success: true, email: user.email, oldTier, newTier: tier });
 });
 
 // List all Elite/Elite Plus users with onboarding status, for the admin
@@ -2823,6 +2940,19 @@ app.post('/api/outreach/generate-intro', requireOutreachUnlocked, rlOutreachIntr
     if (!text.trim()) {
       return res.status(502).json({ error: 'Empty AI response', fallback: true });
     }
+    // Notify admin when Elite/Elite Plus users generate outreach intros.
+    if (isEliteTier(req.user.subscription_tier)) {
+      const tierLabel = req.user.subscription_tier === 'elite_plus' ? 'Elite Plus' : 'Elite';
+      notifyAdmins(
+        `${tierLabel} Outreach Intro Generated — ${req.user.email}`,
+        `<h2 style="color:#fff; margin-top:0;">Outreach Intro Generated</h2>
+         <p><strong>User:</strong> ${req.user.email} (${tierLabel})</p>
+         <p><strong>Category:</strong> ${cat}</p>
+         <p><strong>Song:</strong> ${meta.song_title}</p>
+         ${meta.artist_name ? `<p><strong>Artist:</strong> ${meta.artist_name}</p>` : ''}`
+      ).catch(() => {});
+    }
+
     res.json({ intro: text.trim(), category: cat, model: DEFAULT_CLAUDE_MODEL });
   } catch (err) {
     console.error('[OUTREACH INTRO] fetch error:', err.message);
@@ -2917,6 +3047,19 @@ app.post('/api/outreach/social-dm', requireOutreachUnlocked, rlSocialDm, async (
     // Strip em/en dashes even if the model slips past the system-prompt ban.
     // Em dash becomes comma-space, en dash becomes simple hyphen.
     const cleaned = text.trim().replace(/\u2014/g, ', ').replace(/\u2013/g, '-');
+
+    // Notify admin when Elite/Elite Plus users generate social DMs.
+    if (isEliteTier(req.user.subscription_tier)) {
+      const tierLabel = req.user.subscription_tier === 'elite_plus' ? 'Elite Plus' : 'Elite';
+      notifyAdmins(
+        `${tierLabel} Social DM Generated — ${req.user.email}`,
+        `<h2 style="color:#fff; margin-top:0;">Social DM Generated</h2>
+         <p><strong>User:</strong> ${req.user.email} (${tierLabel})</p>
+         <p><strong>Contact:</strong> ${contact.name} (${contact.platform})</p>
+         <p><strong>Song:</strong> ${meta.song_title || 'N/A'}</p>`
+      ).catch(() => {});
+    }
+
     res.json({ dm: cleaned, platform: contact.platform, model: DEFAULT_CLAUDE_MODEL });
   } catch (err) {
     console.error('[OUTREACH SOCIAL-DM] fetch error:', err.message);
@@ -3207,6 +3350,21 @@ app.post('/api/intake/generate-press-release', requireAccess, rlClaude, async (r
     } catch(_) {}
     if (!text.trim()) return res.status(502).json({ error: 'Empty AI response' });
     const cleaned = text.trim().replace(/\u2014/g, '-').replace(/\u2013/g, '-');
+
+    // Notify admin when Elite/Elite Plus users generate a press release.
+    if (isEliteTier(req.user.subscription_tier)) {
+      const tierLabel = req.user.subscription_tier === 'elite_plus' ? 'Elite Plus' : 'Elite';
+      notifyAdmins(
+        `${tierLabel} Press Release Generated — ${req.user.email}`,
+        `<h2 style="color:#fff; margin-top:0;">Press Release Generated</h2>
+         <p><strong>User:</strong> ${req.user.email} (${tierLabel})</p>
+         <p><strong>Song:</strong> ${meta.songTitle}</p>
+         <p><strong>Artist:</strong> ${meta.primaryArtist}</p>
+         ${meta.releaseDate ? `<p><strong>Release Date:</strong> ${meta.releaseDate}</p>` : ''}
+         ${meta.genrePrimary ? `<p><strong>Genre:</strong> ${meta.genrePrimary}</p>` : ''}`
+      ).catch(() => {});
+    }
+
     res.json({ pressRelease: cleaned, model: DEFAULT_CLAUDE_MODEL });
   } catch (err) {
     console.error('[PRESS-RELEASE] fetch error:', err.message);
@@ -3758,6 +3916,103 @@ app.get('/', requireAuth, (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.set('Pragma', 'no-cache');
   res.type('html').send(html);
+});
+
+// --- Public Submission Form Routes (no auth) ---
+const rlSubmission = rateLimit({ name: 'submission', windowMs: 60 * 60 * 1000, max: 10 });
+
+app.get('/music-submission', (req, res) => {
+  res.sendFile(path.join(__dirname, 'music-submission.html'));
+});
+app.get('/playlist-submission', (req, res) => {
+  res.sendFile(path.join(__dirname, 'playlist-submission.html'));
+});
+
+// Store uploaded submission files in public/uploads
+const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+app.post('/api/music-submission', rlSubmission, (req, res) => {
+  const b = req.body || {};
+  const artistName = (b.artist_name || '').trim().slice(0, 200);
+  const trackName = (b.track_name || '').trim().slice(0, 200);
+  const email = (b.email || '').trim().slice(0, 300);
+  const spotifyLink = (b.spotify_link || '').trim().slice(0, 500);
+  if (!artistName || !trackName || !email || !spotifyLink) {
+    return res.status(400).json({ error: 'Artist name, track name, email, and Spotify link are required.' });
+  }
+
+  let pressReleaseFile = null;
+  let profileImageFile = null;
+
+  // Handle base64 file uploads
+  if (b.press_release_data && b.press_release_name) {
+    const ext = path.extname(b.press_release_name).slice(0, 10);
+    const fname = `pr_${Date.now()}_${crypto.randomBytes(4).toString('hex')}${ext}`;
+    const buf = Buffer.from(b.press_release_data, 'base64');
+    if (buf.length <= 15 * 1024 * 1024) {
+      fs.writeFileSync(path.join(UPLOADS_DIR, fname), buf);
+      pressReleaseFile = fname;
+    }
+  }
+  if (b.profile_image_data && b.profile_image_name) {
+    const ext = path.extname(b.profile_image_name).slice(0, 10);
+    const fname = `img_${Date.now()}_${crypto.randomBytes(4).toString('hex')}${ext}`;
+    const buf = Buffer.from(b.profile_image_data, 'base64');
+    if (buf.length <= 15 * 1024 * 1024) {
+      fs.writeFileSync(path.join(UPLOADS_DIR, fname), buf);
+      profileImageFile = fname;
+    }
+  }
+
+  dbHelpers.prepare(`
+    INSERT INTO music_submissions (artist_name, track_name, email, spotify_link,
+      facebook_link, instagram_link, twitter_link, marketing_interest,
+      interview_interest, press_release_file, profile_image_file)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    artistName, trackName, email, spotifyLink,
+    (b.facebook_link || '').trim().slice(0, 500),
+    (b.instagram_link || '').trim().slice(0, 500),
+    (b.twitter_link || '').trim().slice(0, 500),
+    (b.marketing_interest || '').trim().slice(0, 100),
+    (b.interview_interest || '').trim().slice(0, 100),
+    pressReleaseFile, profileImageFile
+  );
+  res.json({ ok: true });
+});
+
+app.post('/api/playlist-submission', rlSubmission, (req, res) => {
+  const b = req.body || {};
+  const artistName = (b.artist_name || '').trim().slice(0, 200);
+  const trackName = (b.track_name || '').trim().slice(0, 200);
+  const email = (b.email || '').trim().slice(0, 300);
+  const spotifyLink = (b.spotify_link || '').trim().slice(0, 500);
+  if (!artistName || !trackName || !email || !spotifyLink) {
+    return res.status(400).json({ error: 'Artist name, track name, email, and Spotify link are required.' });
+  }
+  dbHelpers.prepare(`
+    INSERT INTO playlist_submissions (artist_name, track_name, email, spotify_link,
+      playlist_selection, marketing_interest, challenges, consent)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    artistName, trackName, email, spotifyLink,
+    (b.playlist_selection || '').trim().slice(0, 200),
+    (b.marketing_interest || '').trim().slice(0, 100),
+    (b.challenges || '').trim().slice(0, 1000),
+    b.consent ? 1 : 0
+  );
+  res.json({ ok: true });
+});
+
+// Admin: view submissions
+app.get('/api/admin/music-submissions', requireAdmin, (req, res) => {
+  const rows = dbHelpers.prepare('SELECT * FROM music_submissions ORDER BY created_at DESC').all();
+  res.json(rows);
+});
+app.get('/api/admin/playlist-submissions', requireAdmin, (req, res) => {
+  const rows = dbHelpers.prepare('SELECT * FROM playlist_submissions ORDER BY created_at DESC').all();
+  res.json(rows);
 });
 
 // Static files — only serve safe static assets, NOT the entire project directory
