@@ -8829,16 +8829,15 @@ async function adminLoadData() {
         } catch(e) { alert('Error: ' + e.message); }
       });
     });
+    // Populate referral user dropdown
+    const refSelect = document.getElementById('refUserId');
+    if (refSelect && users) {
+      refSelect.innerHTML = '<option value="">Select a user...</option>' +
+        users.filter(u => u.role !== 'admin').map(u =>
+          '<option value="' + Number(u.id) + '">#' + Number(u.id) + ' — ' + escAdmin(u.email) + '</option>'
+        ).join('');
+    }
   } catch(e) { console.error('Admin load error:', e); }
-
-  // Populate referral user dropdown
-  const refSelect = document.getElementById('refUserId');
-  if (refSelect && users) {
-    refSelect.innerHTML = '<option value="">Select a user...</option>' +
-      users.filter(u => u.role !== 'admin').map(u =>
-        '<option value="' + Number(u.id) + '">#' + Number(u.id) + ' — ' + escAdmin(u.email) + '</option>'
-      ).join('');
-  }
 
   adminLoadTickets('all');
   adminLoadRedemptions('all');
