@@ -2035,7 +2035,7 @@
       <div class="section-title">All Users</div>
       <div style="overflow-x:auto;">
         <table class="calendar-table" style="width:100%;">
-          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Tier</th><th>Trial Ends</th><th>Joined</th><th>Actions</th></tr></thead>
+          <thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Status</th><th>Tier</th><th>Trial Ends</th><th>Joined</th><th>Actions</th></tr></thead>
           <tbody id="adminUserList"></tbody>
         </table>
       </div>
@@ -8795,6 +8795,7 @@ async function adminLoadData() {
         ? ' <span title="Onboarding not completed" style="color:#ff4444;font-size:10px;">\u26A0</span>' : '';
       var tierCell = '<span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;background:' + tierColor + '20;color:' + tierColor + ';">' + tierLabel + '</span>' + onbWarn;
       return '<tr>' +
+        '<td style="color:var(--accent-2);font-weight:700;font-family:monospace;">' + Number(u.id) + '</td>' +
         '<td style="color:#fff;font-weight:500;">' + escAdmin(u.email) + '</td>' +
         '<td><span style="color:' + statusColor + ';font-weight:600;">' + escAdmin(u.role) + '</span></td>' +
         '<td><span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:600;background:' + statusColor + '20;color:' + statusColor + ';">' + statusLabel + '</span></td>' +
