@@ -50,6 +50,18 @@
   .tier-card.featured .tier-price .amount { background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   .tier-price .amount span { font-size: 14px; font-weight: 400; -webkit-text-fill-color: var(--text-dim); color: var(--text-dim); }
   .tier-price .note { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+  .tier-price .original-price { font-size: 16px; color: var(--text-dim); text-decoration: line-through; margin-bottom: 4px; }
+  .beta-label { display: inline-block; background: linear-gradient(135deg, #ff6b35, #ff9f1a); color: #080b1e; font-size: 10px; font-weight: 800; letter-spacing: 1px; padding: 3px 10px; border-radius: 12px; text-transform: uppercase; margin-bottom: 4px; }
+  .beta-banner { text-align: center; background: linear-gradient(135deg, rgba(255,107,53,0.12), rgba(255,159,26,0.08)); border: 1px solid rgba(255,159,26,0.25); border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; }
+  .beta-banner h2 { font-size: 18px; font-weight: 800; color: #ff9f1a; margin-bottom: 6px; }
+  .beta-banner p { font-size: 13px; color: #b0a090; line-height: 1.5; }
+  .beta-countdown { text-align: center; margin-bottom: 24px; }
+  .beta-countdown .spots-box { display: inline-flex; align-items: center; gap: 12px; background: var(--bg-card); border: 2px solid rgba(255,68,68,0.35); border-radius: 12px; padding: 14px 24px; box-shadow: 0 0 30px rgba(255,68,68,0.08); }
+  .beta-countdown .spots-number { font-size: 36px; font-weight: 800; background: linear-gradient(135deg, #ff4444, #ff9f1a); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .beta-countdown .spots-label { text-align: left; }
+  .beta-countdown .spots-label .line1 { font-size: 14px; font-weight: 700; color: #fff; }
+  .beta-countdown .spots-label .line2 { font-size: 11px; color: var(--text-dim); }
+  .beta-countdown .spots-full { font-size: 15px; font-weight: 700; color: #ff4444; }
   .tier-features { text-align: left; margin-bottom: 24px; flex: 1; }
   .tier-features li { list-style: none; padding: 6px 0; font-size: 12px; color: #ccc; display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
   .tier-features li::before { content: '\2713'; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700; font-size: 13px; flex-shrink: 0; }
@@ -103,6 +115,21 @@
   <h1 class="page-title">Choose Your Plan</h1>
   <p class="page-subtitle">Self-serve AI tools or hand the work to Rollout Heaven — pick what fits.</p>
 
+  <div class="beta-banner">
+    <h2>Early Access Beta Pricing</h2>
+    <p>We're testing with a small group of artists before opening to the public. Lock in these lower prices now — they go up after beta.</p>
+  </div>
+
+  <div class="beta-countdown" id="betaCountdown" style="display:none;">
+    <div class="spots-box" id="spotsBox">
+      <div class="spots-number" id="spotsNumber">--</div>
+      <div class="spots-label">
+        <div class="line1">spots remaining</div>
+        <div class="line2">of 10 beta artist slots</div>
+      </div>
+    </div>
+  </div>
+
   <div id="statusMsg"></div>
 
   <div class="pricing-grid">
@@ -111,8 +138,10 @@
       <div class="tier-name">Pro</div>
       <div class="tier-tagline">Self-serve AI toolkit, monthly</div>
       <div class="tier-price">
+        <span class="beta-label">Beta Price</span>
+        <div class="original-price">$29.99/month</div>
         <div class="amount">$14.99 <span>/month</span></div>
-        <div class="note">Cancel anytime</div>
+        <div class="note">Cancel anytime &mdash; price locked while in beta</div>
       </div>
       <ul class="tier-features">
         <li>Music Agent Pro &mdash; AI-powered live research</li>
@@ -131,8 +160,10 @@
       <div class="tier-name">Elite</div>
       <div class="tier-tagline">We handle distribution &amp; registration for you</div>
       <div class="tier-price">
+        <span class="beta-label">Beta Price</span>
+        <div class="original-price">$2,400/year</div>
         <div class="amount">$1,200 <span>/year</span></div>
-        <div class="note">Annual billing &mdash; concierge service</div>
+        <div class="note">Annual billing &mdash; price locked while in beta</div>
       </div>
       <ul class="tier-features">
         <li><strong>Everything in Pro</strong></li>
@@ -151,8 +182,10 @@
       <div class="tier-name">Elite Plus</div>
       <div class="tier-tagline">Full concierge &mdash; we run your release</div>
       <div class="tier-price">
+        <span class="beta-label">Beta Price</span>
+        <div class="original-price">$5,000/year</div>
         <div class="amount">$3,000 <span>/year</span></div>
-        <div class="note">Annual billing &mdash; full concierge service</div>
+        <div class="note">Annual billing &mdash; price locked while in beta</div>
       </div>
       <ul class="tier-features">
         <li><strong>Everything in Elite</strong></li>
@@ -209,6 +242,24 @@ var __outreachAnchor = window.location.hash === '#outreach-list' || params.get('
 if (params.get('outreach_canceled')) {
   showStatus('info', 'Outreach List checkout canceled. Try again whenever you\'re ready.');
 }
+
+// Fetch beta spots countdown (only counts active subscribers)
+fetch('/api/beta-spots').then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+  if (!d) return;
+  var el = document.getElementById('betaCountdown');
+  var remaining = d.total - d.taken;
+  el.style.display = 'block';
+  if (remaining <= 0) {
+    document.getElementById('spotsBox').innerHTML = '<div class="spots-full">All 10 beta spots are filled &mdash; join the waitlist</div>';
+    document.querySelectorAll('.tier-btn').forEach(function(b) { b.disabled = true; b.textContent = 'Beta Full'; });
+  } else {
+    document.getElementById('spotsNumber').textContent = remaining;
+    if (remaining <= 3) {
+      document.getElementById('spotsBox').style.borderColor = 'rgba(255,68,68,0.6)';
+      document.getElementById('spotsBox').style.boxShadow = '0 0 30px rgba(255,68,68,0.15)';
+    }
+  }
+}).catch(function(){});
 
 // Check if user already has a paid subscription
 fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {

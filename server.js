@@ -1837,6 +1837,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
   res.sendStatus(200);
 });
 
+// --- Beta Spots Countdown ---
+// Returns how many of the 10 beta artist slots are taken (active subscribers only).
+const BETA_ARTIST_LIMIT = 10;
+app.get('/api/beta-spots', (req, res) => {
+  const row = dbHelpers.prepare(
+    "SELECT COUNT(*) AS cnt FROM users WHERE subscription_status = 'active' AND role != 'admin' AND deleted_at IS NULL"
+  ).get();
+  res.json({ total: BETA_ARTIST_LIMIT, taken: row.cnt });
+});
+
 // --- Subscribe Page ---
 app.get('/subscribe', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'subscribe.html'));
@@ -1859,6 +1869,10 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Elite subscription required' });
   }
   const body = req.body || {};
+
+  // All registration credentials are optional at onboarding — artists can
+  // add them later from the Registration tab in the app.
+
   // Whitelist + length-cap every field. We never want a malicious or buggy
   // client to dump arbitrary blobs into the encrypted store.
   const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n);
@@ -1875,7 +1889,13 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
       password: cap(body.registration_password, 200),
       ipi_number: cap(body.registration_ipi, 80),
       soundexchange_username: cap(body.soundexchange_username, 200),
-      soundexchange_password: cap(body.soundexchange_password, 200)
+      soundexchange_password: cap(body.soundexchange_password, 200),
+      musixmatch_username: cap(body.musixmatch_username, 200),
+      musixmatch_password: cap(body.musixmatch_password, 200),
+      mlc_username: cap(body.mlc_username, 200),
+      mlc_password: cap(body.mlc_password, 200),
+      songtrust_username: cap(body.songtrust_username, 200),
+      songtrust_password: cap(body.songtrust_password, 200)
     },
     social: {
       instagram_username: cap(body.instagram_username, 200),
@@ -1893,6 +1913,10 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
       genre: cap(body.genre, 100)
     },
     elite_plus: {
+      email_provider: cap(body.email_provider, 80),
+      email_address: cap(body.email_access_address, 300),
+      email_password: cap(body.email_access_password, 200),
+      email_notes: cap(body.email_access_notes, 500),
       target_stations: cap(body.target_stations, 2000),
       avoid_stations: cap(body.avoid_stations, 2000),
       target_playlists: cap(body.target_playlists, 2000),
@@ -1972,6 +1996,100 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
        : '<li>Distribution + registration</li>'}</ul>`
   ).catch(() => {});
 
+  res.json({ success: true });
+});
+
+// --- Elite Credential Status (for Registration tab) ---
+// Returns which services have credentials on file (no secrets exposed).
+app.get('/api/elite/credential-status', requireAuth, (req, res) => {
+  if (!isEliteTier(req.user.subscription_tier)) return res.json({ elite: false });
+  const row = dbHelpers.prepare('SELECT data_encrypted, iv, auth_tag FROM elite_onboarding WHERE user_id = ?').get(req.user.id);
+  if (!row) return res.json({ elite: true, hasOnboarding: false, services: {} });
+  try {
+    const data = decryptOnboarding(row);
+    const has = (u, p) => !!(u && u.trim()) && !!(p && p.trim());
+    const services = {
+      distribution: has(data.distribution?.username, data.distribution?.password),
+      pro: has(data.registration?.username, data.registration?.password),
+      soundexchange: has(data.registration?.soundexchange_username, data.registration?.soundexchange_password),
+      musixmatch: has(data.registration?.musixmatch_username, data.registration?.musixmatch_password),
+      mlc: has(data.registration?.mlc_username, data.registration?.mlc_password),
+      songtrust: has(data.registration?.songtrust_username, data.registration?.songtrust_password)
+    };
+    // Elite Plus also tracks email access
+    const tier = dbHelpers.prepare('SELECT subscription_tier FROM users WHERE id = ?').get(req.user.id);
+    if (tier && tier.subscription_tier === 'elite_plus') {
+      services.email = has(data.elite_plus?.email_address, data.elite_plus?.email_password);
+    }
+    res.json({ elite: true, hasOnboarding: true, tier: tier?.subscription_tier, services });
+  } catch (e) {
+    console.error('[ELITE] decrypt error:', e.message);
+    res.json({ elite: true, hasOnboarding: true, services: {} });
+  }
+});
+
+// Update a single service credential from the Registration tab.
+app.post('/api/elite/update-credential', requireAuth, (req, res) => {
+  if (!isEliteTier(req.user.subscription_tier)) {
+    return res.status(403).json({ error: 'Elite subscription required' });
+  }
+  const { service, username, password } = req.body || {};
+  if (!service || !username || !password) {
+    return res.status(400).json({ error: 'Service, username, and password are required.' });
+  }
+  const cap = (v, n) => (v == null ? '' : String(v)).slice(0, n);
+  const svc = cap(service, 40);
+  const user = cap(username, 200);
+  const pass = cap(password, 200);
+
+  // Load existing onboarding data (or start fresh).
+  const row = dbHelpers.prepare('SELECT data_encrypted, iv, auth_tag FROM elite_onboarding WHERE user_id = ?').get(req.user.id);
+  let data;
+  try {
+    data = row ? decryptOnboarding(row) : {
+      distribution: {}, registration: {}, social: {},
+      cadence: {}, elite_plus: {}, extra_notes: ''
+    };
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to load existing credentials' });
+  }
+
+  // Map service name to the correct nested field.
+  const fieldMap = {
+    distribution: ['distribution', 'username', 'password'],
+    pro: ['registration', 'username', 'password'],
+    soundexchange: ['registration', 'soundexchange_username', 'soundexchange_password'],
+    musixmatch: ['registration', 'musixmatch_username', 'musixmatch_password'],
+    mlc: ['registration', 'mlc_username', 'mlc_password'],
+    songtrust: ['registration', 'songtrust_username', 'songtrust_password'],
+    email: ['elite_plus', 'email_address', 'email_password']
+  };
+  const mapping = fieldMap[svc];
+  if (!mapping) return res.status(400).json({ error: 'Unknown service' });
+
+  if (!data[mapping[0]]) data[mapping[0]] = {};
+  data[mapping[0]][mapping[1]] = user;
+  data[mapping[0]][mapping[2]] = pass;
+
+  let enc;
+  try { enc = encryptOnboarding(data); }
+  catch (e) { return res.status(500).json({ error: 'Encryption failed' }); }
+
+  if (row) {
+    dbHelpers.prepare(`
+      UPDATE elite_onboarding SET data_encrypted = ?, iv = ?, auth_tag = ?, updated_at = datetime('now')
+      WHERE user_id = ?
+    `).run(enc.data_encrypted, enc.iv, enc.auth_tag, req.user.id);
+  } else {
+    dbHelpers.prepare(`
+      INSERT INTO elite_onboarding (user_id, tier, data_encrypted, iv, auth_tag)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(req.user.id, req.user.subscription_tier, enc.data_encrypted, enc.iv, enc.auth_tag);
+    dbHelpers.prepare('UPDATE users SET onboarding_completed = 1, updated_at = datetime("now") WHERE id = ?').run(req.user.id);
+  }
+
+  logOperation(req, 'elite.credential_update', 'user', req.user.id, { service: svc });
+  flushDbNow();
   res.json({ success: true });
 });
 

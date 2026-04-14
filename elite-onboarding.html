@@ -88,12 +88,12 @@
       <!-- ─── DISTRIBUTION ─── -->
       <div class="ob-section">
         <h2>Distribution Account</h2>
-        <p class="section-desc">Where you upload your music for streaming services. Rollout Heaven will use this to handle uploads and metadata QA.</p>
+        <p class="section-desc">Where you upload your music for streaming services. Rollout Heaven will use this to handle uploads and metadata QA. Leave blank if not signed up yet.</p>
         <div class="form-row">
           <div class="form-field">
             <label>Provider</label>
             <select name="distribution_provider">
-              <option value="">Select...</option>
+              <option value="">Not signed up yet</option>
               <option value="DistroKid">DistroKid</option>
               <option value="TuneCore">TuneCore</option>
               <option value="CD Baby">CD Baby</option>
@@ -107,7 +107,7 @@
           </div>
           <div class="form-field">
             <label>Account Email / Username</label>
-            <input type="text" name="distribution_username" maxlength="200" autocomplete="off">
+            <input type="text" name="distribution_username" maxlength="200" autocomplete="off" placeholder="Leave blank if not signed up">
           </div>
         </div>
         <div class="form-row single">
@@ -127,42 +127,96 @@
       <!-- ─── REGISTRATION ─── -->
       <div class="ob-section">
         <h2>Performing Rights &amp; Royalty Registration</h2>
-        <p class="section-desc">PRO and SoundExchange accounts so Rollout Heaven can register your works for royalty collection.</p>
-        <div class="form-row">
-          <div class="form-field">
-            <label>PRO Organization</label>
-            <select name="registration_pro">
-              <option value="">Select...</option>
-              <option value="ASCAP">ASCAP</option>
-              <option value="BMI">BMI</option>
-              <option value="SESAC">SESAC</option>
-              <option value="GMR">GMR</option>
-              <option value="Other">Other / Not registered yet</option>
-            </select>
+        <p class="section-desc">Rollout Heaven needs login access to these services to manage your works. If you're not signed up for a service yet, leave it blank &mdash; you can add credentials later from the Registration tab in your app.</p>
+
+        <!-- PRO -->
+        <div style="border-left:3px solid var(--accent-1);padding-left:14px;margin-bottom:20px;">
+          <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">1. PRO (Performing Rights Organization)</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>PRO Organization</label>
+              <select name="registration_pro">
+                <option value="">Not signed up yet</option>
+                <option value="ASCAP">ASCAP</option>
+                <option value="BMI">BMI</option>
+                <option value="SESAC">SESAC</option>
+                <option value="GMR">GMR</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>IPI / CAE Number</label>
+              <input type="text" name="registration_ipi" maxlength="80" placeholder="If you have one">
+            </div>
           </div>
-          <div class="form-field">
-            <label>IPI / CAE Number (optional)</label>
-            <input type="text" name="registration_ipi" maxlength="80">
+          <div class="form-row">
+            <div class="form-field">
+              <label>PRO Username</label>
+              <input type="text" name="registration_username" maxlength="200" autocomplete="off" placeholder="Leave blank if not signed up">
+            </div>
+            <div class="form-field">
+              <label>PRO Password</label>
+              <input type="password" name="registration_password" maxlength="200" autocomplete="new-password">
+            </div>
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label>PRO Account Username</label>
-            <input type="text" name="registration_username" maxlength="200" autocomplete="off">
-          </div>
-          <div class="form-field">
-            <label>PRO Account Password</label>
-            <input type="password" name="registration_password" maxlength="200" autocomplete="new-password">
+
+        <!-- SoundExchange -->
+        <div style="border-left:3px solid var(--accent-1);padding-left:14px;margin-bottom:20px;">
+          <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">2. SoundExchange</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>SoundExchange Username</label>
+              <input type="text" name="soundexchange_username" maxlength="200" autocomplete="off" placeholder="Leave blank if not signed up">
+            </div>
+            <div class="form-field">
+              <label>SoundExchange Password</label>
+              <input type="password" name="soundexchange_password" maxlength="200" autocomplete="new-password">
+            </div>
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label>SoundExchange Username (optional)</label>
-            <input type="text" name="soundexchange_username" maxlength="200" autocomplete="off">
+
+        <!-- Musixmatch -->
+        <div style="border-left:3px solid var(--accent-1);padding-left:14px;margin-bottom:20px;">
+          <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">3. Musixmatch</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Musixmatch Username</label>
+              <input type="text" name="musixmatch_username" maxlength="200" autocomplete="off" placeholder="Leave blank if not signed up">
+            </div>
+            <div class="form-field">
+              <label>Musixmatch Password</label>
+              <input type="password" name="musixmatch_password" maxlength="200" autocomplete="new-password">
+            </div>
           </div>
-          <div class="form-field">
-            <label>SoundExchange Password (optional)</label>
-            <input type="password" name="soundexchange_password" maxlength="200" autocomplete="new-password">
+        </div>
+
+        <!-- The MLC -->
+        <div style="border-left:3px solid var(--accent-1);padding-left:14px;margin-bottom:20px;">
+          <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">4. The MLC (Mechanical Licensing Collective)</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>MLC Username</label>
+              <input type="text" name="mlc_username" maxlength="200" autocomplete="off" placeholder="Leave blank if not signed up">
+            </div>
+            <div class="form-field">
+              <label>MLC Password</label>
+              <input type="password" name="mlc_password" maxlength="200" autocomplete="new-password">
+            </div>
+          </div>
+        </div>
+
+        <!-- Songtrust -->
+        <div style="border-left:3px solid var(--accent-1);padding-left:14px;">
+          <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">5. Songtrust</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Songtrust Username</label>
+              <input type="text" name="songtrust_username" maxlength="200" autocomplete="off" placeholder="Leave blank if not signed up">
+            </div>
+            <div class="form-field">
+              <label>Songtrust Password</label>
+              <input type="password" name="songtrust_password" maxlength="200" autocomplete="new-password">
+            </div>
           </div>
         </div>
       </div>
@@ -237,6 +291,42 @@
 
       <!-- ─── ELITE PLUS ONLY ─── -->
       <div class="ob-section elite-plus-only">
+        <h2>Email Access <span style="font-size:11px;color:var(--gold);font-weight:600;margin-left:6px;">ELITE PLUS</span></h2>
+        <p class="section-desc">Rollout Heaven sends outreach emails on your behalf to radio stations, podcasts, and playlist curators. We need access to your email account to do this. You can add this later from the Registration tab if you're not ready.</p>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Email Provider</label>
+            <select name="email_provider">
+              <option value="">Not ready yet</option>
+              <option value="Gmail">Gmail</option>
+              <option value="Outlook">Outlook / Hotmail</option>
+              <option value="Yahoo">Yahoo Mail</option>
+              <option value="iCloud">iCloud Mail</option>
+              <option value="ProtonMail">ProtonMail</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Email Address</label>
+            <input type="email" name="email_access_address" maxlength="300" autocomplete="off" placeholder="The email you want outreach sent from">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Email Password / App Password</label>
+            <input type="password" name="email_access_password" maxlength="200" autocomplete="new-password" placeholder="Use an app password if 2FA is on">
+          </div>
+          <div class="form-field">
+            <label>Notes (app password instructions, 2FA info)</label>
+            <input type="text" name="email_access_notes" maxlength="500" placeholder="e.g. Google app password, IMAP enabled">
+          </div>
+        </div>
+        <div class="security-note" style="margin-top:12px;margin-bottom:0;">
+          <strong>Tip:</strong> For Gmail, create an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" style="color:var(--accent-2);">App Password</a> instead of sharing your main password. This gives Rollout Heaven access to send emails without your main login.
+        </div>
+      </div>
+
+      <div class="ob-section elite-plus-only">
         <h2>Outreach &amp; Playlist Strategy <span style="font-size:11px;color:var(--gold);font-weight:600;margin-left:6px;">ELITE PLUS</span></h2>
         <p class="section-desc">Rollout Heaven will pitch your music to radio, podcasts, and playlist curators. The more direction here, the better the targeting.</p>
         <div class="form-row single">
@@ -285,6 +375,7 @@
         <button type="button" class="btn-skip" onclick="skipForNow()">Skip for now</button>
         <button type="submit" class="btn-submit" id="submitBtn">Submit &amp; Launch My Account</button>
       </div>
+      <p style="text-align:center;font-size:11px;color:var(--text-dim);margin-top:12px;">Not signed up for a service yet? No problem &mdash; leave it blank and add your credentials later from the Registration tab in your app.</p>
       <div id="statusMsg"></div>
     </form>
   </div>

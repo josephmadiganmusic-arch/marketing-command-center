@@ -1281,6 +1281,18 @@
       <div class="reg-progress-step" id="reg-prog-4"><span class="reg-step-num">5</span>The MLC</div>
       <div class="reg-progress-step" id="reg-prog-5"><span class="reg-step-num">6</span>Songtrust</div>
     </div>
+    <!-- Elite credential management (hidden for non-Elite users) -->
+    <div id="eliteCredPanel" style="display:none;margin-bottom:24px;">
+      <div style="background:var(--bg-input);border:1px solid rgba(255,215,0,0.25);border-radius:12px;padding:20px 24px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+          <span style="background:linear-gradient(135deg,#ffd700,#ff9f1a);color:#080b1e;font-size:10px;font-weight:800;letter-spacing:1px;padding:3px 10px;border-radius:12px;text-transform:uppercase;">Elite</span>
+          <span style="font-size:15px;font-weight:700;color:#fff;">Service Credentials</span>
+        </div>
+        <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px;line-height:1.5;">Rollout Heaven manages these accounts for you. Add or update your login credentials here &mdash; they're encrypted and only accessible to Rollout Heaven admins.</p>
+        <div id="eliteCredList"></div>
+      </div>
+    </div>
+
     <div id="regCards"></div>
   </div><!-- end panel-registration -->
 
@@ -2662,7 +2674,7 @@ function showPanel(id) {
   document.querySelectorAll('#mainTabs .tab').forEach((t, i) => {
     t.classList.toggle('active', panelNames[i] === id);
   });
-  if (id === 'registration') renderRegCards();
+  if (id === 'registration') { renderRegCards(); loadEliteCredentials(); }
   if (id === 'emailgen') egLoadFromIntake(true);
   if (id === 'outreach') { try { stInit(); } catch(_) {} }
   if (id === 'admin') adminLoadData();
@@ -4104,6 +4116,100 @@ function renderRegCards() {
     container.appendChild(card);
   });
   renderRegProgressBar();
+}
+
+// --- Elite credential management in Registration tab ---
+const eliteServiceLabels = {
+  pro: 'PRO (ASCAP/BMI/SESAC)',
+  distribution: 'Distribution',
+  musixmatch: 'Musixmatch',
+  soundexchange: 'SoundExchange',
+  mlc: 'The MLC',
+  songtrust: 'Songtrust',
+  email: 'Email Access (for outreach)'
+};
+
+function loadEliteCredentials() {
+  const panel = document.getElementById('eliteCredPanel');
+  if (!panel) return;
+  fetch('/api/elite/credential-status').then(r => r.json()).then(data => {
+    if (!data.elite) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    const list = document.getElementById('eliteCredList');
+    const order = ['pro','distribution','musixmatch','soundexchange','mlc','songtrust'];
+    // Elite Plus also needs email access
+    if (data.tier === 'elite_plus') order.push('email');
+    list.innerHTML = order.map((svc, i) => {
+      const has = data.services && data.services[svc];
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;${i < order.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}" id="eliteCred-${svc}">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;${has ? 'background:rgba(0,212,255,0.15);color:#00d4ff;' : 'background:rgba(255,68,68,0.12);color:#ff6b6b;'}">${has ? '\u2713' : '!'}</span>
+          <span style="font-size:13px;font-weight:600;color:#fff;">${eliteServiceLabels[svc]}</span>
+        </div>
+        <div>
+          ${has
+            ? '<span style="font-size:11px;color:#00d4ff;margin-right:12px;">On file</span>'
+            : '<span style="font-size:11px;color:#ff6b6b;margin-right:12px;">Missing</span>'}
+          <button onclick="showCredForm('${svc}')" style="padding:6px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--accent-2);font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;transition:all 0.2s;">${has ? 'Update' : 'Add'}</button>
+        </div>
+      </div>
+      <div id="credForm-${svc}" style="display:none;padding:12px 0 8px 30px;">
+        ${svc === 'email' ? '<p style="font-size:11px;color:var(--text-dim);margin-bottom:8px;line-height:1.5;">For Gmail, use an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" style="color:var(--accent-2);">App Password</a> instead of your main password.</p>' : ''}
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:160px;">
+            <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">${svc === 'email' ? 'Email Address' : 'Username / Email'}</label>
+            <input type="${svc === 'email' ? 'email' : 'text'}" id="credUser-${svc}" style="width:100%;background:var(--bg-deep);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#fff;font-size:13px;font-family:Inter,sans-serif;" autocomplete="off" placeholder="${svc === 'email' ? 'you@gmail.com' : ''}">
+          </div>
+          <div style="flex:1;min-width:160px;">
+            <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">${svc === 'email' ? 'Password / App Password' : 'Password'}</label>
+            <input type="password" id="credPass-${svc}" style="width:100%;background:var(--bg-deep);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#fff;font-size:13px;font-family:Inter,sans-serif;" autocomplete="new-password">
+          </div>
+          <button onclick="saveCredential('${svc}')" id="credSaveBtn-${svc}" style="padding:8px 18px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;">Save</button>
+        </div>
+        <div id="credMsg-${svc}" style="font-size:12px;margin-top:6px;display:none;"></div>
+      </div>`;
+    }).join('');
+  }).catch(() => { panel.style.display = 'none'; });
+}
+
+function showCredForm(svc) {
+  const el = document.getElementById('credForm-' + svc);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function saveCredential(svc) {
+  const user = document.getElementById('credUser-' + svc).value.trim();
+  const pass = document.getElementById('credPass-' + svc).value.trim();
+  const msg = document.getElementById('credMsg-' + svc);
+  const btn = document.getElementById('credSaveBtn-' + svc);
+  if (!user || !pass) {
+    msg.style.display = 'block'; msg.style.color = '#ff6b6b';
+    msg.textContent = 'Both username and password are required.';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const res = await fetch('/api/elite/update-credential', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: svc, username: user, password: pass })
+    });
+    const data = await res.json();
+    if (data.success) {
+      msg.style.display = 'block'; msg.style.color = '#00d4ff';
+      msg.textContent = 'Saved! Credentials encrypted and on file.';
+      document.getElementById('credForm-' + svc).style.display = 'none';
+      loadEliteCredentials(); // refresh status
+    } else {
+      msg.style.display = 'block'; msg.style.color = '#ff6b6b';
+      msg.textContent = data.error || 'Failed to save.';
+    }
+  } catch (e) {
+    msg.style.display = 'block'; msg.style.color = '#ff6b6b';
+    msg.textContent = 'Network error. Try again.';
+  }
+  btn.disabled = false; btn.textContent = 'Save';
 }
 
 function regOpenSideBySide(url, name) {
