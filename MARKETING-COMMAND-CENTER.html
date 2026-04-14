@@ -1167,6 +1167,16 @@
             <div class="cover-preview" id="inCoverPreview"><img id="inCoverImg" alt="Cover Art"></div>
           </div>
           <button class="upload-clear" id="inCoverClear" style="display:none;" onclick="inClearCover(event)">Remove</button>
+          <p style="font-size:12px;color:#555;margin-bottom:12px;margin-top:20px;">Artist Photo</p>
+          <div class="upload-zone" id="inArtistPhotoZone">
+            <input type="file" id="inArtistPhotoInput" accept="image/*" onchange="inHandleArtistPhoto(this)">
+            <div class="upload-icon">&#128247;</div>
+            <div class="upload-label">Drop artist photo here or click to upload</div>
+            <div class="upload-hint">JPG, PNG, WEBP — used in outreach emails</div>
+            <div class="upload-filename" id="inArtistPhotoName"></div>
+            <div class="cover-preview" id="inArtistPhotoPreview"><img id="inArtistPhotoImg" alt="Artist Photo"></div>
+          </div>
+          <button class="upload-clear" id="inArtistPhotoClear" style="display:none;" onclick="inClearArtistPhoto(event)">Remove</button>
           <div style="margin-top:20px;padding:16px;background:var(--bg-input);border:1px solid var(--border);border-radius:10px;">
             <p style="font-size:12px;color:var(--accent-2);font-weight:600;margin-bottom:8px;">Audio File Sharing</p>
             <p style="font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:12px;">Upload your WAV and MP3 files to Google Drive, then set sharing to <strong style="color:#fff;">"Anyone with the link"</strong> and paste the links below. These links will be included in your outreach emails.</p>
@@ -2143,6 +2153,68 @@
       </div>
     </div>
 
+    <!-- Registration Prep System -->
+    <div class="section">
+      <div class="section-title" style="display:flex;align-items:center;gap:12px;">
+        Registration Prep
+        <span id="regPrepCount" style="background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-size:11px;padding:2px 10px;border-radius:99px;font-weight:600;">0</span>
+        <button class="btn-action" onclick="adminLoadRegistrations()" style="font-size:11px;padding:4px 12px;margin-left:auto;">Refresh</button>
+      </div>
+      <p style="font-size:12px;color:#888;margin-bottom:12px;">Pre-filled BMI data sheets for each user's releases. Review, copy fields, submit manually on BMI, then log the confirmation number.</p>
+
+      <!-- Filter controls -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <button class="btn-action" onclick="adminFilterReg('all')" style="font-size:12px;padding:6px 14px;" id="regFilter-all">All</button>
+        <button class="btn-action" onclick="adminFilterReg('new')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;" id="regFilter-new">New</button>
+        <button class="btn-action" onclick="adminFilterReg('pending')" style="font-size:12px;padding:6px 14px;" id="regFilter-pending">Pending</button>
+        <button class="btn-action" onclick="adminFilterReg('submitted')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;" id="regFilter-submitted">Submitted</button>
+        <button class="btn-action" onclick="adminFilterReg('confirmed')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#080b1e;" id="regFilter-confirmed">Confirmed</button>
+        <button class="btn-action" onclick="adminBulkQueue()" style="font-size:12px;padding:6px 14px;margin-left:auto;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;">Queue Selected</button>
+      </div>
+
+      <!-- Registration table -->
+      <div style="overflow-x:auto;">
+        <table class="calendar-table" style="width:100%;">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="regSelectAll" onchange="adminRegToggleAll(this.checked)"></th>
+              <th>User</th>
+              <th>Release</th>
+              <th>Platforms (click to view sheet)</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="adminRegList"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- BMI Data Sheet Overlay -->
+    <div id="bmiSheetOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;overflow-y:auto;">
+      <div style="max-width:700px;margin:40px auto;background:#181c3a;border-radius:16px;padding:32px;position:relative;">
+        <button onclick="closeBmiSheet()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:#fff;font-size:24px;cursor:pointer;">&times;</button>
+        <h3 style="color:#fff;margin:0 0 4px;">BMI Work Registration Sheet</h3>
+        <div id="bmiSheetMeta" style="font-size:13px;color:#888;margin-bottom:20px;"></div>
+        <div id="bmiSheetContent"></div>
+        <div style="margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-action" onclick="copyAllBmiFields()" style="font-size:12px;padding:8px 16px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;">Copy All as Text</button>
+          <button class="btn-action" onclick="openBmiLogin()" style="font-size:12px;padding:8px 16px;">Open Platform Login</button>
+        </div>
+        <!-- Confirmation input -->
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #2d325a;">
+          <label style="font-size:12px;color:#bbb;display:block;margin-bottom:6px;">After submitting on BMI, paste the confirmation number:</label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="bmiConfirmInput" placeholder="e.g., BMI-2024-123456" style="flex:1;padding:8px 12px;background:#0e1129;border:1px solid #2d325a;border-radius:6px;color:#fff;font-size:13px;">
+            <button class="btn-action" onclick="saveBmiConfirmation()" style="font-size:12px;padding:8px 16px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#080b1e;">Confirm</button>
+          </div>
+          <div style="margin-top:8px;">
+            <label style="font-size:12px;color:#bbb;display:block;margin-bottom:4px;">Admin Notes (optional):</label>
+            <textarea id="bmiAdminNotes" rows="2" placeholder="Any notes about the submission..." style="width:100%;padding:8px 12px;background:#0e1129;border:1px solid #2d325a;border-radius:6px;color:#fff;font-size:12px;resize:vertical;"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- end panel-admin -->
 
   </div><!-- end site-panels -->
@@ -2760,7 +2832,48 @@ function inClearCover(e) {
   intakeUpdate();
 }
 
-// Audio upload functions removed — replaced with Google Drive link fields
+let inArtistPhotoData = null;
+
+function inHandleArtistPhoto(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    inArtistPhotoData = e.target.result;
+    document.getElementById('inArtistPhotoName').textContent = file.name;
+    document.getElementById('inArtistPhotoImg').src = inArtistPhotoData;
+    document.getElementById('inArtistPhotoPreview').style.display = 'block';
+    document.getElementById('inArtistPhotoZone').classList.add('has-file');
+    document.getElementById('inArtistPhotoClear').style.display = 'inline-block';
+    intakeUpdate();
+  };
+  reader.readAsDataURL(file);
+}
+
+function inClearArtistPhoto(e) {
+  e.stopPropagation();
+  inArtistPhotoData = null;
+  document.getElementById('inArtistPhotoInput').value = '';
+  document.getElementById('inArtistPhotoName').textContent = '';
+  document.getElementById('inArtistPhotoPreview').style.display = 'none';
+  document.getElementById('inArtistPhotoZone').classList.remove('has-file');
+  document.getElementById('inArtistPhotoClear').style.display = 'none';
+  intakeUpdate();
+}
+
+// Upload cover art or artist photo to server, returns URL
+async function uploadReleaseImage(base64Data, type) {
+  if (!base64Data || !base64Data.startsWith('data:')) return null;
+  try {
+    const resp = await fetch('/api/release-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: base64Data, type })
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.url || null;
+  } catch (e) { console.error('Image upload failed:', e); return null; }
+}
 
 function intakeAddSongwriter() {
   const c = document.getElementById('in-songwriterRows');
@@ -2832,6 +2945,7 @@ function intakeGetData() {
     matInstrumental: c('in-matInstrumental'), matAcapella: c('in-matAcapella'), matMusicVideo: c('in-matMusicVideo'),
     matLyrics: c('in-matLyrics'), matInterview: c('in-matInterview'),
     coverArt: inCoverData,
+    artistPhoto: inArtistPhotoData,
     targetCurators: v('gen-curators'), targetPlaylists: v('gen-playlists'),
     targetBlogs: v('gen-blogs'), targetPodcasts: v('gen-podcasts'), targetCollabs: v('gen-collabs')
   };
@@ -2851,12 +2965,19 @@ let _namedSaveTimer = null;
 function intakeForceFlush() {
   try {
     const d = intakeGetData();
-    const slim = Object.assign({}, d, { coverArt: null });
+    const existingAll = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+    const existingRel = d.songTitle ? (existingAll[d.songTitle] || {}) : {};
+    const slim = Object.assign({}, d, {
+      coverArt: existingRel.coverArtUrl || null,
+      artistPhoto: existingRel.artistPhotoUrl || null,
+      coverArtUrl: existingRel.coverArtUrl || null,
+      artistPhotoUrl: existingRel.artistPhotoUrl || null,
+    });
     localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
     saveArtistProfile();
     // Save to named releases if title is valid — preserve existing campaign bundle
     if (d.songTitle && d.songTitle.length >= 3 && canAddRelease(d.songTitle)) {
-      const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+      const saved = existingAll;
       const existing = saved[d.songTitle] || {};
       saved[d.songTitle] = Object.assign({}, slim, {
         _campaign: existing._campaign,
@@ -3528,7 +3649,7 @@ function intakeCopyAll() {
   navigator.clipboard.writeText(lines).then(() => showToast('All metadata copied!'));
 }
 
-function intakeSave() {
+async function intakeSave() {
   try {
     const d = intakeGetData();
     if (!d.songTitle) { showToast('Enter a song title first'); return; }
@@ -3537,7 +3658,27 @@ function intakeSave() {
       return;
     }
     clearTimeout(_autosaveTimer);
-    const slim = Object.assign({}, d, { coverArt: null });
+
+    // Upload images to server if they're base64 (not yet uploaded)
+    const existingAll = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+    const existingRelease = existingAll[d.songTitle] || {};
+
+    let coverArtUrl = existingRelease.coverArtUrl || null;
+    let artistPhotoUrl = existingRelease.artistPhotoUrl || null;
+
+    if (d.coverArt && d.coverArt.startsWith('data:') && d.coverArt !== existingRelease._lastCoverBase64) {
+      showToast('Uploading cover art...');
+      const url = await uploadReleaseImage(d.coverArt, 'cover');
+      if (url) { coverArtUrl = url; showToast('Cover art uploaded!'); }
+    }
+    if (d.artistPhoto && d.artistPhoto.startsWith('data:') && d.artistPhoto !== existingRelease._lastArtistBase64) {
+      showToast('Uploading artist photo...');
+      const url = await uploadReleaseImage(d.artistPhoto, 'artist');
+      if (url) { artistPhotoUrl = url; showToast('Artist photo uploaded!'); }
+    }
+
+    // Slim version: no base64 blobs, store URLs instead
+    const slim = Object.assign({}, d, { coverArt: coverArtUrl, artistPhoto: artistPhotoUrl, coverArtUrl, artistPhotoUrl });
     localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
     // Save to named releases — preserve any existing campaign bundle
     const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
@@ -3810,14 +3951,42 @@ function intakeFillForm(d) {
     if (inputs[1]) inputs[1].value = pub.ipi || '';
     if (inputs[2]) inputs[2].value = pub.split || '';
   });
-  // Always clear cover art when loading a release — forces fresh upload
-  inCoverData = null;
-  document.getElementById('inCoverInput').value = '';
-  document.getElementById('inCoverName').textContent = '';
-  document.getElementById('inCoverImg').src = '';
-  document.getElementById('inCoverPreview').style.display = 'none';
-  document.getElementById('inCoverZone').classList.remove('has-file');
-  document.getElementById('inCoverClear').style.display = 'none';
+  // Restore cover art from saved URL
+  const coverUrl = d.coverArtUrl || d.coverArt || null;
+  if (coverUrl && !coverUrl.startsWith('data:')) {
+    inCoverData = coverUrl;
+    document.getElementById('inCoverImg').src = coverUrl;
+    document.getElementById('inCoverPreview').style.display = 'block';
+    document.getElementById('inCoverZone').classList.add('has-file');
+    document.getElementById('inCoverClear').style.display = 'inline-block';
+    document.getElementById('inCoverName').textContent = 'Saved';
+  } else {
+    inCoverData = null;
+    document.getElementById('inCoverInput').value = '';
+    document.getElementById('inCoverName').textContent = '';
+    document.getElementById('inCoverImg').src = '';
+    document.getElementById('inCoverPreview').style.display = 'none';
+    document.getElementById('inCoverZone').classList.remove('has-file');
+    document.getElementById('inCoverClear').style.display = 'none';
+  }
+  // Restore artist photo from saved URL
+  const photoUrl = d.artistPhotoUrl || d.artistPhoto || null;
+  if (photoUrl && !photoUrl.startsWith('data:')) {
+    inArtistPhotoData = photoUrl;
+    document.getElementById('inArtistPhotoImg').src = photoUrl;
+    document.getElementById('inArtistPhotoPreview').style.display = 'block';
+    document.getElementById('inArtistPhotoZone').classList.add('has-file');
+    document.getElementById('inArtistPhotoClear').style.display = 'inline-block';
+    document.getElementById('inArtistPhotoName').textContent = 'Saved';
+  } else {
+    inArtistPhotoData = null;
+    if (document.getElementById('inArtistPhotoInput')) document.getElementById('inArtistPhotoInput').value = '';
+    document.getElementById('inArtistPhotoName').textContent = '';
+    document.getElementById('inArtistPhotoImg').src = '';
+    document.getElementById('inArtistPhotoPreview').style.display = 'none';
+    document.getElementById('inArtistPhotoZone').classList.remove('has-file');
+    document.getElementById('inArtistPhotoClear').style.display = 'none';
+  }
   intakeUpdate();
 }
 
@@ -8859,6 +9028,7 @@ function adminInit() {
 }
 
 async function adminLoadData() {
+  adminLoadRegistrations(); // Load registration prep data in parallel
   try {
     const resp = await fetch('/api/admin/users');
     if (!resp.ok) return;
@@ -9177,6 +9347,376 @@ async function adminOutreachPublish() {
     adminOutreachLoadStatus();
   } catch(e) { preview.innerHTML = '<div style="color:#ff6b6b;">' + e.message + '</div>'; }
 }
+
+// ─── Registration Prep System ───────────────────────────────────────
+let _regCache = [];
+let _regPlatformDefs = {};
+let _regFilter = 'all';
+let _currentBmiSheet = null; // { userId, releaseTitle, queueId, platform }
+
+async function adminLoadRegistrations() {
+  try {
+    const resp = await fetch('/api/admin/registration/pending');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    _regCache = data.registrations || [];
+    _regPlatformDefs = data.platformDefs || {};
+    const pending = _regCache.filter(r => r.confirmedCount < r.totalPlatforms).length;
+    document.getElementById('regPrepCount').textContent = pending;
+    adminRenderReg();
+  } catch(e) { console.error('adminLoadRegistrations:', e); }
+}
+
+function adminFilterReg(filter) {
+  _regFilter = filter;
+  adminRenderReg();
+}
+
+function adminRenderReg() {
+  const tbody = document.getElementById('adminRegList');
+  if (!tbody) return;
+  const statusColors = { new: '#7b2ff7', pending: '#6b7094', ready: '#00d4ff', submitted: '#ffd700', confirmed: '#4ade80', skipped: '#666' };
+  let filtered = _regCache;
+  if (_regFilter !== 'all') {
+    filtered = _regCache.filter(r => {
+      // Filter by whether ANY platform matches the filter status
+      return Object.values(r.platforms).some(p => p.status === _regFilter);
+    });
+  }
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666;padding:24px;">No registrations found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(r => {
+    // Platform status strip — colored dots for each platform
+    const platformStrip = Object.entries(r.platforms).map(([pid, p]) => {
+      const color = statusColors[p.status] || '#666';
+      const pctColor = p.completeness.pct >= 80 ? '#4ade80' : p.completeness.pct >= 50 ? '#ffd700' : '#ff6b6b';
+      const icon = p.status === 'confirmed' ? '&#10003;' : p.completeness.pct + '%';
+      return `<span onclick="openBmiSheet(${r.userId}, '${r.releaseTitle.replace(/'/g, "\\'")}', ${p.queueId || 'null'}, '${pid}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;background:${p.status === 'confirmed' ? '#1a3a1a' : '#1a1e3a'};border:1px solid ${color};padding:2px 8px;border-radius:6px;font-size:10px;color:${p.status === 'confirmed' ? '#4ade80' : pctColor};margin:2px;" title="${p.name}: ${p.status} (${p.completeness.pct}%)\nMissing: ${p.completeness.missing.join(', ') || 'none'}">
+        <b>${p.name}</b> ${icon}
+      </span>`;
+    }).join('');
+
+    const avgColor = r.avgPct >= 80 ? '#4ade80' : r.avgPct >= 50 ? '#ffd700' : '#ff6b6b';
+    const hasMissing = Object.values(r.platforms).some(p => p.completeness.missing.length > 0);
+
+    return `<tr>
+      <td><input type="checkbox" class="reg-check" data-user="${r.userId}" data-title="${r.releaseTitle}"></td>
+      <td style="font-size:12px;">${r.userEmail}<br><span style="color:#6b7094;font-size:10px;">${r.tier || 'free'}</span></td>
+      <td style="font-weight:600;font-size:13px;">${r.releaseTitle}<br><span style="font-size:10px;color:#6b7094;font-weight:400;">${r.confirmedCount}/${r.totalPlatforms} confirmed</span></td>
+      <td style="min-width:280px;">${platformStrip}</td>
+      <td>
+        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, '${r.releaseTitle.replace(/'/g, "\\'")}')" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function adminRegToggleAll(checked) {
+  document.querySelectorAll('.reg-check').forEach(cb => cb.checked = checked);
+}
+
+async function adminBulkQueue() {
+  const checks = document.querySelectorAll('.reg-check:checked');
+  if (!checks.length) { showToast('Select at least one release'); return; }
+  const items = [];
+  const allPlatforms = ['pro', 'distribution', 'musixmatch', 'soundexchange', 'mlc', 'songtrust'];
+  checks.forEach(cb => {
+    allPlatforms.forEach(p => items.push({ userId: parseInt(cb.dataset.user), releaseTitle: cb.dataset.title, platform: p }));
+  });
+  try {
+    const resp = await fetch('/api/admin/registration/bulk-queue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+    if (!resp.ok) { const j = await resp.json(); showToast(j.error || 'Queue failed'); return; }
+    showToast(`Queued ${items.length} releases for registration`);
+    adminLoadRegistrations();
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+async function openBmiSheet(userId, releaseTitle, queueId, platform) {
+  platform = platform || 'pro';
+  _currentBmiSheet = { userId, releaseTitle, queueId, platform };
+  const overlay = document.getElementById('bmiSheetOverlay');
+  const content = document.getElementById('bmiSheetContent');
+  const meta = document.getElementById('bmiSheetMeta');
+  overlay.style.display = '';
+  content.innerHTML = '<div style="color:#888;padding:20px;text-align:center;">Loading data sheet...</div>';
+  try {
+    const resp = await fetch('/api/admin/registration/' + userId + '/sheet/' + encodeURIComponent(releaseTitle) + '/' + platform);
+    if (!resp.ok) { const j = await resp.json(); content.innerHTML = '<div style="color:#ff6b6b;">' + (j.error || 'Failed to load') + '</div>'; return; }
+    const data = await resp.json();
+    const s = data.sheet;
+    const pName = data.platformDef ? data.platformDef.name : platform;
+    const pUrl = data.platformDef ? data.platformDef.url : '';
+    document.querySelector('#bmiSheetOverlay h3').textContent = pName + ' Registration Sheet';
+    meta.innerHTML = `<b>${data.releaseTitle}</b> &middot; ${data.userEmail} &middot; ${pName} Completeness: <span style="color:${data.completeness.pct >= 80 ? '#4ade80' : '#ffd700'};">${data.completeness.pct}%</span>`;
+    // Store platform URL for the open button
+    document.getElementById('bmiSheetOverlay').dataset.platformUrl = pUrl;
+
+    // Ensure queue entry exists
+    if (!_currentBmiSheet.queueId) {
+      await fetch('/api/admin/registration/queue', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, releaseTitle, platform })
+      });
+    }
+
+    // Build the data sheet — platform-specific layouts
+    content.innerHTML = buildSheetLayout(platform, s);
+  } catch(e) { content.innerHTML = '<div style="color:#ff6b6b;">' + e.message + '</div>'; }
+}
+
+function buildSheetLayout(platform, s) {
+  const writersBlock = (showRole, showIpi, showPro, showSplit) => {
+    if (!s.songwriters || !s.songwriters.length) return '<div style="color:#6b7094;font-size:12px;padding:4px 0;">No songwriters listed</div>';
+    return s.songwriters.map((w, i) =>
+      `<div style="background:#0e1129;padding:10px 14px;border-radius:8px;margin-bottom:6px;">` +
+      `<div style="font-size:11px;color:#6b7094;margin-bottom:4px;">Writer ${i + 1}</div>` +
+      bmiField('Name', w.name) +
+      (showRole ? bmiField('Role', w.role) : '') +
+      (showIpi ? bmiField('IPI', w.ipi) : '') +
+      (showPro ? bmiField('PRO', w.pro) : '') +
+      (showSplit ? bmiField('Split', w.split) : '') +
+      `</div>`
+    ).join('');
+  };
+
+  const pubsBlock = (showIpi, showSplit) => {
+    if (!s.publishers || !s.publishers.length) return '<div style="color:#6b7094;font-size:12px;padding:4px 0;">No publishers — self-published</div>';
+    return s.publishers.map((p, i) =>
+      `<div style="background:#0e1129;padding:10px 14px;border-radius:8px;margin-bottom:6px;">` +
+      `<div style="font-size:11px;color:#6b7094;margin-bottom:4px;">Publisher ${i + 1}</div>` +
+      bmiField('Name', p.name) +
+      (showIpi ? bmiField('IPI', p.ipi) : '') +
+      (showSplit ? bmiField('Split', p.split) : '') +
+      `</div>`
+    ).join('');
+  };
+
+  switch (platform) {
+    case 'pro':
+      return bmiSection('Step 1 — Work Info', [
+        bmiField('Work Title', s.songTitle),
+        bmiField('Duration', s.duration),
+        bmiField('Work Content', s.workContent),
+        bmiField('Language', s.language),
+        bmiField('Genre', s.genre),
+        bmiField('ISWC', s.iswc),
+      ]) +
+      `<div style="margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #2d325a;">Step 3 — Publishers & Writers</div>
+        <div style="margin-bottom:8px;font-size:12px;color:#bbb;">PRO Affiliation: <span style="color:#fff;font-weight:600;">${s.proAffiliation || '—'}</span></div>
+        ${bmiField('Has Publisher?', s.hasPublisher ? 'Yes' : 'No')}
+        ${s.hasPublisher ? bmiField('Publisher Entity', s.publisherEntity) : ''}
+        <div style="margin-top:8px;"><div style="font-size:12px;color:#6b7094;margin-bottom:6px;">Songwriters:</div>${writersBlock(true, true, true, true)}</div>
+        <div style="margin-top:8px;"><div style="font-size:12px;color:#6b7094;margin-bottom:6px;">Publishers:</div>${pubsBlock(true, true)}</div>
+      </div>` +
+      bmiSection('Step 4 — Artists & Recordings', [
+        bmiField('Performing Artist', s.primaryArtist),
+        bmiField('Featured Artist', s.featArtist),
+        bmiField('ISRC', s.isrc),
+        bmiField('UPC', s.upc),
+        bmiField('Film/TV/Theater', s.filmTvTheater),
+      ]);
+
+    case 'distribution':
+      return bmiSection('Release Info', [
+        bmiField('Song Title', s.songTitle),
+        bmiField('Artist Name', s.primaryArtist),
+        bmiField('Featured Artist', s.featArtist),
+        bmiField('Album / Single', s.albumName),
+        bmiField('Release Date', s.releaseDate),
+        bmiField('Label', s.label),
+      ]) +
+      bmiSection('Metadata', [
+        bmiField('Genre', s.genre),
+        bmiField('Secondary Genre', s.genreSecondary),
+        bmiField('Language', s.language),
+        bmiField('Explicit', s.explicit),
+      ]) +
+      bmiSection('Codes', [
+        bmiField('ISRC', s.isrc),
+        bmiField('UPC', s.upc),
+      ]) +
+      `<div style="margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #2d325a;">Songwriters</div>
+        ${writersBlock(false, false, false, false)}
+      </div>`;
+
+    case 'musixmatch':
+      return bmiSection('Track Info', [
+        bmiField('Song Title', s.songTitle),
+        bmiField('Primary Artist', s.primaryArtist),
+        bmiField('Featured Artist', s.featArtist),
+        bmiField('ISRC', s.isrc),
+      ]) +
+      `<div style="margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #2d325a;">Lyrics</div>
+        <div style="position:relative;">
+          <pre id="musixmatchLyrics" style="background:#0e1129;padding:14px;border-radius:8px;color:#fff;font-size:12px;white-space:pre-wrap;max-height:400px;overflow-y:auto;font-family:inherit;margin:0;">${s.lyricsRaw ? s.lyricsRaw.replace(/</g, '&lt;') : '<span style="color:#ff6b6b;">(missing — lyrics required for Musixmatch)</span>'}</pre>
+          ${s.lyricsRaw ? `<button onclick="navigator.clipboard.writeText(document.getElementById('musixmatchLyrics').textContent).then(()=>showToast('Lyrics copied'))" style="position:absolute;top:8px;right:8px;background:#1a1e3a;border:1px solid #2d325a;color:#7b2ff7;font-size:10px;padding:4px 10px;border-radius:4px;cursor:pointer;">Copy Lyrics</button>` : ''}
+        </div>
+      </div>`;
+
+    case 'soundexchange':
+      return bmiSection('Recording Info', [
+        bmiField('Track Title', s.songTitle),
+        bmiField('Artist Name', s.primaryArtist),
+        bmiField('Featured Artist', s.featArtist),
+        bmiField('ISRC', s.isrc),
+      ]) +
+      bmiSection('Release Details', [
+        bmiField('Album Title', s.albumName),
+        bmiField('Release Date', s.releaseDate),
+        bmiField('Label', s.label),
+      ]);
+
+    case 'mlc':
+      return bmiSection('Musical Work', [
+        bmiField('Song Title', s.songTitle),
+        bmiField('ISWC', s.iswc),
+        bmiField('ISRC (post-release)', s.isrc),
+      ]) +
+      `<div style="margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #2d325a;">Writers & Publishers</div>
+        ${bmiField('Publisher Entity', s.publisherEntity)}
+        <div style="margin-top:8px;"><div style="font-size:12px;color:#6b7094;margin-bottom:6px;">Writers:</div>${writersBlock(false, true, false, false)}</div>
+        <div style="margin-top:8px;"><div style="font-size:12px;color:#6b7094;margin-bottom:6px;">Publishers:</div>${pubsBlock(true, false)}</div>
+      </div>`;
+
+    case 'songtrust':
+      return bmiSection('Song Info', [
+        bmiField('Song Title', s.songTitle),
+        bmiField('ISRC', s.isrc),
+        bmiField('Release Date', s.releaseDate),
+      ]) +
+      `<div style="margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #2d325a;">Writers & Publishers</div>
+        ${bmiField('Publisher', s.publisherEntity)}
+        <div style="margin-top:8px;"><div style="font-size:12px;color:#6b7094;margin-bottom:6px;">Writers:</div>${writersBlock(false, true, true, false)}</div>
+        <div style="margin-top:8px;"><div style="font-size:12px;color:#6b7094;margin-bottom:6px;">Publishers:</div>${pubsBlock(true, false)}</div>
+      </div>`;
+
+    default:
+      return '<div style="color:#ff6b6b;">Unknown platform: ' + platform + '</div>';
+  }
+}
+
+function bmiSection(title, fields) {
+  return `<div style="margin-bottom:20px;">
+    <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #2d325a;">${title}</div>
+    ${fields.join('')}
+  </div>`;
+}
+
+function bmiField(label, value) {
+  const v = value || '';
+  const isEmpty = !v.trim();
+  return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(45,50,90,0.3);">
+    <span style="font-size:12px;color:#6b7094;min-width:140px;">${label}</span>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:13px;color:${isEmpty ? '#ff6b6b' : '#fff'};font-weight:${isEmpty ? '400' : '500'};" class="bmi-val">${isEmpty ? '(missing)' : v}</span>
+      ${!isEmpty ? `<button onclick="copyBmiVal(this)" style="background:none;border:1px solid #2d325a;color:#7b2ff7;font-size:10px;padding:2px 8px;border-radius:4px;cursor:pointer;" title="Copy">Copy</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function copyBmiVal(btn) {
+  const val = btn.previousElementSibling.textContent;
+  navigator.clipboard.writeText(val).then(() => {
+    btn.textContent = 'Copied!';
+    btn.style.color = '#4ade80';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = '#7b2ff7'; }, 1500);
+  });
+}
+
+function copyAllBmiFields() {
+  const vals = document.querySelectorAll('#bmiSheetContent .bmi-val');
+  const lines = [];
+  vals.forEach(el => {
+    const label = el.closest('div[style]')?.querySelector('span:first-child')?.textContent || '';
+    const parent = el.closest('div[style*="border-bottom"]');
+    const lbl = parent ? parent.querySelector('span:first-child')?.textContent : '';
+    if (el.textContent !== '(missing)') lines.push(lbl + ': ' + el.textContent);
+  });
+  navigator.clipboard.writeText(lines.join('\n')).then(() => showToast('All fields copied to clipboard'));
+}
+
+function openBmiLogin() {
+  const url = document.getElementById('bmiSheetOverlay').dataset.platformUrl || 'https://www.bmi.com/login';
+  window.open(url, '_blank');
+}
+
+function closeBmiSheet() {
+  document.getElementById('bmiSheetOverlay').style.display = 'none';
+  _currentBmiSheet = null;
+  document.getElementById('bmiConfirmInput').value = '';
+  document.getElementById('bmiAdminNotes').value = '';
+}
+
+async function saveBmiConfirmation() {
+  if (!_currentBmiSheet) return;
+  const confirmNum = document.getElementById('bmiConfirmInput').value.trim();
+  const notes = document.getElementById('bmiAdminNotes').value.trim();
+  if (!confirmNum) { showToast('Enter a confirmation number'); return; }
+
+  // Ensure queue entry exists first
+  if (!_currentBmiSheet.queueId) {
+    const qResp = await fetch('/api/admin/registration/queue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: _currentBmiSheet.userId, releaseTitle: _currentBmiSheet.releaseTitle, platform: _currentBmiSheet.platform || 'pro' })
+    });
+    if (qResp.ok) {
+      // Reload to get the queue ID
+      await adminLoadRegistrations();
+      const match = _regCache.find(r => r.userId === _currentBmiSheet.userId && r.releaseTitle === _currentBmiSheet.releaseTitle);
+      if (match) _currentBmiSheet.queueId = match.queueId;
+    }
+  }
+
+  if (!_currentBmiSheet.queueId) { showToast('Could not find queue entry'); return; }
+
+  try {
+    const resp = await fetch('/api/admin/registration/' + _currentBmiSheet.queueId + '/update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'confirmed', confirmationNumber: confirmNum, adminNotes: notes || undefined })
+    });
+    if (!resp.ok) { const j = await resp.json(); showToast(j.error || 'Save failed'); return; }
+    showToast('BMI registration confirmed!');
+    closeBmiSheet();
+    adminLoadRegistrations();
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+async function adminSkipReg(queueId) {
+  if (!queueId) return;
+  try {
+    const resp = await fetch('/api/admin/registration/' + queueId + '/update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'skipped' })
+    });
+    if (resp.ok) { showToast('Registration skipped'); adminLoadRegistrations(); }
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+async function adminAskSlack(userId, releaseTitle) {
+  try {
+    const resp = await fetch('/api/admin/registration/ask-slack', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, releaseTitle })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast(data.message || 'Slack DM sent!');
+      adminLoadRegistrations();
+    } else {
+      showToast(data.error || 'Failed to send Slack DM');
+    }
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+// ─── End Registration Prep ──────────────────────────────────────────
 
 let _adminRedemptionsCache = [];
 async function adminLoadRedemptions(filter) {

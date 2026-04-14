@@ -722,6 +722,7 @@ function initDb() {
 
   // Add referred_by column to users (stores referral code used at signup)
   try { db.run("ALTER TABLE users ADD COLUMN referred_by TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE users ADD COLUMN slack_user_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
 
   // Stripe Connect columns (added after CREATE TABLEs above)
   try { db.run("ALTER TABLE referral_codes ADD COLUMN stripe_connect_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
@@ -761,6 +762,33 @@ function initDb() {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // --- Registration Queue ---
+  // Tracks which releases need PRO/BMI registration prep and their status.
+  // Admin reviews pre-filled data, manually submits on BMI, then logs
+  // the confirmation number back here. Slack notification fires on new entries.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS registration_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      release_title TEXT NOT NULL,
+      platform TEXT NOT NULL DEFAULT 'bmi',
+      status TEXT NOT NULL DEFAULT 'pending',
+      field_completeness TEXT,
+      missing_fields TEXT,
+      confirmation_number TEXT,
+      admin_notes TEXT,
+      slack_notified INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      reviewed_at TEXT,
+      submitted_at TEXT,
+      confirmed_at TEXT,
+      UNIQUE(user_id, release_title, platform),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_regqueue_status ON registration_queue(status)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_regqueue_user ON registration_queue(user_id)');
 
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
@@ -981,6 +1009,8 @@ app.use((req, res, next) => {
   // Audio transcription needs a bigger cap (base64 MP3s inflate ~33%);
   // it gets its own route-level parser at the endpoint.
   if (req.path === '/api/intake/transcribe-lyrics') return next();
+  // Slack interactions come as x-www-form-urlencoded; need raw body for signature
+  if (req.path === '/api/slack/interactions') return next();
   express.json({ limit: '10mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true }));
@@ -1490,6 +1520,72 @@ const USER_DATA_MAX_BATCH_BYTES = 2 * 1024 * 1024; // total serialized batch pay
 function _serializeValue(value) {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
+// Detect new releases in release_data_all and auto-queue for registration + Slack notify
+function detectNewReleases(userId, serializedValue) {
+  try {
+    let releases;
+    try { releases = JSON.parse(serializedValue); } catch (e) { return; }
+    if (!releases || typeof releases !== 'object') return;
+
+    const user = dbHelpers.prepare('SELECT email, subscription_tier FROM users WHERE id = ?').get(userId);
+    const email = user ? user.email : 'unknown';
+    const isElite = user && ['elite', 'elite_plus'].includes(user.subscription_tier);
+
+    for (const [title, release] of Object.entries(releases)) {
+      if (!title || !release) continue;
+
+      // Queue for ALL platforms, not just BMI
+      let isNewRelease = false;
+      const allMissing = {}; // platform → missing fields
+      for (const platform of ALL_PLATFORMS) {
+        const existing = dbHelpers.prepare(
+          'SELECT id, slack_notified FROM registration_queue WHERE user_id = ? AND release_title = ? AND platform = ?'
+        ).get(userId, title, platform);
+        const completeness = checkPlatformCompleteness(release, platform);
+
+        if (existing) {
+          // Update completeness on re-save
+          dbHelpers.prepare('UPDATE registration_queue SET field_completeness = ?, missing_fields = ? WHERE id = ?')
+            .run(String(completeness.pct), JSON.stringify(completeness.missing), existing.id);
+          if (completeness.missing.length === 0 && existing.slack_notified) {
+            notifySlack(`:white_check_mark: *${title}* — ${PLATFORM_DEFS[platform].shortName} fields complete!`);
+          }
+        } else {
+          isNewRelease = true;
+          dbHelpers.prepare(`
+            INSERT OR IGNORE INTO registration_queue (user_id, release_title, platform, status, field_completeness, missing_fields)
+            VALUES (?, ?, ?, 'pending', ?, ?)
+          `).run(userId, title, platform, String(completeness.pct), JSON.stringify(completeness.missing));
+        }
+        if (completeness.missing.length > 0) allMissing[platform] = completeness.missing;
+      }
+
+      if (isNewRelease) {
+        // Summary Slack notification
+        const platformSummary = ALL_PLATFORMS.map(p => {
+          const c = checkPlatformCompleteness(release, p);
+          return `${PLATFORM_DEFS[p].shortName}: ${c.complete ? ':white_check_mark:' : c.pct + '%'}`;
+        }).join('  |  ');
+        notifySlack(`:musical_note: New release: *${title}* by ${release.primaryArtist || 'Unknown'}\nUser: ${email}\n${platformSummary}`);
+      }
+
+      // Auto-DM Elite users if fields are missing and they haven't been notified yet.
+      // Triggers on first save AND on re-saves (e.g., after generating a campaign with gaps).
+      if (isElite && Object.keys(allMissing).length > 0 && SLACK_BOT_TOKEN) {
+        const anyUnnotified = ALL_PLATFORMS.some(p => {
+          const row = dbHelpers.prepare('SELECT slack_notified FROM registration_queue WHERE user_id = ? AND release_title = ? AND platform = ?').get(userId, title, p);
+          return row && !row.slack_notified && allMissing[p];
+        });
+        if (anyUnnotified) {
+          askEliteUserForMissingFields(userId, title, release, allMissing);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[REG-DETECT] Error detecting new releases:', e.message);
+  }
+}
+
 app.post('/api/data/save', requireAuth, (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'Key required' });
@@ -1502,6 +1598,7 @@ app.post('/api/data/save', requireAuth, (req, res) => {
     ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now'), version = COALESCE(version, 0) + 1
   `).run(req.user.id, key, serialized);
   flushDbNow(); // durable user work — C2
+  if (key === 'release_data_all') detectNewReleases(req.user.id, serialized);
   res.json({ success: true });
 });
 
@@ -1538,6 +1635,9 @@ app.post('/api/data/save-batch', requireAuth, (req, res) => {
   });
   saveBatch();
   flushDbNow(); // durable user work — C2
+  // Detect new releases if release_data_all was in the batch
+  const relItem = preparedItems.find(i => i.key === 'release_data_all');
+  if (relItem) detectNewReleases(req.user.id, relItem.serialized);
   res.json({ success: true });
 });
 
@@ -4377,6 +4477,32 @@ app.get('/playlist-submission', (req, res) => {
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
+// --- Release Image Upload ---
+// Upload cover art or artist photo as base64, returns a permanent URL.
+// Stored in public/uploads/release/ so they're served as static files.
+const RELEASE_IMG_DIR = path.join(UPLOADS_DIR, 'release');
+if (!fs.existsSync(RELEASE_IMG_DIR)) fs.mkdirSync(RELEASE_IMG_DIR, { recursive: true });
+
+app.post('/api/release-image', requireAuth, (req, res) => {
+  const { imageData, type } = req.body; // type: 'cover' or 'artist'
+  if (!imageData || !type) return res.status(400).json({ error: 'imageData and type required' });
+  if (!['cover', 'artist'].includes(type)) return res.status(400).json({ error: 'type must be cover or artist' });
+
+  // imageData is a data:image/... base64 string
+  const match = imageData.match(/^data:image\/(png|jpe?g|webp|gif);base64,(.+)$/i);
+  if (!match) return res.status(400).json({ error: 'Invalid image data — must be base64 data URI' });
+
+  const ext = match[1].replace('jpeg', 'jpg');
+  const buf = Buffer.from(match[2], 'base64');
+  if (buf.length > 10 * 1024 * 1024) return res.status(413).json({ error: 'Image too large (max 10MB)' });
+
+  const fname = `${type}_${req.user.id}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${ext}`;
+  fs.writeFileSync(path.join(RELEASE_IMG_DIR, fname), buf);
+
+  const url = `/uploads/release/${fname}`;
+  res.json({ ok: true, url });
+});
+
 app.post('/api/music-submission', rlSubmission, (req, res) => {
   const b = req.body || {};
   const artistName = (b.artist_name || '').trim().slice(0, 200);
@@ -4458,6 +4584,913 @@ app.get('/api/admin/music-submissions', requireAdmin, (req, res) => {
 app.get('/api/admin/playlist-submissions', requireAdmin, (req, res) => {
   const rows = dbHelpers.prepare('SELECT * FROM playlist_submissions ORDER BY created_at DESC').all();
   res.json(rows);
+});
+
+// --- Registration Prep System ---
+// Slack incoming webhook — admin notifications. Set SLACK_WEBHOOK_URL in env.
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || '';
+// Slack Bot — DMs to Elite users. Set SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET in env.
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || '';
+const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
+
+async function notifySlack(text, blocks) {
+  if (!SLACK_WEBHOOK_URL) return;
+  try {
+    const payload = blocks ? { text, blocks } : { text };
+    await fetch(SLACK_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.error('[SLACK] notification failed:', e.message);
+  }
+}
+
+// Slack Bot API helper
+async function slackApi(method, body) {
+  if (!SLACK_BOT_TOKEN) return null;
+  try {
+    const resp = await fetch('https://slack.com/api/' + method, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SLACK_BOT_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!data.ok) console.error('[SLACK-BOT] ' + method + ' error:', data.error);
+    return data;
+  } catch (e) {
+    console.error('[SLACK-BOT] ' + method + ' failed:', e.message);
+    return null;
+  }
+}
+
+// Look up Slack user ID by email — caches to users.slack_user_id
+async function resolveSlackUserId(userId, email) {
+  const user = dbHelpers.prepare('SELECT slack_user_id FROM users WHERE id = ?').get(userId);
+  if (user && user.slack_user_id) return user.slack_user_id;
+  const result = await slackApi('users.lookupByEmail', { email });
+  if (result && result.ok && result.user) {
+    dbHelpers.prepare('UPDATE users SET slack_user_id = ? WHERE id = ?').run(result.user.id, userId);
+    return result.user.id;
+  }
+  return null;
+}
+
+// Send a DM to a Slack user
+async function sendSlackDM(slackUserId, text, blocks) {
+  // Open a DM channel
+  const conv = await slackApi('conversations.open', { users: slackUserId });
+  if (!conv || !conv.ok) return null;
+  const channelId = conv.channel.id;
+  const payload = { channel: channelId, text };
+  if (blocks) payload.blocks = blocks;
+  return slackApi('chat.postMessage', payload);
+}
+
+// Verify Slack request signature (for interactive endpoints)
+function verifySlackSignature(req) {
+  if (!SLACK_SIGNING_SECRET) return false;
+  const crypto = require('crypto');
+  const timestamp = req.headers['x-slack-request-timestamp'];
+  const sig = req.headers['x-slack-signature'];
+  if (!timestamp || !sig) return false;
+  // Reject requests older than 5 minutes
+  if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 300) return false;
+  const sigBaseString = 'v0:' + timestamp + ':' + req.rawBody;
+  const mySignature = 'v0=' + crypto.createHmac('sha256', SLACK_SIGNING_SECRET).update(sigBaseString).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(mySignature), Buffer.from(sig));
+}
+
+// Build Block Kit form for missing BMI fields
+// Build one consolidated Slack DM with deduped fields across all platforms.
+// allMissing = { pro: ['Work Title', 'ISRC'], musixmatch: ['ISRC', 'Lyrics'], ... }
+function buildConsolidatedMissingBlocks(releaseTitle, artistName, allMissing, userId) {
+  // Dedupe: map field key → { label, key, isArray, platforms[] }
+  const fieldMap = new Map();
+  const platformNames = [];
+
+  for (const [platform, missingLabels] of Object.entries(allMissing)) {
+    const def = PLATFORM_DEFS[platform];
+    if (!def) continue;
+    platformNames.push(def.shortName);
+    const allFields = [...def.required, ...(def.optional || [])];
+    for (const label of missingLabels) {
+      const fieldDef = allFields.find(f => f.label === label);
+      if (!fieldDef) continue;
+      const existing = fieldMap.get(fieldDef.key);
+      if (existing) {
+        if (!existing.platforms.includes(def.shortName)) existing.platforms.push(def.shortName);
+      } else {
+        fieldMap.set(fieldDef.key, { key: fieldDef.key, label, isArray: fieldDef.isArray, platforms: [def.shortName] });
+      }
+    }
+  }
+
+  const platformList = [...new Set(platformNames)].join(', ');
+  const platforms = Object.keys(allMissing);
+
+  const blocks = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: ':musical_note: Missing info for registration' }
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*${releaseTitle}*${artistName ? ' by ' + artistName : ''}\n\nWe need a few more details to register this across *${platformList}*. Each field shows which platforms need it — fill in what you can:` }
+    },
+    { type: 'divider' },
+  ];
+
+  const placeholders = {
+    songTitle: 'Enter the song title',
+    primaryArtist: 'Artist name as it appears on streaming',
+    isrc: 'e.g., USXX12345678',
+    upc: 'e.g., 012345678901',
+    iswc: 'e.g., T-012.345.678-1',
+    releaseDate: 'e.g., 2026-05-01',
+    genrePrimary: 'e.g., Hip-Hop, R&B, Pop',
+    genreSecondary: 'e.g., Soul, Trap, Lo-fi',
+    lyrics: 'Paste full lyrics here',
+    albumName: 'Album or single name',
+    label: 'Label name (or Independent)',
+    language: 'e.g., English, Spanish',
+    featArtist: 'Featured artist name',
+    publisherEntity: 'Your publishing company name',
+    explicit: 'Yes or No',
+    durationMin: 'Minutes (e.g., 3)',
+    durationSec: 'Seconds (e.g., 42)',
+    workContent: 'e.g., Lyrics, Instrumental',
+    proAffiliation: 'e.g., BMI, ASCAP',
+  };
+
+  // Determine songwriter detail level — use the most detailed version needed
+  const needsSongwriter = fieldMap.has('songwriters');
+  const needsIpi = needsSongwriter && platforms.some(p => ['pro', 'mlc', 'songtrust'].includes(p));
+  const needsPro = needsSongwriter && platforms.some(p => ['pro', 'songtrust'].includes(p));
+
+  const inputBlocks = [];
+  const added = new Set();
+
+  for (const [key, field] of fieldMap) {
+    if (added.has(key)) continue;
+    added.add(key);
+
+    const hint = field.platforms.length < platformNames.length ? ' (for ' + field.platforms.join(', ') + ')' : '';
+
+    // Songwriter/writer array — consolidated with max detail
+    if (field.isArray && key === 'songwriters') {
+      inputBlocks.push({
+        type: 'input',
+        block_id: 'field_songwriter_name',
+        element: {
+          type: 'plain_text_input',
+          action_id: 'songwriter_name',
+          placeholder: { type: 'plain_text', text: 'Legal name of songwriter' },
+        },
+        label: { type: 'plain_text', text: 'Songwriter Legal Name' + hint },
+        optional: true,
+      });
+      if (needsIpi) {
+        inputBlocks.push({
+          type: 'input',
+          block_id: 'field_songwriter_ipi',
+          element: {
+            type: 'plain_text_input',
+            action_id: 'songwriter_ipi',
+            placeholder: { type: 'plain_text', text: 'e.g., 00123456789' },
+          },
+          label: { type: 'plain_text', text: 'Songwriter IPI Number' },
+          optional: true,
+        });
+      }
+      if (needsPro) {
+        inputBlocks.push({
+          type: 'input',
+          block_id: 'field_songwriter_pro',
+          element: {
+            type: 'static_select',
+            action_id: 'songwriter_pro',
+            placeholder: { type: 'plain_text', text: 'Select PRO' },
+            options: ['BMI', 'ASCAP', 'SESAC', 'GMR', 'SOCAN', 'PRS', 'Other'].map(p => ({
+              text: { type: 'plain_text', text: p }, value: p
+            })),
+          },
+          label: { type: 'plain_text', text: 'Songwriter PRO Affiliation' },
+          optional: true,
+        });
+      }
+      continue;
+    }
+
+    // Publisher array
+    if (field.isArray && key === 'publishers') {
+      inputBlocks.push({
+        type: 'input',
+        block_id: 'field_publisher_name',
+        element: {
+          type: 'plain_text_input',
+          action_id: 'publisher_name',
+          placeholder: { type: 'plain_text', text: 'Publishing company name' },
+        },
+        label: { type: 'plain_text', text: 'Publisher Name' + hint },
+        optional: true,
+      });
+      inputBlocks.push({
+        type: 'input',
+        block_id: 'field_publisher_ipi',
+        element: {
+          type: 'plain_text_input',
+          action_id: 'publisher_ipi',
+          placeholder: { type: 'plain_text', text: 'Publisher IPI number' },
+        },
+        label: { type: 'plain_text', text: 'Publisher IPI Number' },
+        optional: true,
+      });
+      continue;
+    }
+
+    // Lyrics — multiline
+    if (key === 'lyrics') {
+      inputBlocks.push({
+        type: 'input',
+        block_id: 'field_lyrics',
+        element: {
+          type: 'plain_text_input',
+          action_id: 'lyrics',
+          multiline: true,
+          placeholder: { type: 'plain_text', text: 'Paste full lyrics here' },
+        },
+        label: { type: 'plain_text', text: 'Lyrics' + hint },
+        optional: true,
+      });
+      continue;
+    }
+
+    // Explicit — select
+    if (key === 'explicit') {
+      inputBlocks.push({
+        type: 'input',
+        block_id: 'field_explicit',
+        element: {
+          type: 'static_select',
+          action_id: 'explicit',
+          placeholder: { type: 'plain_text', text: 'Select' },
+          options: ['Yes', 'No'].map(v => ({ text: { type: 'plain_text', text: v }, value: v })),
+        },
+        label: { type: 'plain_text', text: 'Explicit Content' + hint },
+        optional: true,
+      });
+      continue;
+    }
+
+    // Standard text input
+    inputBlocks.push({
+      type: 'input',
+      block_id: 'field_' + key,
+      element: {
+        type: 'plain_text_input',
+        action_id: key,
+        placeholder: { type: 'plain_text', text: placeholders[key] || 'Enter ' + field.label.toLowerCase() },
+      },
+      label: { type: 'plain_text', text: field.label + hint },
+      optional: true,
+    });
+  }
+
+  blocks.push(...inputBlocks);
+
+  // Submit button — encode all platforms in the value
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'actions',
+    block_id: 'submit_missing_fields',
+    elements: [{
+      type: 'button',
+      text: { type: 'plain_text', text: ':white_check_mark: Submit Info' },
+      style: 'primary',
+      action_id: 'submit_registration_fields',
+      value: JSON.stringify({ userId, releaseTitle, platforms }),
+    }]
+  });
+
+  return blocks;
+}
+
+// Send one consolidated Slack DM to Elite user for all platforms with missing fields.
+// allMissing = { pro: ['Work Title', 'ISRC'], musixmatch: ['Lyrics', 'ISRC'], ... }
+async function askEliteUserForMissingFields(userId, releaseTitle, release, allMissing) {
+  if (!SLACK_BOT_TOKEN) return false;
+  if (!allMissing || Object.keys(allMissing).length === 0) return false;
+  const user = dbHelpers.prepare('SELECT email, subscription_tier FROM users WHERE id = ? AND deleted_at IS NULL').get(userId);
+  if (!user) return false;
+  if (!['elite', 'elite_plus'].includes(user.subscription_tier)) return false;
+
+  const slackUserId = await resolveSlackUserId(userId, user.email);
+  if (!slackUserId) {
+    console.log('[SLACK-BOT] Could not find Slack user for ' + user.email);
+    return false;
+  }
+
+  const platformNames = Object.keys(allMissing).map(p => PLATFORM_DEFS[p]?.shortName || p).join(', ');
+  const blocks = buildConsolidatedMissingBlocks(releaseTitle, release.primaryArtist, allMissing, userId);
+  const result = await sendSlackDM(slackUserId, 'Missing info for registration (' + platformNames + '): ' + releaseTitle, blocks);
+
+  if (result && result.ok) {
+    // Mark all platforms as notified
+    for (const platform of Object.keys(allMissing)) {
+      dbHelpers.prepare(`
+        UPDATE registration_queue SET slack_notified = 1 WHERE user_id = ? AND release_title = ? AND platform = ?
+      `).run(userId, releaseTitle, platform);
+    }
+    logOperation(null, 'slack.missing_fields_asked', 'user', userId, { release: releaseTitle, platforms: Object.keys(allMissing), allMissing });
+    return true;
+  }
+  return false;
+}
+
+// BMI field mapping — which intake fields map to which BMI registration fields
+// --- Platform Registration Definitions ---
+// Each platform defines required + optional fields, steps, and URLs.
+// The same field keys match the intake form (release_data_all values).
+const PLATFORM_DEFS = {
+  pro: {
+    name: 'PRO (BMI or ASCAP)',
+    shortName: 'PRO',
+    cost: 'Free',
+    url: 'https://www.bmi.com/login',
+    required: [
+      { key: 'songTitle', label: 'Work Title' },
+      { key: 'primaryArtist', label: 'Performing Artist' },
+      { key: 'songwriters', label: 'Songwriters + IPI + PRO', isArray: true },
+      { key: 'isrc', label: 'ISRC' },
+    ],
+    optional: [
+      { key: 'featArtist', label: 'Featured Artist' },
+      { key: 'durationMin', label: 'Duration (min)' },
+      { key: 'durationSec', label: 'Duration (sec)' },
+      { key: 'language', label: 'Language' },
+      { key: 'workContent', label: 'Work Content Type' },
+      { key: 'genrePrimary', label: 'Genre' },
+      { key: 'publisherEntity', label: 'Publisher Entity' },
+      { key: 'publishers', label: 'Publishers + IPI', isArray: true },
+      { key: 'proAffiliation', label: 'PRO Affiliation' },
+      { key: 'upc', label: 'UPC' },
+      { key: 'iswc', label: 'ISWC' },
+    ],
+  },
+  distribution: {
+    name: 'Distribution',
+    shortName: 'Distro',
+    cost: 'Varies',
+    url: 'https://distrokid.com/dashboard',
+    required: [
+      { key: 'songTitle', label: 'Song Title' },
+      { key: 'primaryArtist', label: 'Artist Name' },
+      { key: 'genrePrimary', label: 'Genre' },
+      { key: 'releaseDate', label: 'Release Date' },
+    ],
+    optional: [
+      { key: 'featArtist', label: 'Featured Artist' },
+      { key: 'albumName', label: 'Album / Single Name' },
+      { key: 'label', label: 'Label' },
+      { key: 'songwriters', label: 'Songwriters', isArray: true },
+      { key: 'isrc', label: 'ISRC' },
+      { key: 'upc', label: 'UPC' },
+      { key: 'language', label: 'Language' },
+      { key: 'genreSecondary', label: 'Secondary Genre' },
+      { key: 'explicit', label: 'Explicit' },
+    ],
+  },
+  musixmatch: {
+    name: 'Musixmatch (Timed Lyrics)',
+    shortName: 'Musixmatch',
+    cost: 'Free',
+    url: 'https://artists.musixmatch.com',
+    required: [
+      { key: 'songTitle', label: 'Song Title' },
+      { key: 'primaryArtist', label: 'Primary Artist' },
+      { key: 'isrc', label: 'ISRC' },
+      { key: 'lyrics', label: 'Lyrics' },
+    ],
+    optional: [
+      { key: 'featArtist', label: 'Featured Artist' },
+    ],
+  },
+  soundexchange: {
+    name: 'SoundExchange',
+    shortName: 'SoundEx',
+    cost: 'Free',
+    url: 'https://www.soundexchange.com/',
+    required: [
+      { key: 'songTitle', label: 'Track Title' },
+      { key: 'primaryArtist', label: 'Artist Name' },
+      { key: 'isrc', label: 'ISRC' },
+    ],
+    optional: [
+      { key: 'albumName', label: 'Album Title' },
+      { key: 'releaseDate', label: 'Release Date' },
+      { key: 'label', label: 'Label' },
+      { key: 'featArtist', label: 'Featured Artist' },
+    ],
+  },
+  mlc: {
+    name: 'The MLC',
+    shortName: 'MLC',
+    cost: 'Free',
+    phases: ['pre-release', 'post-release'], // MLC has two phases
+    url: 'https://portal.themlc.com',
+    required: [
+      { key: 'songTitle', label: 'Song Title' },
+      { key: 'songwriters', label: 'Writers + IPI', isArray: true },
+    ],
+    optional: [
+      { key: 'publisherEntity', label: 'Publisher Entity' },
+      { key: 'publishers', label: 'Publishers + IPI', isArray: true },
+      { key: 'iswc', label: 'ISWC' },
+      { key: 'isrc', label: 'ISRC (post-release)' },
+    ],
+  },
+  songtrust: {
+    name: 'Songtrust',
+    shortName: 'Songtrust',
+    cost: '$100 + 15%',
+    url: 'https://www.songtrust.com',
+    required: [
+      { key: 'songTitle', label: 'Song Title' },
+      { key: 'songwriters', label: 'Writers + IPI + PRO', isArray: true },
+      { key: 'isrc', label: 'ISRC' },
+    ],
+    optional: [
+      { key: 'publisherEntity', label: 'Publisher' },
+      { key: 'publishers', label: 'Publishers + IPI', isArray: true },
+      { key: 'releaseDate', label: 'Release Date' },
+    ],
+  },
+};
+const ALL_PLATFORMS = Object.keys(PLATFORM_DEFS);
+
+// Universal completeness check — works for any platform
+function checkPlatformCompleteness(release, platform) {
+  const def = PLATFORM_DEFS[platform];
+  if (!def || !release) return { complete: false, pct: 0, missing: (def ? def.required.map(f => f.label) : []), present: [] };
+  const missing = [];
+  const present = [];
+  for (const f of def.required) {
+    const val = release[f.key];
+    if (f.isArray) {
+      if (Array.isArray(val) && val.length > 0 && val.some(v => v.name || (typeof v === 'string' && v.trim()))) present.push(f.label);
+      else missing.push(f.label);
+    } else {
+      if (val && String(val).trim()) present.push(f.label);
+      else missing.push(f.label);
+    }
+  }
+  let optPresent = 0;
+  for (const f of (def.optional || [])) {
+    const val = release[f.key];
+    if (f.isArray ? (Array.isArray(val) && val.length > 0) : (val && String(val).trim())) optPresent++;
+  }
+  const total = def.required.length + (def.optional || []).length;
+  const filled = present.length + optPresent;
+  return { complete: missing.length === 0, pct: Math.round((filled / total) * 100), missing, present };
+}
+
+// Backward-compat alias — still used in some places
+function checkBmiCompleteness(release) {
+  return checkPlatformCompleteness(release, 'pro');
+}
+
+// Universal data sheet builder — maps intake fields to platform-specific display
+function buildPlatformSheet(release, user, platform) {
+  if (!release) return null;
+  const sw = (release.songwriters || []).filter(s => s && s.name);
+  const pubs = (release.publishers || []).filter(p => p && p.name);
+  const dur = (release.durationMin || '0') + ':' + String(release.durationSec || '0').padStart(2, '0');
+  const def = PLATFORM_DEFS[platform];
+
+  const sheet = {
+    _platform: platform,
+    _platformName: def ? def.name : platform,
+    _url: def ? def.url : '',
+    songTitle: release.songTitle || '',
+    primaryArtist: release.primaryArtist || '',
+    featArtist: release.featArtist || '',
+    isrc: release.isrc || '',
+    upc: release.upc || '',
+    iswc: release.iswc || '',
+    releaseDate: release.releaseDate || '',
+    genre: release.genrePrimary || '',
+    genreSecondary: release.genreSecondary || '',
+    language: release.language || 'English',
+    duration: dur,
+    workContent: release.workContent || 'Music and Lyrics',
+    albumName: release.albumName || '',
+    label: release.label || '',
+    explicit: release.explicit || '',
+    lyrics: release.lyrics ? '(present — ' + release.lyrics.length + ' chars)' : '',
+    lyricsRaw: release.lyrics || '',
+    proAffiliation: release.proAffiliation || '',
+    publisherEntity: release.publisherEntity || '',
+    hasPublisher: pubs.length > 0 || !!(release.publisherEntity),
+    songwriters: sw.map(s => ({
+      name: s.name, role: s.role || 'Both', ipi: s.ipi || '',
+      pro: s.pro || release.proAffiliation || '', split: s.split || '',
+    })),
+    publishers: pubs.map(p => ({ name: p.name, ipi: p.ipi || '', split: p.split || '' })),
+    filmTvTheater: 'No',
+    userEmail: user ? user.email : '',
+  };
+  return sheet;
+}
+
+// Backward-compat alias
+function buildBmiSheet(release, user) {
+  return buildPlatformSheet(release, user, 'pro');
+}
+
+// List all pending registrations across all users with release data
+app.get('/api/admin/registration/pending', requireAdmin, (req, res) => {
+  // Get all users who have release_data_all saved
+  const rows = dbHelpers.prepare(`
+    SELECT ud.user_id, ud.value, u.email, u.subscription_tier, u.subscription_status
+    FROM user_data ud
+    JOIN users u ON u.id = ud.user_id AND u.deleted_at IS NULL
+    WHERE ud.key = 'release_data_all'
+  `).all();
+
+  // Get existing queue entries
+  const queueRows = dbHelpers.prepare('SELECT * FROM registration_queue ORDER BY created_at DESC').all();
+  const queueMap = {};
+  for (const q of queueRows) {
+    const k = q.user_id + '::' + q.release_title + '::' + q.platform;
+    queueMap[k] = q;
+  }
+
+  const results = [];
+  for (const row of rows) {
+    let releases;
+    try { releases = JSON.parse(row.value); } catch (e) { continue; }
+    if (!releases || typeof releases !== 'object') continue;
+
+    for (const [title, release] of Object.entries(releases)) {
+      // Build per-platform status for this release
+      const platforms = {};
+      for (const platform of ALL_PLATFORMS) {
+        const completeness = checkPlatformCompleteness(release, platform);
+        const queueKey = row.user_id + '::' + title + '::' + platform;
+        const queueEntry = queueMap[queueKey];
+        platforms[platform] = {
+          name: PLATFORM_DEFS[platform].shortName,
+          status: queueEntry ? queueEntry.status : 'new',
+          completeness,
+          confirmationNumber: queueEntry ? queueEntry.confirmation_number : null,
+          queueId: queueEntry ? queueEntry.id : null,
+        };
+      }
+      // Overall completeness = average across platforms
+      const avgPct = Math.round(ALL_PLATFORMS.reduce((sum, p) => sum + platforms[p].completeness.pct, 0) / ALL_PLATFORMS.length);
+      const confirmedCount = ALL_PLATFORMS.filter(p => platforms[p].status === 'confirmed').length;
+
+      results.push({
+        userId: row.user_id,
+        userEmail: row.email,
+        tier: row.subscription_tier,
+        releaseTitle: title,
+        platforms,
+        avgPct,
+        confirmedCount,
+        totalPlatforms: ALL_PLATFORMS.length,
+      });
+    }
+  }
+
+  // Sort: fewest confirmed first, then by avg completeness desc
+  results.sort((a, b) => {
+    if (a.confirmedCount !== b.confirmedCount) return a.confirmedCount - b.confirmedCount;
+    return b.avgPct - a.avgPct;
+  });
+
+  res.json({ registrations: results, total: results.length, platformDefs: PLATFORM_DEFS });
+});
+
+// Get BMI-ready data sheet for a specific user + release
+// Platform param is optional — defaults to 'pro' for backward compat
+app.get('/api/admin/registration/:userId/sheet/:releaseTitle/:platform?', requireAdmin, (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: 'Invalid user id' });
+  const releaseTitle = decodeURIComponent(req.params.releaseTitle);
+  const platform = req.params.platform || 'pro';
+  if (!PLATFORM_DEFS[platform]) return res.status(400).json({ error: 'Unknown platform: ' + platform });
+
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const row = dbHelpers.prepare('SELECT value FROM user_data WHERE user_id = ? AND key = ?').get(userId, 'release_data_all');
+  if (!row) return res.status(404).json({ error: 'No release data' });
+
+  let releases;
+  try { releases = JSON.parse(row.value); } catch (e) { return res.status(500).json({ error: 'Corrupt release data' }); }
+  const release = releases[releaseTitle];
+  if (!release) return res.status(404).json({ error: 'Release not found' });
+
+  const sheet = buildPlatformSheet(release, user, platform);
+  const completeness = checkPlatformCompleteness(release, platform);
+  const def = PLATFORM_DEFS[platform];
+
+  logOperation(req, 'admin.registration_sheet_viewed', 'user', userId, { release: releaseTitle, platform });
+
+  res.json({ sheet, completeness, releaseTitle, userId, userEmail: user.email, platform, platformDef: def });
+});
+// Backward compat alias
+app.get('/api/admin/registration/:userId/bmi-sheet/:releaseTitle', requireAdmin, (req, res) => {
+  req.params.platform = 'pro';
+  res.redirect(307, `/api/admin/registration/${req.params.userId}/sheet/${req.params.releaseTitle}/pro`);
+});
+
+// Mark a release as queued for registration (status: pending → ready → submitted → confirmed)
+app.post('/api/admin/registration/queue', requireAdmin, (req, res) => {
+  const { userId, releaseTitle, platform } = req.body;
+  if (!userId || !releaseTitle) return res.status(400).json({ error: 'userId and releaseTitle required' });
+
+  dbHelpers.prepare(`
+    INSERT INTO registration_queue (user_id, release_title, platform, status)
+    VALUES (?, ?, ?, 'pending')
+    ON CONFLICT(user_id, release_title, platform) DO UPDATE SET status = 'pending', reviewed_at = NULL, submitted_at = NULL, confirmed_at = NULL, confirmation_number = NULL
+  `).run(userId, releaseTitle, platform || 'bmi');
+  flushDbNow();
+
+  logOperation(req, 'admin.registration_queued', 'user', userId, { release: releaseTitle, platform: platform || 'bmi' });
+  res.json({ success: true });
+});
+
+// Update registration status (ready, submitted, confirmed) + confirmation number
+app.post('/api/admin/registration/:id/update', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+
+  const entry = dbHelpers.prepare('SELECT * FROM registration_queue WHERE id = ?').get(id);
+  if (!entry) return res.status(404).json({ error: 'Queue entry not found' });
+
+  const { status, confirmationNumber, adminNotes } = req.body;
+  const validStatuses = ['pending', 'ready', 'submitted', 'confirmed', 'skipped'];
+  if (status && !validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+  const updates = [];
+  const params = [];
+  if (status) {
+    updates.push('status = ?');
+    params.push(status);
+    if (status === 'ready') { updates.push("reviewed_at = datetime('now')"); }
+    if (status === 'submitted') { updates.push("submitted_at = datetime('now')"); }
+    if (status === 'confirmed') { updates.push("confirmed_at = datetime('now')"); }
+  }
+  if (confirmationNumber !== undefined) { updates.push('confirmation_number = ?'); params.push(confirmationNumber); }
+  if (adminNotes !== undefined) { updates.push('admin_notes = ?'); params.push(adminNotes); }
+  if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+  params.push(id);
+  dbHelpers.prepare(`UPDATE registration_queue SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  flushDbNow();
+
+  logOperation(req, 'admin.registration_updated', 'registration_queue', id, {
+    release: entry.release_title, user_id: entry.user_id, status, confirmationNumber
+  });
+  res.json({ success: true });
+});
+
+// Bulk queue multiple releases for registration
+app.post('/api/admin/registration/bulk-queue', requireAdmin, (req, res) => {
+  const { items } = req.body; // [{ userId, releaseTitle, platform }]
+  if (!items || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'Items array required' });
+  if (items.length > 50) return res.status(413).json({ error: 'Max 50 items per bulk queue' });
+
+  const insert = dbHelpers.transaction(() => {
+    for (const item of items) {
+      dbHelpers.prepare(`
+        INSERT INTO registration_queue (user_id, release_title, platform, status)
+        VALUES (?, ?, ?, 'pending')
+        ON CONFLICT(user_id, release_title, platform) DO NOTHING
+      `).run(item.userId, item.releaseTitle, item.platform || 'bmi');
+    }
+  });
+  insert();
+  flushDbNow();
+
+  logOperation(req, 'admin.registration_bulk_queued', 'registration_queue', null, { count: items.length });
+  res.json({ success: true, queued: items.length });
+});
+
+// Admin endpoint to manually trigger "Ask in Slack" for a release
+app.post('/api/admin/registration/ask-slack', requireAdmin, async (req, res) => {
+  const { userId, releaseTitle } = req.body;
+  if (!userId || !releaseTitle) return res.status(400).json({ error: 'userId and releaseTitle required' });
+  if (!SLACK_BOT_TOKEN) return res.status(503).json({ error: 'SLACK_BOT_TOKEN not configured' });
+
+  // Get the release data
+  const row = dbHelpers.prepare('SELECT value FROM user_data WHERE user_id = ? AND key = ?').get(userId, 'release_data_all');
+  if (!row) return res.status(404).json({ error: 'No release data for this user' });
+  let releases;
+  try { releases = JSON.parse(row.value); } catch (e) { return res.status(500).json({ error: 'Corrupt data' }); }
+  const release = releases[releaseTitle];
+  if (!release) return res.status(404).json({ error: 'Release not found' });
+
+  // Gather missing fields across ALL platforms
+  const allMissing = {};
+  for (const platform of ALL_PLATFORMS) {
+    const completeness = checkPlatformCompleteness(release, platform);
+    if (completeness.missing.length > 0) allMissing[platform] = completeness.missing;
+  }
+  if (Object.keys(allMissing).length === 0) return res.status(400).json({ error: 'No missing fields across any platform' });
+
+  const platformNames = Object.keys(allMissing).map(p => PLATFORM_DEFS[p].shortName).join(', ');
+  const sent = await askEliteUserForMissingFields(userId, releaseTitle, release, allMissing);
+  if (sent) {
+    res.json({ success: true, message: 'Slack DM sent covering ' + platformNames });
+  } else {
+    res.status(400).json({ error: 'Could not send Slack DM — user may not be in your workspace or not Elite tier' });
+  }
+});
+
+// --- Slack Interactive Endpoint ---
+// Receives form submissions when Elite users fill in missing registration fields via Slack DM.
+// Slack sends application/x-www-form-urlencoded with a `payload` JSON field.
+app.post('/api/slack/interactions',
+  express.urlencoded({ extended: true, verify: (req, _res, buf) => { req.rawBody = buf.toString(); } }),
+  async (req, res) => {
+  try {
+    // Verify signature
+    if (SLACK_SIGNING_SECRET && !verifySlackSignature(req)) {
+      return res.status(401).send('Invalid signature');
+    }
+
+    const payload = JSON.parse(req.body.payload);
+
+    // Handle block_actions (button clicks)
+    if (payload.type === 'block_actions') {
+      const action = payload.actions && payload.actions[0];
+      // Accept both old and new action IDs for backward compat
+      if (!action || (action.action_id !== 'submit_registration_fields' && action.action_id !== 'submit_bmi_fields')) {
+        return res.json({ text: 'Unknown action' });
+      }
+
+      let meta;
+      try { meta = JSON.parse(action.value); } catch (e) { return res.json({ text: 'Invalid action data' }); }
+      const { userId, releaseTitle, platforms: submittedPlatforms, platform: legacyPlatform } = meta;
+      // Support both new (platforms array) and old (single platform string)
+      const affectedPlatforms = submittedPlatforms || [legacyPlatform || 'pro'];
+
+      // Extract values from the message blocks state
+      const state = payload.state && payload.state.values;
+      if (!state) return res.json({ text: 'No form data received' });
+
+      // Dynamically extract all text input fields from state
+      const updates = {};
+      const simpleTextFields = ['songTitle', 'primaryArtist', 'isrc', 'upc', 'iswc', 'releaseDate',
+        'genrePrimary', 'genreSecondary', 'albumName', 'label', 'language', 'featArtist',
+        'publisherEntity', 'durationMin', 'durationSec', 'workContent', 'proAffiliation'];
+      for (const key of simpleTextFields) {
+        const val = state['field_' + key]?.[key]?.value;
+        if (val && val.trim()) updates[key] = val.trim();
+      }
+      // Lyrics (multiline)
+      if (state.field_lyrics?.lyrics?.value?.trim()) updates.lyrics = state.field_lyrics.lyrics.value.trim();
+      // Explicit (select)
+      if (state.field_explicit?.explicit?.selected_option?.value) updates.explicit = state.field_explicit.explicit.selected_option.value;
+
+      // Songwriter fields
+      const swName = state.field_songwriter_name?.songwriter_name?.value?.trim();
+      const swIpi = state.field_songwriter_ipi?.songwriter_ipi?.value?.trim();
+      const swPro = state.field_songwriter_pro?.songwriter_pro?.selected_option?.value;
+      // Publisher fields
+      const pubName = state.field_publisher_name?.publisher_name?.value?.trim();
+      const pubIpi = state.field_publisher_ipi?.publisher_ipi?.value?.trim();
+
+      // Load existing release data
+      const row = dbHelpers.prepare('SELECT value FROM user_data WHERE user_id = ? AND key = ?').get(userId, 'release_data_all');
+      if (!row) return res.json({ text: 'Could not find your release data. Please update on the website.' });
+
+      let releases;
+      try { releases = JSON.parse(row.value); } catch (e) {
+        return res.json({ text: 'Data error — please update on the website.' });
+      }
+
+      const release = releases[releaseTitle];
+      if (!release) return res.json({ text: 'Release "' + releaseTitle + '" not found.' });
+
+      // Apply updates
+      let changed = false;
+      for (const [k, v] of Object.entries(updates)) {
+        if (v && (!release[k] || !String(release[k]).trim())) {
+          release[k] = v;
+          changed = true;
+        }
+      }
+
+      // Handle songwriter
+      if (swName) {
+        if (!Array.isArray(release.songwriters)) release.songwriters = [];
+        const existingSw = release.songwriters.find(s => s && s.name && s.name.toLowerCase() === swName.toLowerCase());
+        if (existingSw) {
+          if (swIpi && !existingSw.ipi) { existingSw.ipi = swIpi; changed = true; }
+          if (swPro && !existingSw.pro) { existingSw.pro = swPro; changed = true; }
+        } else {
+          release.songwriters.push({ name: swName, role: 'Both', ipi: swIpi || '', pro: swPro || '', split: '100%' });
+          changed = true;
+        }
+      }
+
+      // Handle publisher
+      if (pubName) {
+        if (!Array.isArray(release.publishers)) release.publishers = [];
+        const existingPub = release.publishers.find(p => p && p.name && p.name.toLowerCase() === pubName.toLowerCase());
+        if (existingPub) {
+          if (pubIpi && !existingPub.ipi) { existingPub.ipi = pubIpi; changed = true; }
+        } else {
+          release.publishers.push({ name: pubName, ipi: pubIpi || '' });
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        releases[releaseTitle] = release;
+        const serialized = JSON.stringify(releases);
+        dbHelpers.prepare(`
+          INSERT INTO user_data (user_id, key, value, updated_at, version) VALUES (?, 'release_data_all', ?, datetime('now'), 1)
+          ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now'), version = COALESCE(version, 0) + 1
+        `).run(userId, serialized);
+        flushDbNow();
+
+        // Re-check completeness for ALL affected platforms and update queue
+        const statusLines = [];
+        let allComplete = true;
+        const stillMissing = [];
+        for (const plat of affectedPlatforms) {
+          const comp = checkPlatformCompleteness(release, plat);
+          const platName = (PLATFORM_DEFS[plat] || {}).shortName || plat;
+          dbHelpers.prepare(`
+            UPDATE registration_queue SET field_completeness = ?, missing_fields = ?
+            WHERE user_id = ? AND release_title = ? AND platform = ?
+          `).run(String(comp.pct), JSON.stringify(comp.missing), userId, releaseTitle, plat);
+          if (comp.missing.length === 0) {
+            statusLines.push(':white_check_mark: ' + platName + ' — complete');
+          } else {
+            allComplete = false;
+            statusLines.push(':warning: ' + platName + ' — still needs: ' + comp.missing.join(', '));
+            stillMissing.push(...comp.missing.map(m => platName + ': ' + m));
+          }
+        }
+        flushDbNow();
+
+        logOperation(null, 'slack.missing_fields_received', 'user', userId, {
+          release: releaseTitle, platforms: affectedPlatforms, fields: Object.keys(updates).concat(swName ? ['songwriter'] : []).concat(pubName ? ['publisher'] : [])
+        });
+
+        // Notify admin
+        notifySlack(`:inbox_tray: *${releaseTitle}* — user submitted registration fields via Slack\n${statusLines.join('\n')}`);
+
+        // Respond to the user
+        let thankYou;
+        if (allComplete) {
+          thankYou = ':white_check_mark: Thank you! All info received — we\'ll handle the registrations for you.';
+        } else {
+          const unique = [...new Set(stillMissing)];
+          thankYou = ':+1: Thank you! We still need:\n' + unique.map(m => '• ' + m).join('\n') + '\n\nYou can update these on the website anytime.';
+        }
+
+        // Update the original message to show confirmation
+        await slackApi('chat.update', {
+          channel: payload.channel.id,
+          ts: payload.message.ts,
+          text: thankYou,
+          blocks: [{
+            type: 'section',
+            text: { type: 'mrkdwn', text: thankYou + '\n\n_Submitted info for *' + releaseTitle + '*_' }
+          }],
+        });
+
+        return res.status(200).send('');
+      }
+
+      // Nothing changed
+      await slackApi('chat.update', {
+        channel: payload.channel.id,
+        ts: payload.message.ts,
+        text: 'No new info was provided. You can fill in the fields and click Submit again, or update on the website.',
+        blocks: [{
+          type: 'section',
+          text: { type: 'mrkdwn', text: 'No new info was provided. You can fill in the fields and click Submit again, or update on the website.' }
+        }],
+      });
+      return res.status(200).send('');
+    }
+
+    // Default response for unhandled interaction types
+    res.status(200).send('');
+  } catch (e) {
+    console.error('[SLACK-INTERACT] Error:', e.message);
+    res.status(200).send(''); // Always 200 to Slack so it doesn't retry
+  }
 });
 
 // Static files — only serve safe static assets, NOT the entire project directory
