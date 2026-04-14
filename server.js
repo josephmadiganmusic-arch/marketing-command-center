@@ -1997,12 +1997,7 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
       songtrust_username: cap(body.songtrust_username, 200),
       songtrust_password: cap(body.songtrust_password, 200)
     },
-    social: {
-      instagram_username: cap(body.instagram_username, 200),
-      tiktok_username: cap(body.tiktok_username, 200),
-      youtube_username: cap(body.youtube_username, 200),
-      twitter_username: cap(body.twitter_username, 200)
-    },
+    social: {},
     cadence: {
       release_frequency: cap(body.release_frequency, 200),
       next_release_date: cap(body.next_release_date, 50),
