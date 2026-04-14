@@ -4625,6 +4625,24 @@ async function slackApi(method, body) {
   }
 }
 
+// Slack workspace invite link — set in env or use a default placeholder
+const SLACK_INVITE_URL = process.env.SLACK_INVITE_URL || '';
+
+// Check if current user is in the Slack workspace
+app.get('/api/slack/check', requireAuth, async (req, res) => {
+  const tier = req.user.subscription_tier || '';
+  const isElite = ['elite', 'elite_plus'].includes(tier);
+  if (!isElite) return res.json({ required: false, inSlack: false });
+  if (!SLACK_BOT_TOKEN) return res.json({ required: true, inSlack: false, inviteUrl: SLACK_INVITE_URL, noBot: true });
+
+  const slackUserId = await resolveSlackUserId(req.user.id, req.user.email);
+  res.json({
+    required: true,
+    inSlack: !!slackUserId,
+    inviteUrl: SLACK_INVITE_URL,
+  });
+});
+
 // Look up Slack user ID by email — caches to users.slack_user_id
 async function resolveSlackUserId(userId, email) {
   const user = dbHelpers.prepare('SELECT slack_user_id FROM users WHERE id = ?').get(userId);
