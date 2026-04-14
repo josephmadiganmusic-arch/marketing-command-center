@@ -1999,13 +1999,9 @@ app.post('/api/elite/onboarding', requireAuth, (req, res) => {
     },
     social: {
       instagram_username: cap(body.instagram_username, 200),
-      instagram_password: cap(body.instagram_password, 200),
       tiktok_username: cap(body.tiktok_username, 200),
-      tiktok_password: cap(body.tiktok_password, 200),
       youtube_username: cap(body.youtube_username, 200),
-      youtube_password: cap(body.youtube_password, 200),
-      twitter_username: cap(body.twitter_username, 200),
-      twitter_password: cap(body.twitter_password, 200)
+      twitter_username: cap(body.twitter_username, 200)
     },
     cadence: {
       release_frequency: cap(body.release_frequency, 200),
