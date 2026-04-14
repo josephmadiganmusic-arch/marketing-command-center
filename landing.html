@@ -8,7 +8,7 @@
 <link rel="icon" type="image/jpeg" href="/favicon.jpg">
 <link rel="apple-touch-icon" href="/favicon.jpg">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
   :root {
     --bg-deep: #080b1e;
     --bg-card: #0f1332;
@@ -18,160 +18,349 @@
     --accent-2: #00d4ff;
     --gold: #ffd700;
     --text-dim: #6b7094;
+    --text-body: #b0b4cc;
     --gradient-primary: linear-gradient(135deg, #7b2ff7, #00d4ff);
     --gradient-gold: linear-gradient(135deg, #ffd700, #ff9f1a);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Inter', sans-serif; background: var(--bg-deep); color: #e0e0e0; min-height: 100vh; }
-  body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 20%, rgba(123,47,247,0.08) 0%, transparent 50%), radial-gradient(circle at 70% 80%, rgba(0,212,255,0.05) 0%, transparent 50%); pointer-events: none; }
-  .container { max-width: 1100px; margin: 0 auto; padding: 0 20px; position: relative; z-index: 1; }
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg-deep); color: #e0e0e0; min-height: 100vh; overflow-x: hidden; }
 
-  /* NAV */
-  nav { padding: 20px 0; display: flex; align-items: center; justify-content: space-between; }
-  nav img { height: 50px; filter: drop-shadow(0 0 12px rgba(123,47,247,0.3)); }
-  .nav-links { display: flex; align-items: center; gap: 20px; }
-  .nav-links a { color: var(--text-dim); font-size: 13px; font-weight: 600; text-decoration: none; transition: color 0.2s; }
-  .nav-links a:hover { color: var(--accent-2); }
-  .btn-login { padding: 10px 22px; background: var(--gradient-primary); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; text-decoration: none; transition: all 0.3s; }
-  .btn-login:hover { box-shadow: 0 4px 20px rgba(123,47,247,0.4); transform: translateY(-1px); }
+  /* ═══ AMBIENT BACKGROUND ═══ */
+  .bg-ambient { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+  .bg-ambient::before { content: ''; position: absolute; top: -30%; left: -20%; width: 80%; height: 80%; background: radial-gradient(circle, rgba(123,47,247,0.1) 0%, transparent 60%); animation: ambientDrift1 20s ease-in-out infinite; }
+  .bg-ambient::after { content: ''; position: absolute; bottom: -30%; right: -20%; width: 80%; height: 80%; background: radial-gradient(circle, rgba(0,212,255,0.07) 0%, transparent 60%); animation: ambientDrift2 25s ease-in-out infinite; }
+  @keyframes ambientDrift1 { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(5%, 8%); } }
+  @keyframes ambientDrift2 { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-5%, -8%); } }
 
-  /* HERO */
-  .hero { text-align: center; padding: 80px 0 60px; }
-  .hero .beta-tag { display: inline-block; background: linear-gradient(135deg, #ff6b35, #ff9f1a); color: #080b1e; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; padding: 5px 16px; border-radius: 20px; text-transform: uppercase; margin-bottom: 20px; }
-  .hero h1 { font-size: 48px; font-weight: 800; color: #fff; line-height: 1.15; margin-bottom: 16px; }
+  .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  /* ═══ STICKY NAV ═══ */
+  nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 0 24px; transition: all 0.3s; }
+  nav.scrolled { background: rgba(8,11,30,0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(26,31,74,0.5); }
+  .nav-inner { max-width: 1140px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 72px; }
+  .nav-logo { height: 42px; filter: drop-shadow(0 0 10px rgba(123,47,247,0.3)); transition: transform 0.2s; }
+  .nav-logo:hover { transform: scale(1.05); }
+  .nav-links { display: flex; align-items: center; gap: 8px; }
+  .nav-links a { color: var(--text-dim); font-size: 13px; font-weight: 600; text-decoration: none; transition: color 0.2s; padding: 10px 14px; border-radius: 8px; }
+  .nav-links a:hover { color: #fff; }
+  .btn-nav-cta { padding: 10px 24px !important; background: var(--gradient-primary); color: #fff !important; border-radius: 8px; font-weight: 700 !important; transition: all 0.3s !important; min-height: 44px; display: inline-flex; align-items: center; }
+  .btn-nav-cta:hover { box-shadow: 0 4px 20px rgba(123,47,247,0.5); transform: translateY(-1px); }
+
+  /* ═══ HERO WITH ANIMATED LOGO ═══ */
+  .hero { text-align: center; padding: 140px 0 80px; position: relative; }
+  .hero-logo-wrap { position: relative; width: 280px; height: 280px; margin: 0 auto 32px; display: flex; align-items: center; justify-content: center; }
+  .hero-logo-wrap img { width: 200px; height: auto; filter: drop-shadow(0 0 30px rgba(123,47,247,0.6)) drop-shadow(0 0 60px rgba(0,212,255,0.3)); animation: clFlySpinFloat 4s cubic-bezier(0.22,1,0.36,1) infinite; position: relative; z-index: 2; }
+
+  /* Orbiting rings */
+  .cl-orbit { position: absolute; border: 2px solid transparent; border-radius: 50%; pointer-events: none; }
+  .cl-orbit:nth-child(1) { width: 260px; height: 260px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(123,47,247,0.5); border-right-color: rgba(0,212,255,0.3); animation: clOrbitSpin 2s linear infinite; }
+  .cl-orbit:nth-child(2) { width: 300px; height: 300px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(0,212,255,0.25); border-right-color: rgba(123,47,247,0.15); animation: clOrbitSpin 3s linear infinite reverse; }
+  .cl-orbit:nth-child(3) { width: 340px; height: 340px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-top-color: rgba(255,215,0,0.1); border-bottom-color: rgba(123,47,247,0.08); animation: clOrbitSpin 5s linear infinite; }
+
+  /* Sparkle particles */
+  .cl-sparkles { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .cl-spark { position: absolute; width: 4px; height: 4px; background: #fff; border-radius: 50%; box-shadow: 0 0 8px rgba(255,255,255,0.8), 0 0 16px rgba(123,47,247,0.4); opacity: 0; animation: clSparkle 2.5s ease-in-out infinite; }
+  .cl-spark:nth-child(1) { top: 10%; left: 20%; animation-delay: 0s; }
+  .cl-spark:nth-child(2) { top: 15%; right: 15%; animation-delay: 0.3s; }
+  .cl-spark:nth-child(3) { top: 70%; left: 10%; animation-delay: 0.6s; }
+  .cl-spark:nth-child(4) { top: 80%; right: 20%; animation-delay: 0.9s; }
+  .cl-spark:nth-child(5) { top: 40%; left: 3%; animation-delay: 1.2s; }
+  .cl-spark:nth-child(6) { top: 50%; right: 3%; animation-delay: 1.5s; }
+  .cl-spark:nth-child(7) { top: 5%; left: 50%; animation-delay: 1.8s; }
+  .cl-spark:nth-child(8) { top: 90%; left: 50%; animation-delay: 2.1s; }
+
+  @keyframes clFlySpinFloat {
+    0%   { transform: translateY(0) rotate(0deg) scale(1); }
+    15%  { transform: translateY(-40px) rotate(12deg) scale(1.08); }
+    30%  { transform: translateY(-20px) rotate(-8deg) scale(1.02); }
+    50%  { transform: translateY(-50px) rotate(360deg) scale(1.1); filter: drop-shadow(0 0 50px rgba(123,47,247,0.9)) drop-shadow(0 0 80px rgba(0,212,255,0.5)); }
+    65%  { transform: translateY(-15px) rotate(375deg) scale(1.04); }
+    80%  { transform: translateY(-30px) rotate(368deg) scale(1.06); }
+    100% { transform: translateY(0) rotate(360deg) scale(1); }
+  }
+  @keyframes clOrbitSpin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+  @keyframes clSparkle {
+    0%, 100% { opacity: 0; transform: scale(0) translateY(0); }
+    30% { opacity: 1; transform: scale(1.5) translateY(-10px); }
+    60% { opacity: 0.6; transform: scale(1) translateY(-25px); }
+  }
+
+  .hero .beta-tag { display: inline-block; background: linear-gradient(135deg, #ff6b35, #ff9f1a); color: #080b1e; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; padding: 6px 18px; border-radius: 20px; text-transform: uppercase; margin-bottom: 24px; animation: fadeSlideUp 0.6s 0.2s both; }
+  .hero h1 { font-size: 52px; font-weight: 900; color: #fff; line-height: 1.1; margin-bottom: 20px; letter-spacing: -1px; animation: fadeSlideUp 0.6s 0.35s both; }
   .hero h1 span { background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-  .hero p { font-size: 18px; color: #9ea2b8; max-width: 640px; margin: 0 auto 32px; line-height: 1.6; }
-  .hero-cta { display: inline-block; padding: 16px 40px; background: var(--gradient-primary); color: #fff; border-radius: 10px; font-size: 16px; font-weight: 700; text-decoration: none; transition: all 0.3s; box-shadow: 0 0 30px rgba(123,47,247,0.25); }
-  .hero-cta:hover { box-shadow: 0 4px 30px rgba(123,47,247,0.5); transform: translateY(-2px); }
-  .hero-sub { font-size: 13px; color: var(--text-dim); margin-top: 14px; }
+  .hero p { font-size: 18px; color: var(--text-body); max-width: 600px; margin: 0 auto 36px; line-height: 1.7; animation: fadeSlideUp 0.6s 0.5s both; }
+  .hero-cta-row { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; animation: fadeSlideUp 0.6s 0.65s both; }
+  .hero-cta { display: inline-flex; align-items: center; justify-content: center; padding: 16px 44px; background: var(--gradient-primary); color: #fff; border-radius: 12px; font-size: 16px; font-weight: 700; text-decoration: none; transition: all 0.3s; box-shadow: 0 0 40px rgba(123,47,247,0.3), 0 8px 32px rgba(0,0,0,0.3); min-height: 52px; position: relative; overflow: hidden; }
+  .hero-cta::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent); transform: rotate(45deg); transition: all 0.6s; }
+  .hero-cta:hover::before { left: 100%; }
+  .hero-cta:hover { box-shadow: 0 4px 40px rgba(123,47,247,0.6), 0 12px 40px rgba(0,0,0,0.4); transform: translateY(-2px); }
+  .hero-cta-secondary { display: inline-flex; align-items: center; justify-content: center; padding: 16px 32px; background: transparent; border: 1px solid var(--border); color: var(--text-body); border-radius: 12px; font-size: 14px; font-weight: 600; text-decoration: none; transition: all 0.3s; min-height: 52px; }
+  .hero-cta-secondary:hover { border-color: var(--accent-1); color: #fff; }
+  .hero-sub { font-size: 13px; color: var(--text-dim); margin-top: 20px; animation: fadeSlideUp 0.6s 0.8s both; }
+  .hero-sub svg { vertical-align: -2px; margin-right: 4px; }
 
-  /* FEATURES */
-  .section-title { text-align: center; font-size: 32px; font-weight: 800; color: #fff; margin-bottom: 8px; }
-  .section-subtitle { text-align: center; font-size: 15px; color: var(--text-dim); margin-bottom: 40px; max-width: 560px; margin-left: auto; margin-right: auto; }
-  .features { padding: 60px 0; }
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ═══ SCROLL REVEAL ═══ */
+  .reveal { opacity: 0; transform: translateY(30px); transition: opacity 0.7s, transform 0.7s; }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* ═══ SECTION DIVIDER ═══ */
+  .section-divider { width: 80px; height: 3px; background: var(--gradient-primary); margin: 0 auto 16px; border-radius: 2px; }
+  .section-title { text-align: center; font-size: 36px; font-weight: 900; color: #fff; margin-bottom: 8px; letter-spacing: -0.5px; }
+  .section-subtitle { text-align: center; font-size: 15px; color: var(--text-dim); margin-bottom: 48px; max-width: 520px; margin-left: auto; margin-right: auto; line-height: 1.6; }
+
+  /* ═══ SOCIAL PROOF BAR ═══ */
+  .social-proof { display: flex; align-items: center; justify-content: center; gap: 40px; padding: 32px 0; margin-bottom: 20px; flex-wrap: wrap; }
+  .proof-item { display: flex; align-items: center; gap: 10px; }
+  .proof-icon { width: 40px; height: 40px; background: rgba(123,47,247,0.12); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+  .proof-icon svg { width: 20px; height: 20px; }
+  .proof-text { text-align: left; }
+  .proof-text .num { font-size: 18px; font-weight: 800; color: #fff; }
+  .proof-text .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ═══ FEATURES ═══ */
+  .features { padding: 80px 0; }
   .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .feature-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 28px 24px; transition: transform 0.2s, box-shadow 0.2s; }
-  .feature-card:hover { transform: translateY(-3px); box-shadow: 0 16px 50px rgba(123,47,247,0.12); }
-  .feature-icon { font-size: 28px; margin-bottom: 14px; }
-  .feature-card h3 { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px; }
-  .feature-card p { font-size: 13px; color: #9ea2b8; line-height: 1.6; }
+  .feature-card { background: rgba(15,19,50,0.6); border: 1px solid var(--border); border-radius: 16px; padding: 32px 28px; transition: all 0.3s; position: relative; overflow: hidden; }
+  .feature-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--gradient-primary); opacity: 0; transition: opacity 0.3s; }
+  .feature-card:hover { transform: translateY(-4px); box-shadow: 0 20px 60px rgba(123,47,247,0.12); border-color: rgba(123,47,247,0.3); }
+  .feature-card:hover::before { opacity: 1; }
+  .feature-icon { width: 48px; height: 48px; background: rgba(123,47,247,0.12); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 18px; }
+  .feature-icon svg { width: 24px; height: 24px; stroke: var(--accent-2); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .feature-card h3 { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .feature-card p { font-size: 13px; color: var(--text-body); line-height: 1.7; }
 
-  /* PRICING */
-  .pricing { padding: 60px 0 80px; }
-  .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .tier-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 28px 24px; text-align: center; display: flex; flex-direction: column; position: relative; transition: transform 0.2s, box-shadow 0.2s; }
-  .tier-card:hover { transform: translateY(-3px); box-shadow: 0 24px 70px rgba(123,47,247,0.18); }
-  .tier-card.featured { border: 2px solid var(--gold); box-shadow: 0 24px 70px rgba(255,215,0,0.15); }
-  .tier-badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: var(--gradient-gold); color: #080b1e; font-size: 11px; font-weight: 800; letter-spacing: 1px; padding: 4px 14px; border-radius: 20px; text-transform: uppercase; }
-  .tier-name { font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+  /* ═══ HOW IT WORKS ═══ */
+  .how-it-works { padding: 80px 0; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; position: relative; }
+  .steps::before { content: ''; position: absolute; top: 32px; left: 15%; right: 15%; height: 2px; background: linear-gradient(90deg, transparent, var(--border), var(--border), transparent); }
+  .step { text-align: center; padding: 0 12px; position: relative; }
+  .step-num { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; background: var(--gradient-primary); border-radius: 50%; font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 18px; box-shadow: 0 0 24px rgba(123,47,247,0.3); position: relative; z-index: 1; }
+  .step h3 { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .step p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+  /* ═══ PRICING ═══ */
+  .pricing { padding: 80px 0 100px; }
+  .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: start; }
+  .tier-card { background: rgba(15,19,50,0.7); border: 1px solid var(--border); border-radius: 18px; padding: 32px 28px; text-align: center; display: flex; flex-direction: column; position: relative; transition: all 0.3s; backdrop-filter: blur(8px); }
+  .tier-card:hover { transform: translateY(-4px); box-shadow: 0 24px 70px rgba(123,47,247,0.15); }
+  .tier-card.featured { border: 2px solid var(--gold); box-shadow: 0 24px 70px rgba(255,215,0,0.12), 0 0 60px rgba(255,215,0,0.05); transform: scale(1.03); }
+  .tier-card.featured:hover { transform: scale(1.03) translateY(-4px); }
+  .tier-badge { position: absolute; top: -13px; left: 50%; transform: translateX(-50%); background: var(--gradient-gold); color: #080b1e; font-size: 11px; font-weight: 800; letter-spacing: 1px; padding: 5px 16px; border-radius: 20px; text-transform: uppercase; white-space: nowrap; }
+  .tier-name { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 4px; }
   .tier-tagline { font-size: 12px; color: var(--text-dim); margin-bottom: 20px; min-height: 32px; }
-  .tier-price-box { background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 20px; position: relative; overflow: hidden; }
+  .tier-price-box { background: var(--bg-input); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; position: relative; overflow: hidden; }
   .tier-price-box::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--gradient-primary); }
   .tier-card.featured .tier-price-box::before { background: var(--gradient-gold); }
-  .beta-label { display: inline-block; background: linear-gradient(135deg, #ff6b35, #ff9f1a); color: #080b1e; font-size: 10px; font-weight: 800; letter-spacing: 1px; padding: 3px 10px; border-radius: 12px; text-transform: uppercase; margin-bottom: 4px; }
+  .beta-label { display: inline-block; background: linear-gradient(135deg, #ff6b35, #ff9f1a); color: #080b1e; font-size: 10px; font-weight: 800; letter-spacing: 1px; padding: 3px 10px; border-radius: 12px; text-transform: uppercase; margin-bottom: 6px; }
   .original-price { font-size: 16px; color: var(--text-dim); text-decoration: line-through; margin-bottom: 4px; }
-  .amount { font-size: 32px; font-weight: 800; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .amount { font-size: 36px; font-weight: 900; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   .tier-card.featured .amount { background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   .amount span { font-size: 14px; font-weight: 400; -webkit-text-fill-color: var(--text-dim); }
   .price-note { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
-  .tier-features { text-align: left; margin-bottom: 24px; flex: 1; }
-  .tier-features li { list-style: none; padding: 6px 0; font-size: 12px; color: #ccc; display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
-  .tier-features li::before { content: '\2713'; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700; font-size: 13px; flex-shrink: 0; }
-  .tier-card.featured .tier-features li::before { background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-  .tier-btn { display: block; width: 100%; padding: 14px; background: var(--gradient-primary); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; text-decoration: none; text-align: center; }
+  .tier-features { text-align: left; margin-bottom: 28px; flex: 1; }
+  .tier-features li { list-style: none; padding: 7px 0; font-size: 13px; color: #ccc; display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; }
+  .tier-features li svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; }
+  .tier-features li .check-purple { stroke: var(--accent-2); }
+  .tier-features li .check-gold { stroke: var(--gold); }
+  .tier-btn { display: flex; align-items: center; justify-content: center; width: 100%; padding: 16px; background: var(--gradient-primary); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.3s; text-decoration: none; min-height: 52px; position: relative; overflow: hidden; }
   .tier-card.featured .tier-btn { background: var(--gradient-gold); color: #080b1e; }
+  .tier-btn::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent); transform: rotate(45deg); transition: all 0.6s; }
+  .tier-btn:hover::before { left: 100%; }
   .tier-btn:hover { box-shadow: 0 4px 24px rgba(123,47,247,0.4); transform: translateY(-1px); }
+  .tier-card.featured .tier-btn:hover { box-shadow: 0 4px 24px rgba(255,215,0,0.4); }
 
-  /* HOW IT WORKS */
-  .how-it-works { padding: 60px 0; }
-  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-  .step { text-align: center; padding: 24px 16px; }
-  .step-num { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: var(--gradient-primary); border-radius: 50%; font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 14px; }
-  .step h3 { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 6px; }
-  .step p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  /* ═══ TRUST BAR ═══ */
+  .trust-bar { text-align: center; padding: 48px 0 0; }
+  .trust-bar p { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+  .trust-items { display: flex; align-items: center; justify-content: center; gap: 32px; flex-wrap: wrap; }
+  .trust-item { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 13px; font-weight: 500; }
+  .trust-item svg { width: 18px; height: 18px; stroke: var(--accent-2); fill: none; stroke-width: 2; }
 
-  /* FOOTER */
-  footer { border-top: 1px solid var(--border); padding: 32px 0; text-align: center; }
-  footer p { font-size: 12px; color: var(--text-dim); }
-  footer a { color: var(--accent-2); text-decoration: none; }
-  footer a:hover { text-decoration: underline; }
-  .footer-links { display: flex; justify-content: center; gap: 24px; margin-bottom: 12px; }
+  /* ═══ FOOTER ═══ */
+  footer { border-top: 1px solid var(--border); padding: 40px 0; }
+  .footer-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+  .footer-brand { display: flex; align-items: center; gap: 12px; }
+  .footer-brand img { height: 32px; opacity: 0.6; }
+  .footer-brand span { font-size: 12px; color: var(--text-dim); }
+  .footer-links { display: flex; gap: 24px; }
+  .footer-links a { color: var(--text-dim); text-decoration: none; font-size: 13px; font-weight: 500; transition: color 0.2s; padding: 4px 0; }
+  .footer-links a:hover { color: var(--accent-2); }
 
-  /* MOBILE */
-  @media (max-width: 880px) {
-    .features-grid, .pricing-grid { grid-template-columns: 1fr; max-width: 440px; margin-left: auto; margin-right: auto; }
-    .steps { grid-template-columns: repeat(2, 1fr); }
+  /* ═══ REDUCED MOTION ═══ */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    .reveal { opacity: 1; transform: none; }
+    html { scroll-behavior: auto; }
   }
+
+  /* ═══ TABLET ═══ */
+  @media (max-width: 880px) {
+    .features-grid, .pricing-grid { grid-template-columns: 1fr; max-width: 460px; margin-left: auto; margin-right: auto; }
+    .tier-card.featured { transform: none; }
+    .tier-card.featured:hover { transform: translateY(-4px); }
+    .steps { grid-template-columns: repeat(2, 1fr); }
+    .steps::before { display: none; }
+    .social-proof { gap: 24px; }
+  }
+
+  /* ═══ MOBILE ═══ */
   @media (max-width: 600px) {
-    .hero h1 { font-size: 32px; }
+    .hero { padding: 120px 0 60px; }
+    .hero h1 { font-size: 34px; letter-spacing: -0.5px; }
     .hero p { font-size: 15px; }
-    .steps { grid-template-columns: 1fr; }
-    nav { flex-direction: column; gap: 16px; }
+    .hero-logo-wrap { width: 220px; height: 220px; }
+    .hero-logo-wrap img { width: 150px; }
+    .cl-orbit:nth-child(1) { width: 200px; height: 200px; }
+    .cl-orbit:nth-child(2) { width: 240px; height: 240px; }
+    .cl-orbit:nth-child(3) { width: 270px; height: 270px; }
+    .hero-cta-row { flex-direction: column; }
+    .hero-cta, .hero-cta-secondary { width: 100%; max-width: 320px; }
+    .steps { grid-template-columns: 1fr; max-width: 300px; margin-left: auto; margin-right: auto; }
+    .nav-links a:not(.btn-nav-cta) { display: none; }
+    .section-title { font-size: 28px; }
+    .feature-card { padding: 24px 20px; }
+    .social-proof { flex-direction: column; gap: 16px; }
+    .footer-inner { flex-direction: column; text-align: center; }
+    .footer-links { justify-content: center; }
   }
 </style>
 </head>
 <body>
-<div class="container">
-  <nav>
-    <img src="/logo.png" alt="Rollout Heaven">
+<div class="bg-ambient" aria-hidden="true"></div>
+
+<!-- ═══ NAV ═══ -->
+<nav id="mainNav">
+  <div class="nav-inner">
+    <a href="/"><img src="/logo.png" alt="Rollout Heaven" class="nav-logo"></a>
     <div class="nav-links">
       <a href="#features">Features</a>
+      <a href="#how">How It Works</a>
       <a href="#pricing">Pricing</a>
-      <a href="/login" class="btn-login">Log In</a>
+      <a href="/login" class="btn-nav-cta">Log In</a>
     </div>
-  </nav>
+  </div>
+</nav>
 
-  <!-- HERO -->
+<div class="container">
+
+  <!-- ═══ HERO ═══ -->
   <section class="hero">
-    <div class="beta-tag">Early Access Beta</div>
+    <div class="hero-logo-wrap" aria-hidden="true">
+      <div class="cl-orbit"></div>
+      <div class="cl-orbit"></div>
+      <div class="cl-orbit"></div>
+      <div class="cl-sparkles">
+        <div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div>
+        <div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div>
+      </div>
+      <img src="/logo.png" alt="Rollout Heaven">
+    </div>
+    <div class="beta-tag">Early Access Beta &mdash; Limited to 10 Artists</div>
     <h1>Release Management<br>for <span>Independent Artists</span></h1>
-    <p>Rollout Heaven is a platform that helps independent musicians plan, register, distribute, and market their music releases &mdash; with AI-powered tools and optional concierge services.</p>
-    <a href="/login" class="hero-cta">Start Free 7-Day Trial</a>
-    <div class="hero-sub">No credit card required to start. Beta pricing &mdash; limited to 10 artists.</div>
+    <p>Plan, register, distribute, and market your music releases with AI-powered tools and optional concierge services &mdash; all in one platform.</p>
+    <div class="hero-cta-row">
+      <a href="/login" class="hero-cta">Start Free 7-Day Trial</a>
+      <a href="#pricing" class="hero-cta-secondary">View Pricing</a>
+    </div>
+    <div class="hero-sub">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      No credit card required &mdash; 7 days free, then beta pricing.
+    </div>
   </section>
 
-  <!-- FEATURES -->
-  <section class="features" id="features">
+  <!-- ═══ SOCIAL PROOF ═══ -->
+  <div class="social-proof reveal">
+    <div class="proof-item">
+      <div class="proof-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+      <div class="proof-text">
+        <div class="num">6</div>
+        <div class="label">Registration Services</div>
+      </div>
+    </div>
+    <div class="proof-item">
+      <div class="proof-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div class="proof-text">
+        <div class="num">30-Day</div>
+        <div class="label">Marketing Calendar</div>
+      </div>
+    </div>
+    <div class="proof-item">
+      <div class="proof-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <div class="proof-text">
+        <div class="num">AI-Powered</div>
+        <div class="label">Campaign Generator</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ FEATURES ═══ -->
+  <section class="features reveal" id="features">
+    <div class="section-divider"></div>
     <h2 class="section-title">Everything You Need to Release Music</h2>
-    <p class="section-subtitle">From registration to radio outreach &mdash; all in one place.</p>
+    <p class="section-subtitle">From registration to radio outreach &mdash; every tool an independent artist needs, in one place.</p>
     <div class="features-grid">
       <div class="feature-card">
-        <div class="feature-icon">&#127911;</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        </div>
         <h3>Registration Pipeline</h3>
         <p>Step-by-step walkthrough for registering your songs with PRO, SoundExchange, The MLC, Musixmatch, Songtrust, and your distributor.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#129302;</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 12l7-7"/><path d="M17 2h5v5"/></svg>
+        </div>
         <h3>Music Agent Pro</h3>
         <p>AI-powered live research assistant. Get real-time marketing insights, competitor analysis, and strategy recommendations.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#128197;</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
         <h3>30-Day Marketing Calendar</h3>
-        <p>AI-generated marketing calendar with pre-release teasers, countdown content, snippet drops, and post-release growth strategies.</p>
+        <p>AI-generated calendar with pre-release teasers, countdown content, snippet drops, and post-release growth strategies.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#9993;</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        </div>
         <h3>Email &amp; Caption Generator</h3>
-        <p>Generate professional HTML outreach emails for radio stations, media contacts, and playlist curators. Plus AI-written social captions.</p>
+        <p>Professional HTML outreach emails for radio stations, media contacts, and playlist curators. Plus AI-written social captions.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#127926;</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5"/><path d="M9.06 12.95l8.07-8.07"/><path d="M15 3h6v6"/></svg>
+        </div>
         <h3>Playlist Submission Tracking</h3>
         <p>Track your playlist submissions with XP rewards. Organized by category with AI-tweaked introductions for each curator type.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">&#128190;</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
         <h3>Content Bank</h3>
         <p>Campaign storage with unlimited releases, captions, hashtag sets, and calls-to-action. Everything generated, everything saved.</p>
       </div>
     </div>
   </section>
 
-  <!-- HOW IT WORKS -->
-  <section class="how-it-works">
+  <!-- ═══ HOW IT WORKS ═══ -->
+  <section class="how-it-works reveal" id="how">
+    <div class="section-divider"></div>
     <h2 class="section-title">How It Works</h2>
-    <p class="section-subtitle">Four steps from sign-up to fully marketed release.</p>
+    <p class="section-subtitle">Four steps from sign-up to a fully marketed release.</p>
     <div class="steps">
       <div class="step">
         <div class="step-num">1</div>
@@ -186,7 +375,7 @@
       <div class="step">
         <div class="step-num">3</div>
         <h3>Register Everywhere</h3>
-        <p>Follow the Registration Pipeline to register with PRO, MLC, SoundExchange, and more.</p>
+        <p>Follow the Registration Pipeline for PRO, MLC, SoundExchange, and more.</p>
       </div>
       <div class="step">
         <div class="step-num">4</div>
@@ -196,8 +385,9 @@
     </div>
   </section>
 
-  <!-- PRICING -->
-  <section class="pricing" id="pricing">
+  <!-- ═══ PRICING ═══ -->
+  <section class="pricing reveal" id="pricing">
+    <div class="section-divider"></div>
     <h2 class="section-title">Beta Access Pricing</h2>
     <p class="section-subtitle">We're testing with a small group of artists. Lock in these lower prices now &mdash; they go up after beta.</p>
     <div class="pricing-grid">
@@ -212,13 +402,13 @@
           <div class="price-note">Cancel anytime &mdash; price locked while in beta</div>
         </div>
         <ul class="tier-features">
-          <li>Music Agent Pro &mdash; AI-powered live research</li>
-          <li>Unlimited campaigns and storage</li>
-          <li>AI email and caption generators</li>
-          <li>Playlist submission tracking</li>
-          <li>30-day marketing calendar</li>
-          <li>Content bank with templates</li>
-          <li>Radio &amp; media outreach tools</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Music Agent Pro &mdash; AI-powered live research</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Unlimited campaigns and storage</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>AI email and caption generators</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Playlist submission tracking</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>30-day marketing calendar</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Content bank with templates</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Radio &amp; media outreach tools</li>
         </ul>
         <a href="/login" class="tier-btn">Start Free Trial</a>
       </div>
@@ -234,11 +424,11 @@
           <div class="price-note">Annual billing &mdash; price locked while in beta</div>
         </div>
         <ul class="tier-features">
-          <li><strong>Everything in Pro</strong></li>
-          <li>Rollout Heaven handles your distribution</li>
-          <li>Rollout Heaven handles registration (PRO, SoundExchange, MLC, Songtrust, Musixmatch)</li>
-          <li>Per-release manual upload &amp; metadata QA</li>
-          <li>Priority support</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg><strong>Everything in Pro</strong></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Rollout Heaven handles your distribution</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Full registration (PRO, SoundExchange, MLC, Songtrust, Musixmatch)</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Per-release manual upload &amp; metadata QA</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-purple"/></svg>Priority support</li>
         </ul>
         <a href="/login" class="tier-btn">Start Free Trial</a>
       </div>
@@ -255,27 +445,79 @@
           <div class="price-note">Annual billing &mdash; price locked while in beta</div>
         </div>
         <ul class="tier-features">
-          <li><strong>Everything in Elite</strong></li>
-          <li>Rollout Heaven sends outreach emails to radio &amp; podcasts</li>
-          <li>Rollout Heaven curates &amp; submits to playlists</li>
-          <li>Personalized pitch strategy per release</li>
-          <li>Hands-on campaign execution</li>
-          <li>Direct line to Rollout Heaven</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-gold"/></svg><strong>Everything in Elite</strong></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-gold"/></svg>Rollout Heaven sends outreach emails to radio &amp; podcasts</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-gold"/></svg>Rollout Heaven curates &amp; submits to playlists</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-gold"/></svg>Personalized pitch strategy per release</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-gold"/></svg>Hands-on campaign execution</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12" class="check-gold"/></svg>Direct line to Rollout Heaven</li>
         </ul>
         <a href="/login" class="tier-btn">Start Free Trial</a>
       </div>
     </div>
+
+    <!-- TRUST BAR -->
+    <div class="trust-bar">
+      <p>Trusted &amp; Secure</p>
+      <div class="trust-items">
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          AES-256 Encryption
+        </div>
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          Stripe Payments
+        </div>
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+          Cancel Anytime
+        </div>
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          7-Day Free Trial
+        </div>
+      </div>
+    </div>
   </section>
 
-  <!-- FOOTER -->
+  <!-- ═══ FOOTER ═══ -->
   <footer>
-    <div class="footer-links">
-      <a href="/privacy">Privacy Policy</a>
-      <a href="/terms">Terms of Service</a>
-      <a href="/login">Log In</a>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <img src="/logo.png" alt="Rollout Heaven">
+        <span>&copy; 2025 Rollout Heaven. All rights reserved.</span>
+      </div>
+      <div class="footer-links">
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="/login">Log In</a>
+      </div>
     </div>
-    <p>&copy; 2025 Rollout Heaven. All rights reserved.</p>
   </footer>
+
 </div>
+
+<script>
+// Sticky nav background on scroll
+var nav = document.getElementById('mainNav');
+function checkScroll() {
+  if (window.scrollY > 40) nav.classList.add('scrolled');
+  else nav.classList.remove('scrolled');
+}
+window.addEventListener('scroll', checkScroll, { passive: true });
+checkScroll();
+
+// Scroll reveal
+var reveals = document.querySelectorAll('.reveal');
+var observer = new IntersectionObserver(function(entries) {
+  entries.forEach(function(entry) {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.15 });
+reveals.forEach(function(el) { observer.observe(el); });
+</script>
 </body>
 </html>
