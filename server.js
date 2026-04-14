@@ -4337,7 +4337,12 @@ function escHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-app.get('/', requireAuth, (req, res) => {
+// Public landing page for unauthenticated visitors (Stripe verification, SEO).
+// Logged-in users skip straight to the app.
+app.get('/', (req, res, next) => {
+  if (!req.session.userId) return res.sendFile(path.join(__dirname, 'landing.html'));
+  next();
+}, requireAuth, (req, res) => {
   let trialDays = -1;
   if (req.user.role !== 'admin' && req.user.subscription_status === 'trialing' && req.user.trial_ends_at) {
     trialDays = Math.max(0, Math.ceil((new Date(req.user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)));
