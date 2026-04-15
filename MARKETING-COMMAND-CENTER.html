@@ -9439,21 +9439,23 @@ function adminRenderReg() {
       const color = statusColors[p.status] || '#666';
       const pctColor = p.completeness.pct >= 80 ? '#4ade80' : p.completeness.pct >= 50 ? '#ffd700' : '#ff6b6b';
       const icon = p.status === 'confirmed' ? '&#10003;' : p.completeness.pct + '%';
-      return `<span onclick="openBmiSheet(${r.userId}, '${r.releaseTitle.replace(/'/g, "\\'")}', ${p.queueId || 'null'}, '${pid}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;background:${p.status === 'confirmed' ? '#1a3a1a' : '#1a1e3a'};border:1px solid ${color};padding:2px 8px;border-radius:6px;font-size:10px;color:${p.status === 'confirmed' ? '#4ade80' : pctColor};margin:2px;" title="${p.name}: ${p.status} (${p.completeness.pct}%)\nMissing: ${p.completeness.missing.join(', ') || 'none'}">
+      const safeTitle = encodeURIComponent(r.releaseTitle);
+      return `<span onclick="openBmiSheet(${r.userId}, decodeURIComponent('${safeTitle}'), ${p.queueId || 'null'}, '${pid}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;background:${p.status === 'confirmed' ? '#1a3a1a' : '#1a1e3a'};border:1px solid ${color};padding:2px 8px;border-radius:6px;font-size:10px;color:${p.status === 'confirmed' ? '#4ade80' : pctColor};margin:2px;" title="${p.name}: ${p.status} (${p.completeness.pct}%)\nMissing: ${p.completeness.missing.join(', ') || 'none'}">
         <b>${p.name}</b> ${icon}
       </span>`;
     }).join('');
 
     const avgColor = r.avgPct >= 80 ? '#4ade80' : r.avgPct >= 50 ? '#ffd700' : '#ff6b6b';
     const hasMissing = Object.values(r.platforms).some(p => p.completeness.missing.length > 0);
+    const safeTitle = encodeURIComponent(r.releaseTitle);
 
     return `<tr>
-      <td><input type="checkbox" class="reg-check" data-user="${r.userId}" data-title="${r.releaseTitle}"></td>
+      <td><input type="checkbox" class="reg-check" data-user="${r.userId}" data-title="${safeTitle}"></td>
       <td style="font-size:12px;">${r.userEmail}<br><span style="color:#6b7094;font-size:10px;">${r.tier || 'free'}</span></td>
       <td style="font-weight:600;font-size:13px;">${r.releaseTitle}<br><span style="font-size:10px;color:#6b7094;font-weight:400;">${r.confirmedCount}/${r.totalPlatforms} confirmed</span></td>
       <td style="min-width:280px;">${platformStrip}</td>
       <td>
-        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, '${r.releaseTitle.replace(/'/g, "\\'")}')" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
+        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, decodeURIComponent('${safeTitle}'))" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -9469,7 +9471,7 @@ async function adminBulkQueue() {
   const items = [];
   const allPlatforms = ['pro', 'distribution', 'musixmatch', 'soundexchange', 'mlc', 'songtrust'];
   checks.forEach(cb => {
-    allPlatforms.forEach(p => items.push({ userId: parseInt(cb.dataset.user), releaseTitle: cb.dataset.title, platform: p }));
+    allPlatforms.forEach(p => items.push({ userId: parseInt(cb.dataset.user), releaseTitle: decodeURIComponent(cb.dataset.title), platform: p }));
   });
   try {
     const resp = await fetch('/api/admin/registration/bulk-queue', {
@@ -9800,7 +9802,7 @@ async function regPrepBulkQueue() {
   const allPlatforms = ['pro', 'distribution', 'musixmatch', 'soundexchange', 'mlc', 'songtrust'];
   checks.forEach(cb => {
     allPlatforms.forEach(p => {
-      items.push({ userId: Number(cb.dataset.user), releaseTitle: cb.dataset.title, platform: p });
+      items.push({ userId: Number(cb.dataset.user), releaseTitle: decodeURIComponent(cb.dataset.title), platform: p });
     });
   });
   try {
@@ -9830,18 +9832,20 @@ function regPrepRender() {
       const color = statusColors[p.status] || '#666';
       const pctColor = p.completeness.pct >= 80 ? '#4ade80' : p.completeness.pct >= 50 ? '#ffd700' : '#ff6b6b';
       const icon = p.status === 'confirmed' ? '&#10003;' : p.completeness.pct + '%';
-      return `<span onclick="openBmiSheet(${r.userId}, '${r.releaseTitle.replace(/'/g, "\\'")}', ${p.queueId || 'null'}, '${pid}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;background:${p.status === 'confirmed' ? '#1a3a1a' : '#1a1e3a'};border:1px solid ${color};padding:2px 8px;border-radius:6px;font-size:10px;color:${p.status === 'confirmed' ? '#4ade80' : pctColor};margin:2px;" title="${p.name}: ${p.status} (${p.completeness.pct}%)\nMissing: ${p.completeness.missing.join(', ') || 'none'}">
+      const safeTitle = encodeURIComponent(r.releaseTitle);
+      return `<span onclick="openBmiSheet(${r.userId}, decodeURIComponent('${safeTitle}'), ${p.queueId || 'null'}, '${pid}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;background:${p.status === 'confirmed' ? '#1a3a1a' : '#1a1e3a'};border:1px solid ${color};padding:2px 8px;border-radius:6px;font-size:10px;color:${p.status === 'confirmed' ? '#4ade80' : pctColor};margin:2px;" title="${p.name}: ${p.status} (${p.completeness.pct}%)\nMissing: ${p.completeness.missing.join(', ') || 'none'}">
         <b>${p.name}</b> ${icon}
       </span>`;
     }).join('');
     const hasMissing = Object.values(r.platforms).some(p => p.completeness.missing.length > 0);
+    const safeTitle = encodeURIComponent(r.releaseTitle);
     return `<tr>
-      <td><input type="checkbox" class="reg-check" data-user="${r.userId}" data-title="${r.releaseTitle}"></td>
+      <td><input type="checkbox" class="reg-check" data-user="${r.userId}" data-title="${safeTitle}"></td>
       <td style="font-size:12px;">${r.userEmail}<br><span style="color:#6b7094;font-size:10px;">${r.tier || 'free'}</span></td>
       <td style="font-weight:600;font-size:13px;">${r.releaseTitle}<br><span style="font-size:10px;color:#6b7094;font-weight:400;">${r.confirmedCount}/${r.totalPlatforms} confirmed</span></td>
       <td style="min-width:280px;">${platformStrip}</td>
       <td>
-        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, '${r.releaseTitle.replace(/'/g, "\\'")}')" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
+        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, decodeURIComponent('${safeTitle}'))" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
       </td>
     </tr>`;
   }).join('');
