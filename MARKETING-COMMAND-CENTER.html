@@ -963,6 +963,7 @@
     <button class="tab" onclick="showPanel('achievements')" style="background:none;border:none;position:relative;"><span style="position:relative;">Achievements</span></button>
     <button class="tab" onclick="window.location.href='/redemption'" style="background:linear-gradient(135deg,rgba(123,47,247,0.15),rgba(0,212,255,0.15));border:1px solid rgba(123,47,247,0.4);" title="Fix up an older release that's missing registration or backend setup">Redemption</button>
     <button class="tab" id="adminTab" style="display:none;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;font-weight:700;" onclick="showPanel('admin')">Master Admin</button>
+    <button class="tab" id="regPrepTab" style="display:none;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(123,47,247,0.15));border:1px solid rgba(0,212,255,0.3);position:relative;" onclick="showPanel('regprep')">Reg Prep <span id="regPrepTabCount" style="background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-size:10px;padding:1px 7px;border-radius:99px;font-weight:700;margin-left:4px;">0</span></button>
   </div>
 
   <div class="site-layout">
@@ -2217,6 +2218,41 @@
 
   </div><!-- end panel-admin -->
 
+  <!-- REG PREP TAB (admin-only, full-screen) -->
+  <div class="panel" id="panel-regprep">
+    <h2 style="display:flex;align-items:center;gap:12px;">Registration Prep
+      <span id="regPrepCountPanel" style="background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-size:13px;padding:2px 12px;border-radius:99px;font-weight:600;">0</span>
+      <button class="btn-action" onclick="regPrepLoad()" style="font-size:11px;padding:4px 12px;margin-left:auto;">Refresh</button>
+    </h2>
+    <p class="subtitle">Pre-filled registration data sheets for all users' releases. Review, copy fields, submit on each platform, then log the confirmation number.</p>
+
+    <!-- Filter controls -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <button class="btn-action" onclick="regPrepFilter('all')" style="font-size:12px;padding:6px 14px;" id="rpFilter-all">All</button>
+      <button class="btn-action" onclick="regPrepFilter('new')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;" id="rpFilter-new">New</button>
+      <button class="btn-action" onclick="regPrepFilter('pending')" style="font-size:12px;padding:6px 14px;" id="rpFilter-pending">Pending</button>
+      <button class="btn-action" onclick="regPrepFilter('submitted')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;" id="rpFilter-submitted">Submitted</button>
+      <button class="btn-action" onclick="regPrepFilter('confirmed')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#080b1e;" id="rpFilter-confirmed">Confirmed</button>
+      <button class="btn-action" onclick="regPrepBulkQueue()" style="font-size:12px;padding:6px 14px;margin-left:auto;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;">Queue Selected</button>
+    </div>
+
+    <!-- Registration table -->
+    <div style="overflow-x:auto;">
+      <table class="calendar-table" style="width:100%;">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="rpSelectAll" onchange="regPrepToggleAll(this.checked)"></th>
+            <th>User</th>
+            <th>Release</th>
+            <th>Platforms (click to view sheet)</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="rpRegList"></tbody>
+      </table>
+    </div>
+  </div><!-- end panel-regprep -->
+
   </div><!-- end site-panels -->
 
   <!-- GLOBAL METADATA SIDEBAR — visible on every tab -->
@@ -2639,7 +2675,7 @@ const regPlatforms = [
 // nav button row. Clicking that tab navigates to /redemption directly, so
 // no panel is rendered and showPanel() is never called for it. lockTabs
 // excludes it so it never gets a .locked greyed-out state.
-const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin'];
+const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin','regprep'];
 let campaignGenerated = false;
 
 function lockTabs() {
@@ -2737,7 +2773,7 @@ function showPanel(id) {
     return;
   }
   // Block locked tabs (except intake, admin, achievements)
-  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && !campaignGenerated) {
+  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && id !== 'regprep' && !campaignGenerated) {
     showToast('Generate your campaign first to unlock all tabs');
     return;
   }
@@ -2751,6 +2787,7 @@ function showPanel(id) {
   if (id === 'outreach') { try { stInit(); } catch(_) {} }
   if (id === 'admin') adminLoadData();
   if (id === 'achievements') { loadGamification(); renderAchievementsPanel(); }
+  if (id === 'regprep') regPrepLoad();
 }
 
 function showToast(msg) {
@@ -9028,6 +9065,7 @@ let _adminTicketsCache = [];
 function adminInit() {
   if (USER_ROLE !== 'admin' || USER_EMAIL !== 'josephmadiganmusic@gmail.com') return;
   document.getElementById('adminTab').style.display = '';
+  document.getElementById('regPrepTab').style.display = '';
 }
 
 async function adminLoadData() {
@@ -9366,7 +9404,12 @@ async function adminLoadRegistrations() {
     _regPlatformDefs = data.platformDefs || {};
     const pending = _regCache.filter(r => r.confirmedCount < r.totalPlatforms).length;
     document.getElementById('regPrepCount').textContent = pending;
+    const rpTabCount = document.getElementById('regPrepTabCount');
+    if (rpTabCount) rpTabCount.textContent = pending;
+    const rpPanelCount = document.getElementById('regPrepCountPanel');
+    if (rpPanelCount) rpPanelCount.textContent = pending;
     adminRenderReg();
+    if (typeof regPrepRender === 'function') regPrepRender();
   } catch(e) { console.error('adminLoadRegistrations:', e); }
 }
 
@@ -9718,6 +9761,90 @@ async function adminAskSlack(userId, releaseTitle) {
       showToast(data.error || 'Failed to send Slack DM');
     }
   } catch(e) { showToast('Error: ' + e.message); }
+}
+// ─── Reg Prep Tab (dedicated full-screen panel) ─────────────────────
+let _rpFilter = 'all';
+
+async function regPrepLoad() {
+  try {
+    const resp = await fetch('/api/admin/registration/pending');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    _regCache = data.registrations || [];
+    _regPlatformDefs = data.platformDefs || {};
+    const pending = _regCache.filter(r => r.confirmedCount < r.totalPlatforms).length;
+    const countEl = document.getElementById('regPrepTabCount');
+    if (countEl) countEl.textContent = pending;
+    const countPanel = document.getElementById('regPrepCountPanel');
+    if (countPanel) countPanel.textContent = pending;
+    // Also update admin panel count if it exists
+    const adminCount = document.getElementById('regPrepCount');
+    if (adminCount) adminCount.textContent = pending;
+    regPrepRender();
+  } catch(e) { console.error('regPrepLoad:', e); }
+}
+
+function regPrepFilter(filter) {
+  _rpFilter = filter;
+  regPrepRender();
+}
+
+function regPrepToggleAll(checked) {
+  document.querySelectorAll('#rpRegList .reg-check').forEach(cb => cb.checked = checked);
+}
+
+async function regPrepBulkQueue() {
+  const checks = document.querySelectorAll('#rpRegList .reg-check:checked');
+  if (!checks.length) { showToast('Select at least one release'); return; }
+  const items = [];
+  const allPlatforms = ['pro', 'distribution', 'musixmatch', 'soundexchange', 'mlc', 'songtrust'];
+  checks.forEach(cb => {
+    allPlatforms.forEach(p => {
+      items.push({ userId: Number(cb.dataset.user), releaseTitle: cb.dataset.title, platform: p });
+    });
+  });
+  try {
+    const resp = await fetch('/api/admin/registration/bulk-queue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+    if (resp.ok) { showToast('Queued ' + items.length + ' registrations'); regPrepLoad(); }
+    else { const j = await resp.json(); showToast(j.error || 'Bulk queue failed'); }
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+function regPrepRender() {
+  const tbody = document.getElementById('rpRegList');
+  if (!tbody) return;
+  const statusColors = { new: '#7b2ff7', pending: '#6b7094', ready: '#00d4ff', submitted: '#ffd700', confirmed: '#4ade80', skipped: '#666' };
+  let filtered = _regCache;
+  if (_rpFilter !== 'all') {
+    filtered = _regCache.filter(r => Object.values(r.platforms).some(p => p.status === _rpFilter));
+  }
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#666;padding:24px;">No registrations found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(r => {
+    const platformStrip = Object.entries(r.platforms).map(([pid, p]) => {
+      const color = statusColors[p.status] || '#666';
+      const pctColor = p.completeness.pct >= 80 ? '#4ade80' : p.completeness.pct >= 50 ? '#ffd700' : '#ff6b6b';
+      const icon = p.status === 'confirmed' ? '&#10003;' : p.completeness.pct + '%';
+      return `<span onclick="openBmiSheet(${r.userId}, '${r.releaseTitle.replace(/'/g, "\\'")}', ${p.queueId || 'null'}, '${pid}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;background:${p.status === 'confirmed' ? '#1a3a1a' : '#1a1e3a'};border:1px solid ${color};padding:2px 8px;border-radius:6px;font-size:10px;color:${p.status === 'confirmed' ? '#4ade80' : pctColor};margin:2px;" title="${p.name}: ${p.status} (${p.completeness.pct}%)\nMissing: ${p.completeness.missing.join(', ') || 'none'}">
+        <b>${p.name}</b> ${icon}
+      </span>`;
+    }).join('');
+    const hasMissing = Object.values(r.platforms).some(p => p.completeness.missing.length > 0);
+    return `<tr>
+      <td><input type="checkbox" class="reg-check" data-user="${r.userId}" data-title="${r.releaseTitle}"></td>
+      <td style="font-size:12px;">${r.userEmail}<br><span style="color:#6b7094;font-size:10px;">${r.tier || 'free'}</span></td>
+      <td style="font-weight:600;font-size:13px;">${r.releaseTitle}<br><span style="font-size:10px;color:#6b7094;font-weight:400;">${r.confirmedCount}/${r.totalPlatforms} confirmed</span></td>
+      <td style="min-width:280px;">${platformStrip}</td>
+      <td>
+        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, '${r.releaseTitle.replace(/'/g, "\\'")}')" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
 }
 // ─── End Registration Prep ──────────────────────────────────────────
 
