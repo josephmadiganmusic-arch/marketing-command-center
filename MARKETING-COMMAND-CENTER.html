@@ -9613,9 +9613,9 @@ function buildSheetLayout(platform, s) {
 
     case 'soundexchange':
       return bmiSection('ISRC Recording Information', [
-        bmiField('Artist', s.primaryArtist),
-        bmiField('Recording Title', s.songTitle),
-        bmiField('ISRC', s.isrc),
+        bmiField('Artist*', s.primaryArtist),
+        bmiField('Song Title*', s.songTitle),
+        bmiField('ISRC*', s.isrc),
         bmiField('Version', s.version),
         bmiField('Duration', s.duration),
         bmiField('Genre', s.genre),
@@ -9623,29 +9623,29 @@ function buildSheetLayout(platform, s) {
         bmiField('Date of First Release', s.dateOfFirstRelease || s.releaseDate),
         bmiField('Country of Recording', s.countryOfRecording),
         bmiField('Country of Mastering', s.countryOfMastering),
-      ]) +
-      bmiSection('Recording Claim Information', [
-        bmiField('Basis of Claim', s.claimBasis || 'Copyright Owner'),
-        bmiField('Percentage Claimed', s.percentageClaimed || '100'),
-        bmiField('Rights Begin', s.rightsBegin || s.releaseDate),
-        bmiField('Rights End', s.rightsEnd || 'Perpetuity'),
-        bmiField('Copyright Owner Nationality', s.copyrightOwnerNationality || 'US'),
-        bmiField('Territories', 'United States'),
-      ]) +
-      bmiSection('Additional Info', [
+        bmiField('Publisher(s)', Array.isArray(s.publishers) ? s.publishers.map(p => p.name).join(', ') : (s.publisherEntity || '')),
         bmiField('(P) Line', s.pLine),
         bmiField('ISWC', s.iswc),
         bmiField('Composer(s)', s.composers || (s.songwriters || []).map(w => w.name).join(', ')),
-        bmiField('Publisher(s)', Array.isArray(s.publishers) ? s.publishers.map(p => p.name).join(', ') : (s.publisherEntity || '')),
+        bmiField('Countries of First Release', s.countriesOfFirstRelease || 'US'),
+        bmiField('Copyright Owner Country of Nationality', s.copyrightOwnerNationality || 'US'),
       ]) +
-      bmiSection('Release Information', [
-        bmiField('Release Artist', s.releaseArtist || s.primaryArtist),
-        bmiField('Release Title (Album)', s.albumName),
-        bmiField('UPC', s.upc),
+      bmiSection('Recording Claim Information', [
+        bmiField('Basis of Claim*', s.claimBasis || 'Copyright Owner'),
+        bmiField('Percentage Claimed*', s.percentageClaimed || '100'),
+        bmiField('Rights Begin*', s.rightsBegin || s.releaseDate),
+        bmiField('Rights End*', s.rightsEnd || 'Perpetuity'),
+        bmiField('Territories of Collection Rights', 'United States'),
+      ]) +
+      bmiSection('Releases', [
+        bmiField('Release Artist*', s.releaseArtist || s.primaryArtist),
+        bmiField('Release Title (Album)*', s.albumName),
+        bmiField('Release Version', s.releaseVersion),
+        bmiField('UPC*', s.upc),
         bmiField('Catalog #', s.catalogNumber),
         bmiField('Release Date', s.releaseDate),
         bmiField('Country of Release', s.countryOfRelease || 'US'),
-        bmiField('Release Label', s.label),
+        bmiField('Release Label*', s.label),
       ]);
 
     case 'mlc':
