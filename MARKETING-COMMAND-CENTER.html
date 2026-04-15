@@ -3056,14 +3056,15 @@ function doLogout() {
 // losing unsaved work. Modern browsers display a generic dialog and
 // ignore the returnValue string, but setting it is still the sanctioned
 // way to request the prompt.
-window.addEventListener('beforeunload', (e) => {
+function _beforeUnloadHandler(e) {
   const ok = intakeForceFlush();
   if (!ok) {
     e.preventDefault();
     e.returnValue = 'Your most recent changes may not have saved. Leave anyway?';
     return e.returnValue;
   }
-});
+}
+window.addEventListener('beforeunload', _beforeUnloadHandler);
 
 // ============================
 // ARTIST PROFILE — sticky fields that carry over between releases
@@ -3866,8 +3867,8 @@ function intakeSwitchTo(title) {
   //    release_data and clobber it with the OLD form data on the way out.
   try { clearTimeout(_autosaveTimer); } catch(e) {}
   try { clearTimeout(_namedSaveTimer); } catch(e) {}
-  // Detach beforeunload's intakeForceFlush — same reason; we already saved manually above.
-  try { window.removeEventListener('beforeunload', intakeForceFlush); } catch(e) {}
+  // Detach beforeunload handler so it doesn't overwrite release_data during reload.
+  try { window.removeEventListener('beforeunload', _beforeUnloadHandler); } catch(e) {}
 
   // 4. Reload the page so init() rehydrates everything from scratch
   window.location.reload();
@@ -4064,7 +4065,7 @@ function intakeDelete() {
         // Cancel pending autosaves that would resurrect the deleted record.
         try { clearTimeout(_autosaveTimer); } catch(e) {}
         try { clearTimeout(_namedSaveTimer); } catch(e) {}
-        try { window.removeEventListener('beforeunload', intakeForceFlush); } catch(e) {}
+        try { window.removeEventListener('beforeunload', _beforeUnloadHandler); } catch(e) {}
         intakeLoadList();
         showToast('Release deleted — reloading');
         setTimeout(() => window.location.reload(), 500);
