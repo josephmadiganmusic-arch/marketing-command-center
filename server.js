@@ -157,6 +157,32 @@ function _lockIsStale() {
     const raw = fs.readFileSync(INSTANCE_LOCK_PATH, 'utf8');
     let parsed = null;
     try { parsed = JSON.parse(raw); } catch(_) {}
+
+    // Fast path: if the lock was written by a different container (different
+    // RAILWAY_REPLICA_ID or HOSTNAME), the old process is guaranteed dead —
+    // Railway kills the old container before the new one mounts the volume.
+    // No need to wait 90 seconds.
+    if (parsed && parsed.host) {
+      const myHost = process.env.RAILWAY_REPLICA_ID || process.env.HOSTNAME || 'unknown';
+      if (parsed.host !== myHost && parsed.host !== 'unknown' && myHost !== 'unknown') {
+        console.log('[BOOT] Lock belongs to different container (' + parsed.host + ' vs ' + myHost + '), treating as stale');
+        return true;
+      }
+    }
+
+    // Same host — check if the PID is still alive (handles crash/OOM on same container)
+    if (parsed && parsed.pid) {
+      try {
+        process.kill(parsed.pid, 0); // signal 0 = existence check, doesn't kill
+      } catch (e) {
+        if (e.code === 'ESRCH') {
+          console.log('[BOOT] Lock holder PID ' + parsed.pid + ' is not running, treating as stale');
+          return true;
+        }
+      }
+    }
+
+    // Fallback: time-based staleness
     const heartbeatTs = parsed && parsed.heartbeat ? Date.parse(parsed.heartbeat) : NaN;
     const mtimeMs = fs.statSync(INSTANCE_LOCK_PATH).mtimeMs;
     const freshest = Math.max(
