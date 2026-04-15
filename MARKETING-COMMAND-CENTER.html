@@ -2602,18 +2602,45 @@ const regPlatforms = [
     steps: [
       'Log in at soundexchange.com',
       'Go to "Repertoire" then "Register Sound Recordings"',
-      'Enter the track title and featured artist name',
-      'Add the album/single title and ISRC code',
-      'Enter the release date and label name',
-      'Submit the recording registration'
+      'Click "Add Recording" to start a new ISRC entry',
+      'Fill ISRC Recording Information: Artist, Song Title, ISRC, Duration, Genre, Recording Date, Date of First Release, Country of Recording, Country of Mastering',
+      'Add Publisher(s), (P) Line, ISWC, Composer(s), Countries of First Release, Copyright Owner Nationality',
+      'Fill Recording Claim Information: Basis of Claim (Copyright Owner), Percentage Claimed (100), Rights Begin date, Rights End (Perpetuity)',
+      'Click "Add Release" and enter: Release Artist, Album Title, UPC, Release Date, Label',
+      'Click "Go to top and Review" to verify all fields, then Submit'
     ],
     fields: [
-      { label: 'Track Title', key: 'songTitle' },
-      { label: 'Artist Name', key: 'primaryArtist' },
-      { label: 'Album Title', key: 'albumName' },
-      { label: 'ISRC', key: 'isrc' },
+      // ISRC Recording Information
+      { label: 'Artist*', key: 'primaryArtist' },
+      { label: 'Song Title*', key: 'songTitle' },
+      { label: 'ISRC*', key: 'isrc' },
+      { label: 'Version', key: 'version' },
+      { label: 'Duration', key: 'duration' },
+      { label: 'Genre', key: 'genre' },
+      { label: 'Recording Date', key: 'releaseDate' },
+      { label: 'Date of First Release', key: 'releaseDate' },
+      { label: 'Country of Recording', key: '_countryOfRecording', fallback: 'US' },
+      { label: 'Country of Mastering', key: '_countryOfMastering', fallback: 'US' },
+      { label: 'Publisher(s)', key: 'publisherEntity' },
+      { label: '(P) Line', key: '_pLine' },
+      { label: 'ISWC', key: 'iswc' },
+      { label: 'Composer(s)', key: 'writersNames' },
+      { label: 'Countries of First Release', key: '_countriesOfFirstRelease', fallback: 'US' },
+      { label: 'Copyright Owner Nationality', key: '_copyrightOwnerNationality', fallback: 'US' },
+      // Recording Claim Information
+      { label: 'Basis of Claim*', key: '_claimBasis', fallback: 'Copyright Owner' },
+      { label: 'Percentage Claimed*', key: '_percentageClaimed', fallback: '100' },
+      { label: 'Rights Begin*', key: 'releaseDate' },
+      { label: 'Rights End*', key: '_rightsEnd', fallback: 'Perpetuity' },
+      { label: 'Territories', key: '_territories', fallback: 'United States' },
+      // Release Information
+      { label: 'Release Artist*', key: 'primaryArtist' },
+      { label: 'Release Title (Album)*', key: 'albumName' },
+      { label: 'UPC*', key: 'upc' },
+      { label: 'Catalog #', key: '_catalogNumber' },
       { label: 'Release Date', key: 'releaseDate' },
-      { label: 'Label', key: 'label' }
+      { label: 'Country of Release', key: '_countryOfRelease', fallback: 'US' },
+      { label: 'Release Label*', key: 'label' }
     ]
   },
   {
@@ -4233,6 +4260,19 @@ function getIntakeFieldValue(key) {
     case 'explicit': return d.explicit || 'No';
     case 'lyrics': return d.lyrics || '';
     case 'pressRelease': return d.pressRelease || '';
+    case 'version': return d.version || '';
+    case 'writersNames': return (d.songwriters || []).map(w => w.name).filter(Boolean).join(', ');
+    case '_pLine': return d.pLine || (d.label ? ('\u2117 ' + (d.releaseDate ? d.releaseDate.slice(0,4) : new Date().getFullYear()) + ' ' + d.label) : '');
+    case '_countryOfRecording': return d.countryOfRecording || 'US';
+    case '_countryOfMastering': return d.countryOfMastering || 'US';
+    case '_countriesOfFirstRelease': return 'US';
+    case '_copyrightOwnerNationality': return 'US';
+    case '_claimBasis': return 'Copyright Owner';
+    case '_percentageClaimed': return '100';
+    case '_rightsEnd': return 'Perpetuity';
+    case '_territories': return 'United States';
+    case '_catalogNumber': return d.catalogNumber || '';
+    case '_countryOfRelease': return 'US';
     default: return '';
   }
 }
