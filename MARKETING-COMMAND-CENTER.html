@@ -2233,7 +2233,8 @@
       <button class="btn-action" onclick="regPrepFilter('pending')" style="font-size:12px;padding:6px 14px;" id="rpFilter-pending">Pending</button>
       <button class="btn-action" onclick="regPrepFilter('submitted')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;" id="rpFilter-submitted">Submitted</button>
       <button class="btn-action" onclick="regPrepFilter('confirmed')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#080b1e;" id="rpFilter-confirmed">Confirmed</button>
-      <button class="btn-action" onclick="regPrepBulkQueue()" style="font-size:12px;padding:6px 14px;margin-left:auto;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;">Queue Selected</button>
+      <button class="btn-action" onclick="downloadSoundExchangeXlsx()" style="font-size:12px;padding:6px 14px;margin-left:auto;background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#fff;">Download ISRC Ingest Form (.xlsx)</button>
+      <button class="btn-action" onclick="regPrepBulkQueue()" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;">Queue Selected</button>
     </div>
 
     <!-- Registration table -->
@@ -9610,16 +9611,40 @@ function buildSheetLayout(platform, s) {
       </div>`;
 
     case 'soundexchange':
-      return bmiSection('Recording Info', [
-        bmiField('Track Title', s.songTitle),
-        bmiField('Artist Name', s.primaryArtist),
-        bmiField('Featured Artist', s.featArtist),
+      return bmiSection('ISRC Recording Information', [
+        bmiField('Artist', s.primaryArtist),
+        bmiField('Recording Title', s.songTitle),
         bmiField('ISRC', s.isrc),
+        bmiField('Version', s.version),
+        bmiField('Duration', s.duration),
+        bmiField('Genre', s.genre),
+        bmiField('Recording Date', s.recordingDate || s.releaseDate),
+        bmiField('Date of First Release', s.dateOfFirstRelease || s.releaseDate),
+        bmiField('Country of Recording', s.countryOfRecording),
+        bmiField('Country of Mastering', s.countryOfMastering),
       ]) +
-      bmiSection('Release Details', [
-        bmiField('Album Title', s.albumName),
+      bmiSection('Recording Claim Information', [
+        bmiField('Basis of Claim', s.claimBasis || 'Copyright Owner'),
+        bmiField('Percentage Claimed', s.percentageClaimed || '100'),
+        bmiField('Rights Begin', s.rightsBegin || s.releaseDate),
+        bmiField('Rights End', s.rightsEnd || 'Perpetuity'),
+        bmiField('Copyright Owner Nationality', s.copyrightOwnerNationality || 'US'),
+        bmiField('Territories', 'United States'),
+      ]) +
+      bmiSection('Additional Info', [
+        bmiField('(P) Line', s.pLine),
+        bmiField('ISWC', s.iswc),
+        bmiField('Composer(s)', s.composers || (s.songwriters || []).map(w => w.name).join(', ')),
+        bmiField('Publisher(s)', Array.isArray(s.publishers) ? s.publishers.map(p => p.name).join(', ') : (s.publisherEntity || '')),
+      ]) +
+      bmiSection('Release Information', [
+        bmiField('Release Artist', s.releaseArtist || s.primaryArtist),
+        bmiField('Release Title (Album)', s.albumName),
+        bmiField('UPC', s.upc),
+        bmiField('Catalog #', s.catalogNumber),
         bmiField('Release Date', s.releaseDate),
-        bmiField('Label', s.label),
+        bmiField('Country of Release', s.countryOfRelease || 'US'),
+        bmiField('Release Label', s.label),
       ]);
 
     case 'mlc':
@@ -9849,6 +9874,10 @@ function regPrepRender() {
       </td>
     </tr>`;
   }).join('');
+}
+function downloadSoundExchangeXlsx() {
+  showToast('Generating ISRC Ingest Form...');
+  window.location.href = '/api/admin/registration/soundexchange-xlsx';
 }
 // ─── End Registration Prep ──────────────────────────────────────────
 

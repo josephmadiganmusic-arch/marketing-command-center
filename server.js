@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const initSqlJs = require('sql.js');
 const Stripe = require('stripe');
 const { Resend } = require('resend');
+const ExcelJS = require('exceljs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -4992,15 +4993,37 @@ const PLATFORM_DEFS = {
     cost: 'Free',
     url: 'https://www.soundexchange.com/',
     required: [
-      { key: 'songTitle', label: 'Track Title' },
-      { key: 'primaryArtist', label: 'Artist Name' },
+      { key: 'primaryArtist', label: 'Artist' },
+      { key: 'songTitle', label: 'Recording Title' },
       { key: 'isrc', label: 'ISRC' },
+      { key: 'claimBasis', label: 'Basis of Claim' },
+      { key: 'percentageClaimed', label: 'Percentage Claimed' },
+      { key: 'rightsBegin', label: 'Rights Begin Date' },
+      { key: 'rightsEnd', label: 'Rights End Date' },
     ],
     optional: [
-      { key: 'albumName', label: 'Album Title' },
+      { key: 'nonUsTerritories', label: 'Non-US Territories' },
+      { key: 'version', label: 'Recording Version' },
+      { key: 'duration', label: 'Duration (HH:MM:SS)' },
+      { key: 'genre', label: 'Genre' },
+      { key: 'recordingDate', label: 'Recording Date' },
+      { key: 'countryOfRecording', label: 'Country of Recording' },
+      { key: 'countryOfMastering', label: 'Country of Mastering' },
+      { key: 'copyrightOwnerNationality', label: 'Copyright Owner Nationality' },
+      { key: 'dateOfFirstRelease', label: 'Date of First Release' },
+      { key: 'countriesOfFirstRelease', label: 'Countries of First Release' },
+      { key: 'pLine', label: '(P) Line' },
+      { key: 'iswc', label: 'ISWC' },
+      { key: 'composers', label: 'Composer(s)' },
+      { key: 'publishers', label: 'Publisher(s)' },
+      { key: 'releaseArtist', label: 'Release Artist' },
+      { key: 'albumName', label: 'Release Title (Album)' },
+      { key: 'releaseVersion', label: 'Release Version' },
+      { key: 'upc', label: 'UPC' },
+      { key: 'catalogNumber', label: 'Catalog #' },
       { key: 'releaseDate', label: 'Release Date' },
-      { key: 'label', label: 'Label' },
-      { key: 'featArtist', label: 'Featured Artist' },
+      { key: 'countryOfRelease', label: 'Country of Release' },
+      { key: 'label', label: 'Release Label' },
     ],
   },
   mlc: {
@@ -5109,6 +5132,25 @@ function buildPlatformSheet(release, user, platform) {
     publishers: pubs.map(p => ({ name: p.name, ipi: p.ipi || '', split: p.split || '' })),
     filmTvTheater: 'No',
     userEmail: user ? user.email : '',
+    // SoundExchange ISRC Ingest Form fields
+    claimBasis: 'Copyright Owner',
+    percentageClaimed: '100',
+    rightsBegin: release.releaseDate || '',
+    rightsEnd: '',  // blank = perpetuity
+    nonUsTerritories: '',
+    version: release.version || '',
+    recordingDate: release.recordingDate || release.releaseDate || '',
+    countryOfRecording: release.countryOfRecording || 'US',
+    countryOfMastering: release.countryOfMastering || 'US',
+    copyrightOwnerNationality: 'US',
+    dateOfFirstRelease: release.releaseDate || '',
+    countriesOfFirstRelease: 'US',
+    pLine: release.pLine || (release.label ? ('℗ ' + new Date().getFullYear() + ' ' + release.label) : ''),
+    composers: sw.map(s => s.name).join(', '),
+    releaseArtist: release.primaryArtist || '',
+    releaseVersion: '',
+    catalogNumber: release.catalogNumber || '',
+    countryOfRelease: 'US',
   };
   return sheet;
 }
@@ -5215,6 +5257,119 @@ app.get('/api/admin/registration/:userId/sheet/:releaseTitle/:platform?', requir
 app.get('/api/admin/registration/:userId/bmi-sheet/:releaseTitle', requireAdmin, (req, res) => {
   req.params.platform = 'pro';
   res.redirect(307, `/api/admin/registration/${req.params.userId}/sheet/${req.params.releaseTitle}/pro`);
+});
+
+// Bulk SoundExchange ISRC Ingest Form XLSX export
+app.get('/api/admin/registration/soundexchange-xlsx', requireAdmin, async (req, res) => {
+  try {
+    const rows = dbHelpers.prepare(`
+      SELECT ud.user_id, ud.value, u.email
+      FROM user_data ud
+      JOIN users u ON u.id = ud.user_id AND u.deleted_at IS NULL
+      WHERE ud.key = 'release_data_all'
+    `).all();
+
+    // Collect all releases that have campaigns generated
+    const allSheets = [];
+    for (const row of rows) {
+      let releases;
+      try { releases = JSON.parse(row.value); } catch (e) { continue; }
+      if (!releases || typeof releases !== 'object') continue;
+      for (const [title, release] of Object.entries(releases)) {
+        if (!release._campaignGenerated) continue;
+        // Skip if already confirmed on SoundExchange
+        const qKey = row.user_id + '::' + title + '::soundexchange';
+        const qRow = dbHelpers.prepare('SELECT status FROM registration_queue WHERE user_id = ? AND release_title = ? AND platform = ?').get(row.user_id, title, 'soundexchange');
+        if (qRow && qRow.status === 'confirmed') continue;
+        const sheet = buildPlatformSheet(release, { email: row.email }, 'soundexchange');
+        sheet._userEmail = row.email;
+        sheet._releaseTitle = title;
+        allSheets.push(sheet);
+      }
+    }
+
+    // Build XLSX matching SoundExchange ISRC Ingest Form format
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Form');
+
+    // Header rows matching official form
+    ws.getCell('B1').value = 'ISRC Ingest File';
+    ws.getCell('B2').value = new Date().toLocaleDateString('en-US');
+
+    // Column headers (row 6 in official form, we use row 5)
+    const headers = [
+      'Artist', 'Recording Title', 'ISRC',
+      'Basis of Claim', 'Percentage Claimed', 'Rights Begin Date', 'Rights End Date',
+      'Non-US Territories',
+      'Recording Version', 'Duration (HH:MM:SS)', 'Genre', 'Recording Date',
+      'Country of Recording', 'Country of Mastering', 'Copyright Owner Nationality',
+      'Date of First Release', 'Countries of First Release', '(P) Line',
+      'ISWC', 'Composer(s)', 'Publisher(s)',
+      'Release Artist', 'Release Title (Album)', 'Release Version', 'UPC',
+      'Catalog #', 'Release Date', 'Country of Release', 'Release Label',
+    ];
+
+    // Section headers (row 4)
+    ws.getCell('A4').value = 'Minimum Recording Information';
+    ws.getCell('A4').font = { bold: true };
+    ws.getCell('D4').value = 'Sound Recording Copyright Owner Claim';
+    ws.getCell('D4').font = { bold: true };
+    ws.getCell('I4').value = 'Additional Recording Information';
+    ws.getCell('I4').font = { bold: true };
+    ws.getCell('V4').value = 'Release Information';
+    ws.getCell('V4').font = { bold: true };
+
+    const headerRow = ws.getRow(5);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
+      cell.font = { bold: true, size: 10 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2D4A7A' } };
+      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    });
+
+    // Data rows
+    for (let i = 0; i < allSheets.length; i++) {
+      const s = allSheets[i];
+      const row = ws.getRow(6 + i);
+      const composerStr = s.composers || (s.songwriters || []).map(w => w.name).join(', ');
+      const publisherStr = s.publishers && typeof s.publishers === 'string' ? s.publishers
+        : (Array.isArray(s.publishers) ? s.publishers.map(p => p.name).join(', ') : (s.publisherEntity || ''));
+      const durationHMS = s.duration ? '00:' + s.duration : '';
+      row.values = [
+        s.primaryArtist, s.songTitle, s.isrc,
+        s.claimBasis || 'Copyright Owner', s.percentageClaimed || '100',
+        s.rightsBegin || s.releaseDate, s.rightsEnd || 'Perpetuity',
+        s.nonUsTerritories || '',
+        s.version || '', durationHMS, s.genre || '', s.recordingDate || s.releaseDate || '',
+        s.countryOfRecording || 'US', s.countryOfMastering || 'US', s.copyrightOwnerNationality || 'US',
+        s.dateOfFirstRelease || s.releaseDate || '', s.countriesOfFirstRelease || 'US', s.pLine || '',
+        s.iswc || '', composerStr, publisherStr,
+        s.releaseArtist || s.primaryArtist, s.albumName || '', s.releaseVersion || '', s.upc || '',
+        s.catalogNumber || '', s.releaseDate || '', s.countryOfRelease || 'US', s.label || '',
+      ];
+    }
+
+    // Auto-width columns
+    ws.columns.forEach(col => {
+      let maxLen = 12;
+      col.eachCell({ includeEmpty: false }, cell => {
+        const len = cell.value ? String(cell.value).length : 0;
+        if (len > maxLen) maxLen = len;
+      });
+      col.width = Math.min(maxLen + 2, 40);
+    });
+
+    logOperation(req, 'admin.soundexchange_xlsx_exported', null, null, { count: allSheets.length });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="SoundExchange_ISRC_Ingest_' + new Date().toISOString().slice(0,10) + '.xlsx"');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('soundexchange-xlsx error:', e);
+    res.status(500).json({ error: 'Failed to generate XLSX: ' + e.message });
+  }
 });
 
 // Mark a release as queued for registration (status: pending → ready → submitted → confirmed)
