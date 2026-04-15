@@ -8,7 +8,8 @@ const bcrypt = require('bcryptjs');
 const initSqlJs = require('sql.js');
 const Stripe = require('stripe');
 const { Resend } = require('resend');
-const ExcelJS = require('exceljs');
+// ExcelJS is lazy-loaded inside the soundexchange-xlsx endpoint to avoid
+// adding ~76MB RSS at startup (would OOM small Railway containers).
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -5289,6 +5290,7 @@ app.get('/api/admin/registration/soundexchange-xlsx', requireAdmin, async (req, 
     }
 
     // Build XLSX matching SoundExchange ISRC Ingest Form format
+    const ExcelJS = require('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Form');
 
