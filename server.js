@@ -507,7 +507,7 @@ function initDb() {
     )
   `);
 
-  // Redemption Release one-time service. Artists pay $24.99 to have Joseph
+  // Redemption Release one-time service. Artists pay $49.99 to have Joseph
   // manually clean up an old release (PRO registration, SoundExchange, metadata,
   // re-positioning). Row is created on form submit (status='pending'), updated
   // to 'paid' by the Stripe webhook, and marked 'completed' by admin once work
@@ -1860,7 +1860,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
               }
               const subject = `Redemption Release paid: ${row.release_title}`;
               const message = [
-                `New Redemption Release order — $24.99 paid.`,
+                `New Redemption Release order — $49.99 paid.`,
                 ``,
                 `Customer: ${customerEmail}`,
                 `Release: ${row.release_title}`,
@@ -2184,7 +2184,7 @@ app.post('/api/elite/update-credential', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-// --- Redemption Release ($24.99 one-time service) ---
+// --- Redemption Release ($49.99 one-time service) ---
 // Trial users can VIEW the page (so they see what they're missing) but only
 // Pro/Elite/admin can submit. The form POST is gated by requireActive, so
 // trial users get a 402 and the frontend routes them to /subscribe.
