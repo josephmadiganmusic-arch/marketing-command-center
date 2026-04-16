@@ -1265,6 +1265,76 @@ app.get(['/terms', '/terms-of-service', '/terms.html'], (req, res) => {
   res.sendFile(path.join(__dirname, 'terms.html'));
 });
 
+// --- Webinar landing page (public, no auth) ---
+app.get(['/webinar', '/webinar.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'webinar.html'));
+});
+
+// --- Webinar registration API ---
+app.post('/api/webinar-register', express.json(), async (req, res) => {
+  const { name, email, artist, stage } = req.body || {};
+  if (!email || !name) return res.status(400).json({ error: 'Name and email required' });
+
+  // Save lead to DB
+  try {
+    dbHelpers.exec(`CREATE TABLE IF NOT EXISTS webinar_leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      artist TEXT,
+      stage TEXT,
+      registered_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(email)
+    )`);
+    dbHelpers.prepare(
+      `INSERT OR REPLACE INTO webinar_leads (name, email, artist, stage) VALUES (?, ?, ?, ?)`
+    ).run(name, email, artist || '', stage || '');
+  } catch (e) {
+    console.error('[WEBINAR] DB save failed:', e.message);
+  }
+
+  // Send confirmation email via Resend
+  if (resend) {
+    try {
+      await resend.emails.send({
+        from: EMAIL_FROM,
+        to: email,
+        subject: 'You\'re registered! 5 Ways to Register Your Music — Webinar',
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #080b1e; color: #e0e0e0; border-radius: 12px; overflow: hidden;">
+            <div style="text-align: center; padding: 32px 24px 16px;">
+              <h1 style="margin: 0 0 8px; font-size: 22px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">You're In, ${name.split(' ')[0]}!</h1>
+              <p style="color: #6b7094; font-size: 13px;">Your seat is reserved for the webinar.</p>
+            </div>
+            <div style="padding: 16px 32px 32px; font-size: 14px; line-height: 1.7;">
+              <p style="margin: 0 0 16px;"><strong style="color: #ffd700;">5 Ways to Register Your Music</strong><br>
+              Tuesday, April 22 at 7:00 PM ET</p>
+              <p style="margin: 0 0 16px;">We'll send you a reminder 1 hour before the webinar with the live link.</p>
+              <p style="margin: 0 0 16px;">In the meantime, start your <strong>free 7-day trial</strong> of Rollout Heaven and explore the Marketing Command Center:</p>
+              <div style="text-align: center; margin: 24px 0;">
+                <a href="https://rolloutheaven.com/login" style="display: inline-block; padding: 14px 36px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); color: #fff; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px;">Start Free Trial</a>
+              </div>
+              <p style="margin: 0; font-size: 12px; color: #6b7094;">No credit card required &mdash; 7 days free, then $9.99/seat.</p>
+            </div>
+            <div style="padding: 12px 32px; background: #0d1029; text-align: center; font-size: 11px; color: #6b7094;">
+              Rollout Heaven &mdash; The Marketing Command Center for Independent Artists
+            </div>
+          </div>`
+      });
+    } catch (e) {
+      console.error('[WEBINAR] Email send failed:', e.message);
+    }
+  }
+
+  // Notify admin
+  notifyAdmins('New Webinar Registration', `
+    <p><strong>${name}</strong> (${email}) registered for the webinar.</p>
+    <p>Artist: ${artist || 'N/A'} &mdash; Stage: ${stage || 'N/A'}</p>
+  `).catch(() => {});
+
+  res.json({ ok: true });
+});
+
 // --- Auth Routes ---
 app.get('/login', (req, res) => {
   if (req.session.userId) return res.redirect('/');
