@@ -2051,7 +2051,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
                   </div>
                   <div style="padding: 16px 32px 32px; font-size: 14px; line-height: 1.7;">
                     <p style="margin: 0 0 16px;"><strong style="color: #ffd700;">Before You Drop That Song&hellip; 5 Ways to Register Your Music Right</strong><br>
-                    Friday, April 19 at 7:00 PM ET</p>
+                    Friday, April 19 at 8:00 PM ET</p>
                     <p style="margin: 0 0 16px;">We'll send you the live webinar link 1 hour before showtime. After the webinar, you'll also get access to the replay and all bonuses.</p>
                     <p style="margin: 0 0 16px;">In the meantime, start your <strong>free 7-day trial</strong> of Rollout Heaven:</p>
                     <div style="text-align: center; margin: 24px 0;">
