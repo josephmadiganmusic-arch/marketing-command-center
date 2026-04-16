@@ -2052,7 +2052,12 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
                   <div style="padding: 16px 32px 32px; font-size: 14px; line-height: 1.7;">
                     <p style="margin: 0 0 16px;"><strong style="color: #ffd700;">Before You Drop That Song&hellip; 5 Ways to Register Your Music Right</strong><br>
                     Friday, April 19 at 8:00 PM ET</p>
-                    <p style="margin: 0 0 16px;">We'll send you the live webinar link 1 hour before showtime. After the webinar, you'll also get access to the replay and all bonuses.</p>
+                    <p style="margin: 0 0 16px;">Here's your private link to join the live webinar:</p>
+              <div style="text-align: center; margin: 20px 0;">
+                <a href="https://youtube.com/live/7Kr3-pLusek?feature=share" style="display: inline-block; padding: 14px 36px; background: linear-gradient(135deg, #ffd700, #ff9f1a); color: #080b1e; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px;">Join the Live Webinar</a>
+              </div>
+              <p style="margin: 0 0 16px; font-size: 12px; color: #6b7094;">This link is for confirmed ticket holders only &mdash; please don't share it.</p>
+              <p style="margin: 0 0 16px;">After the webinar, you'll also get access to the replay and all bonuses.</p>
                     <p style="margin: 0 0 16px;">In the meantime, start your <strong>free 7-day trial</strong> of Rollout Heaven:</p>
                     <div style="text-align: center; margin: 24px 0;">
                       <a href="https://rolloutheaven.com/login" style="display: inline-block; padding: 14px 36px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); color: #fff; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px;">Start Free Trial</a>
