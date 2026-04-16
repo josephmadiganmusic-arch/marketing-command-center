@@ -874,6 +874,9 @@ const STRIPE_REDEMPTION_PRICE_ID = process.env.STRIPE_REDEMPTION_PRICE_ID || '';
 // task/lessons.md), Pro/Elite users pay $100.
 const STRIPE_OUTREACH_PRICE_TRIAL = process.env.STRIPE_OUTREACH_PRICE_TRIAL || '';
 const STRIPE_OUTREACH_PRICE_PRO = process.env.STRIPE_OUTREACH_PRICE_PRO || '';
+// Webinar seat — one-time $9.99 payment. Create the product + price in Stripe
+// Dashboard and set STRIPE_WEBINAR_PRICE_ID in Railway env vars.
+const STRIPE_WEBINAR_PRICE_ID = process.env.STRIPE_WEBINAR_PRICE_ID || '';
 // Canonical category slugs. Order here drives button order in the Email
 // Generator category bar. `podcast` ships even though the first CSV upload
 // has zero podcast rows — the UI shows a "No contacts yet" placeholder.
@@ -1271,11 +1274,17 @@ app.get(['/webinar', '/webinar.html'], (req, res) => {
 });
 
 // --- Webinar registration API ---
+// Saves the lead, then creates a Stripe Checkout session for the $9.99 seat.
+// On success the browser is redirected to Stripe; the webhook confirms payment.
 app.post('/api/webinar-register', express.json(), async (req, res) => {
   const { name, email, artist, stage } = req.body || {};
   if (!email || !name) return res.status(400).json({ error: 'Name and email required' });
+  if (!stripe || !STRIPE_WEBINAR_PRICE_ID) {
+    return res.status(503).json({ error: 'Webinar payments not configured yet' });
+  }
 
-  // Save lead to DB
+  // Save lead to DB (even before payment — we mark paid via webhook)
+  let leadId;
   try {
     dbHelpers.exec(`CREATE TABLE IF NOT EXISTS webinar_leads (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1283,56 +1292,52 @@ app.post('/api/webinar-register', express.json(), async (req, res) => {
       email TEXT NOT NULL,
       artist TEXT,
       stage TEXT,
+      status TEXT DEFAULT 'pending',
+      stripe_session_id TEXT,
+      stripe_payment_intent_id TEXT,
       registered_at TEXT DEFAULT (datetime('now')),
+      paid_at TEXT,
       UNIQUE(email)
     )`);
-    dbHelpers.prepare(
-      `INSERT OR REPLACE INTO webinar_leads (name, email, artist, stage) VALUES (?, ?, ?, ?)`
+    const result = dbHelpers.prepare(
+      `INSERT OR REPLACE INTO webinar_leads (name, email, artist, stage, status) VALUES (?, ?, ?, ?, 'pending')`
     ).run(name, email, artist || '', stage || '');
+    leadId = result.lastInsertRowid;
   } catch (e) {
     console.error('[WEBINAR] DB save failed:', e.message);
   }
 
-  // Send confirmation email via Resend
-  if (resend) {
-    try {
-      await resend.emails.send({
-        from: EMAIL_FROM,
-        to: email,
-        subject: 'You\'re registered! 5 Ways to Register Your Music — Webinar',
-        html: `
-          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #080b1e; color: #e0e0e0; border-radius: 12px; overflow: hidden;">
-            <div style="text-align: center; padding: 32px 24px 16px;">
-              <h1 style="margin: 0 0 8px; font-size: 22px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">You're In, ${name.split(' ')[0]}!</h1>
-              <p style="color: #6b7094; font-size: 13px;">Your seat is reserved for the webinar.</p>
-            </div>
-            <div style="padding: 16px 32px 32px; font-size: 14px; line-height: 1.7;">
-              <p style="margin: 0 0 16px;"><strong style="color: #ffd700;">5 Ways to Register Your Music</strong><br>
-              Tuesday, April 22 at 7:00 PM ET</p>
-              <p style="margin: 0 0 16px;">We'll send you a reminder 1 hour before the webinar with the live link.</p>
-              <p style="margin: 0 0 16px;">In the meantime, start your <strong>free 7-day trial</strong> of Rollout Heaven and explore the Marketing Command Center:</p>
-              <div style="text-align: center; margin: 24px 0;">
-                <a href="https://rolloutheaven.com/login" style="display: inline-block; padding: 14px 36px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); color: #fff; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px;">Start Free Trial</a>
-              </div>
-              <p style="margin: 0; font-size: 12px; color: #6b7094;">No credit card required &mdash; 7 days free, then $9.99/seat.</p>
-            </div>
-            <div style="padding: 12px 32px; background: #0d1029; text-align: center; font-size: 11px; color: #6b7094;">
-              Rollout Heaven &mdash; The Marketing Command Center for Independent Artists
-            </div>
-          </div>`
-      });
-    } catch (e) {
-      console.error('[WEBINAR] Email send failed:', e.message);
+  // Create Stripe Checkout session for $9.99 seat
+  try {
+    const baseUrl = `https://${CUSTOM_DOMAIN}`;
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      customer_email: email,
+      line_items: [{ price: STRIPE_WEBINAR_PRICE_ID, quantity: 1 }],
+      metadata: {
+        kind: 'webinar_seat',
+        lead_id: String(leadId || ''),
+        name,
+        email,
+        artist: artist || '',
+        stage: stage || ''
+      },
+      success_url: `${baseUrl}/webinar?success=1`,
+      cancel_url: `${baseUrl}/webinar?canceled=1`
+    });
+
+    // Stash session id on the lead row
+    if (leadId) {
+      dbHelpers.prepare('UPDATE webinar_leads SET stripe_session_id = ? WHERE id = ?')
+        .run(session.id, leadId);
     }
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[WEBINAR] Stripe checkout error:', err.message);
+    res.status(500).json({ error: 'Failed to start checkout' });
   }
-
-  // Notify admin
-  notifyAdmins('New Webinar Registration', `
-    <p><strong>${name}</strong> (${email}) registered for the webinar.</p>
-    <p>Artist: ${artist || 'N/A'} &mdash; Stage: ${stage || 'N/A'}</p>
-  `).catch(() => {});
-
-  res.json({ ok: true });
 });
 
 // --- Auth Routes ---
@@ -2014,6 +2019,57 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
               console.error('[OUTREACH] purchase insert error:', e.message);
             }
           }
+        }
+
+        // Webinar seat — $9.99 one-time payment confirmed.
+        if (obj.metadata && obj.metadata.kind === 'webinar_seat') {
+          const leadEmail = obj.metadata.email;
+          try {
+            dbHelpers.prepare(`
+              UPDATE webinar_leads
+              SET status = 'paid',
+                  stripe_session_id = ?,
+                  stripe_payment_intent_id = ?,
+                  paid_at = datetime('now')
+              WHERE email = ? AND status = 'pending'
+            `).run(obj.id, obj.payment_intent || null, leadEmail);
+          } catch (e) {
+            console.error('[WEBINAR] payment update error:', e.message);
+          }
+          // Send confirmation email
+          if (resend && leadEmail) {
+            const leadName = obj.metadata.name || '';
+            resend.emails.send({
+              from: EMAIL_FROM,
+              to: leadEmail,
+              subject: 'You\'re In! 5 Ways to Register Your Music — Webinar Confirmed',
+              html: `
+                <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #080b1e; color: #e0e0e0; border-radius: 12px; overflow: hidden;">
+                  <div style="text-align: center; padding: 32px 24px 16px;">
+                    <h1 style="margin: 0 0 8px; font-size: 22px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">You're In, ${leadName.split(' ')[0] || 'there'}!</h1>
+                    <p style="color: #6b7094; font-size: 13px;">Your seat is confirmed &mdash; payment received.</p>
+                  </div>
+                  <div style="padding: 16px 32px 32px; font-size: 14px; line-height: 1.7;">
+                    <p style="margin: 0 0 16px;"><strong style="color: #ffd700;">Before You Drop That Song&hellip; 5 Ways to Register Your Music Right</strong><br>
+                    Tuesday, April 22 at 7:00 PM ET</p>
+                    <p style="margin: 0 0 16px;">We'll send you the live webinar link 1 hour before showtime. After the webinar, you'll also get access to the replay and all bonuses.</p>
+                    <p style="margin: 0 0 16px;">In the meantime, start your <strong>free 7-day trial</strong> of Rollout Heaven:</p>
+                    <div style="text-align: center; margin: 24px 0;">
+                      <a href="https://rolloutheaven.com/login" style="display: inline-block; padding: 14px 36px; background: linear-gradient(135deg, #7b2ff7, #00d4ff); color: #fff; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px;">Start Free Trial</a>
+                    </div>
+                    <p style="margin: 0; font-size: 12px; color: #6b7094;">No credit card required &mdash; 7 days free, then $9.99/seat.</p>
+                  </div>
+                  <div style="padding: 12px 32px; background: #0d1029; text-align: center; font-size: 11px; color: #6b7094;">
+                    Rollout Heaven &mdash; The Marketing Command Center for Independent Artists
+                  </div>
+                </div>`
+            }).catch(e => console.error('[WEBINAR] confirmation email failed:', e.message));
+          }
+          // Notify admin
+          notifyAdmins('Webinar Seat Purchased', `
+            <p><strong>${obj.metadata.name || 'Unknown'}</strong> (${leadEmail}) purchased a webinar seat ($9.99).</p>
+            <p>Artist: ${obj.metadata.artist || 'N/A'} &mdash; Stage: ${obj.metadata.stage || 'N/A'}</p>
+          `).catch(() => {});
         }
         break;
       }

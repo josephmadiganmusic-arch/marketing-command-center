@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Free Webinar: 5 Ways to Register Your Music — Rollout Heaven</title>
-<meta name="description" content="Join our free live webinar and learn the 5 essential ways to register your music for royalties, licensing, and protection. Plus get a free 7-day trial of Rollout Heaven.">
-<meta property="og:title" content="Free Webinar: 5 Ways to Register Your Music">
-<meta property="og:description" content="Stop leaving money on the table. Learn the 5 registration steps every indie artist must complete before releasing music.">
+<title>Before You Drop That Song... 5 Ways to Register Your Music Right — Rollout Heaven</title>
+<meta name="description" content="Stop leaving money on the table. Learn the 5 essential ways to properly register your music so you can collect every royalty you've earned. $9.99 per seat.">
+<meta property="og:title" content="Before You Drop That Song... 5 Ways to Register Your Music Right">
+<meta property="og:description" content="Stop leaving money on the table. Learn the 5 essential ways to properly register your music so you can collect every royalty you've earned.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="/logo.png">
 <link rel="icon" type="image/jpeg" href="/favicon.jpg">
@@ -56,11 +56,17 @@
   .hero-badge { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, rgba(255,107,53,0.15), rgba(255,159,26,0.1)); border: 1px solid rgba(255,159,26,0.3); color: #ff9f1a; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; padding: 8px 20px; border-radius: 24px; margin-bottom: 28px; animation: fadeSlideUp 0.6s 0.1s both; }
   .hero-badge .live-dot { width: 8px; height: 8px; background: #ff4444; border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .hero h1 { font-size: 50px; font-weight: 900; color: #fff; line-height: 1.1; margin-bottom: 20px; letter-spacing: -1px; animation: fadeSlideUp 0.6s 0.25s both; }
+  .hero h1 { font-size: 48px; font-weight: 900; color: #fff; line-height: 1.15; margin-bottom: 24px; letter-spacing: -1px; animation: fadeSlideUp 0.6s 0.25s both; }
   .hero h1 span { background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   .hero h1 .gold { background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-  .hero p { font-size: 18px; color: var(--text-body); max-width: 620px; margin: 0 auto 16px; line-height: 1.7; animation: fadeSlideUp 0.6s 0.4s both; }
-  .hero-sub { font-size: 14px; color: var(--text-dim); animation: fadeSlideUp 0.6s 0.5s both; margin-bottom: 40px; }
+  .hero-desc { font-size: 18px; color: var(--text-body); max-width: 660px; margin: 0 auto 28px; line-height: 1.7; animation: fadeSlideUp 0.6s 0.4s both; }
+
+  /* ═══ CHECKMARKS LIST ═══ */
+  .hero-checks { list-style: none; max-width: 560px; margin: 0 auto 32px; text-align: left; animation: fadeSlideUp 0.6s 0.48s both; }
+  .hero-checks li { display: flex; align-items: flex-start; gap: 12px; font-size: 16px; color: #e0e0e0; line-height: 1.6; margin-bottom: 12px; }
+  .hero-checks li .check { flex-shrink: 0; color: #00d4ff; font-weight: 700; font-size: 18px; margin-top: 1px; }
+  .hero-sub { font-size: 14px; color: var(--text-dim); animation: fadeSlideUp 0.6s 0.55s both; margin-bottom: 8px; }
+  .hero-perfect { font-size: 15px; color: var(--text-body); font-style: italic; max-width: 600px; margin: 0 auto 40px; animation: fadeSlideUp 0.6s 0.5s both; line-height: 1.6; }
 
   @keyframes fadeSlideUp {
     from { opacity: 0; transform: translateY(20px); }
@@ -85,6 +91,9 @@
   .reg-badge { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); background: var(--gradient-gold); color: #080b1e; font-size: 11px; font-weight: 800; letter-spacing: 1px; padding: 5px 18px; border-radius: 20px; text-transform: uppercase; white-space: nowrap; }
   .reg-card h2 { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 6px; margin-top: 8px; text-align: center; }
   .reg-card .reg-sub { font-size: 13px; color: var(--text-dim); text-align: center; margin-bottom: 24px; }
+  .reg-price-tag { text-align: center; margin-bottom: 20px; }
+  .reg-price-tag .amount { font-size: 36px; font-weight: 900; background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .reg-price-tag .per { font-size: 14px; color: var(--text-dim); }
   .form-group { margin-bottom: 16px; }
   .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
   .form-group input, .form-group select { width: 100%; padding: 14px 16px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; color: #fff; font-size: 14px; font-family: 'Inter', sans-serif; transition: border-color 0.2s, box-shadow 0.2s; }
@@ -96,6 +105,7 @@
   .btn-register::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(45deg, transparent, rgba(255,255,255,0.2), transparent); transform: rotate(45deg); transition: all 0.6s; }
   .btn-register:hover::before { left: 100%; }
   .btn-register:hover { box-shadow: 0 4px 30px rgba(255,215,0,0.5); transform: translateY(-2px); }
+  .btn-register:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
   .reg-trust { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
   .reg-trust span { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
   .reg-trust svg { width: 14px; height: 14px; stroke: var(--accent-2); fill: none; stroke-width: 2; }
@@ -106,6 +116,8 @@
   .reg-success .check-circle svg { width: 32px; height: 32px; stroke: #080b1e; fill: none; stroke-width: 3; }
   .reg-success h3 { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 8px; }
   .reg-success p { font-size: 14px; color: var(--text-body); line-height: 1.6; }
+  .reg-success .trial-btn { display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; padding: 14px 32px; background: var(--gradient-primary); color: #fff; text-decoration: none; border-radius: 10px; font-size: 15px; font-weight: 700; transition: all 0.3s; }
+  .reg-success .trial-btn:hover { box-shadow: 0 4px 24px rgba(123,47,247,0.4); transform: translateY(-1px); }
 
   /* ═══ SPEAKER SECTION ═══ */
   .speaker { padding: 80px 0; }
@@ -140,12 +152,19 @@
   .cta-box p { font-size: 16px; color: var(--text-body); max-width: 560px; margin: 0 auto 28px; line-height: 1.7; }
   .cta-box .btn-register { max-width: 380px; margin: 0 auto; }
   .cta-price { margin-top: 20px; }
-  .cta-price .orig { font-size: 16px; color: var(--text-dim); text-decoration: line-through; }
-  .cta-price .free { font-size: 20px; font-weight: 800; background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-left: 8px; }
+  .cta-price .amount { font-size: 24px; font-weight: 900; background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .cta-price .per { font-size: 14px; color: var(--text-dim); }
 
   /* ═══ SCROLL REVEAL ═══ */
   .reveal { opacity: 0; transform: translateY(30px); transition: opacity 0.7s, transform 0.7s; }
   .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* ═══ COUNTDOWN TIMER ═══ */
+  .countdown { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 32px; animation: fadeSlideUp 0.6s 0.6s both; }
+  .countdown-block { text-align: center; }
+  .countdown-block .num { display: block; font-size: 28px; font-weight: 900; background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; min-width: 48px; }
+  .countdown-block .lbl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+  .countdown-sep { font-size: 24px; color: var(--text-dim); font-weight: 300; margin-top: -12px; }
 
   /* ═══ FOOTER ═══ */
   footer { border-top: 1px solid var(--border); padding: 40px 0; }
@@ -156,13 +175,6 @@
   .footer-links { display: flex; gap: 24px; }
   .footer-links a { color: var(--text-dim); text-decoration: none; font-size: 13px; font-weight: 500; transition: color 0.2s; padding: 4px 0; }
   .footer-links a:hover { color: var(--accent-2); }
-
-  /* ═══ COUNTDOWN TIMER ═══ */
-  .countdown { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 32px; animation: fadeSlideUp 0.6s 0.55s both; }
-  .countdown-block { text-align: center; }
-  .countdown-block .num { display: block; font-size: 28px; font-weight: 900; background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; min-width: 48px; }
-  .countdown-block .lbl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
-  .countdown-sep { font-size: 24px; color: var(--text-dim); font-weight: 300; margin-top: -12px; }
 
   /* ═══ REDUCED MOTION ═══ */
   @media (prefers-reduced-motion: reduce) {
@@ -181,8 +193,8 @@
   /* ═══ MOBILE ═══ */
   @media (max-width: 600px) {
     .hero { padding: 110px 0 40px; }
-    .hero h1 { font-size: 32px; }
-    .hero p { font-size: 15px; }
+    .hero h1 { font-size: 30px; }
+    .hero-desc { font-size: 15px; }
     .learn-card, .reg-card { padding: 28px 22px; }
     .section-title { font-size: 28px; }
     .cta-box { padding: 32px 24px; }
@@ -205,7 +217,7 @@
     <div class="nav-links">
       <a href="#learn">What You'll Learn</a>
       <a href="#bonuses">Bonuses</a>
-      <a href="#register" class="btn-nav-cta">Reserve My Seat</a>
+      <a href="#register" class="btn-nav-cta">Get Your Seat — $9.99</a>
     </div>
   </div>
 </nav>
@@ -216,10 +228,19 @@
   <section class="hero">
     <div class="hero-badge">
       <span class="live-dot"></span>
-      Free Live Webinar — Limited Seats
+      Live Webinar — Limited Seats
     </div>
-    <h1>5 Ways to <span>Register Your Music</span><br>Before You <span class="gold">Release</span></h1>
-    <p>Most indie artists skip at least 3 of these steps and leave royalties on the table for years. In this free training, you'll learn exactly what to register, where, and why — so every dollar flows back to you.</p>
+    <h1>Before You Drop That Song&hellip;<br><span>5 Ways to Register Your Music</span> <span class="gold">Right</span></h1>
+    <p class="hero-desc">Stop leaving money on the table. In this live webinar, you'll learn the 5 essential ways to properly register your music so you can collect every royalty you've earned.</p>
+
+    <ul class="hero-checks">
+      <li><span class="check">&#10004;</span> Understand where and how to register your music</li>
+      <li><span class="check">&#10004;</span> Avoid the most common (and costly) mistakes</li>
+      <li><span class="check">&#10004;</span> Set your releases up to generate income from day one</li>
+    </ul>
+
+    <p class="hero-perfect">Perfect for independent artists who want to release music the right way, protect their work, and get paid.</p>
+
     <div class="hero-sub">Hosted by Rollout Heaven &mdash; The Marketing Command Center for Independent Artists</div>
 
     <!-- ═══ COUNTDOWN ═══ -->
@@ -243,7 +264,7 @@
           <div class="learn-num">1</div>
           <div class="learn-text">
             <h3>Copyright Registration</h3>
-            <p>Protect your compositions and sound recordings with the US Copyright Office — and why it matters before distribution.</p>
+            <p>Protect your compositions and sound recordings with the US Copyright Office — the foundation of every music business.</p>
           </div>
         </div>
         <div class="learn-item">
@@ -278,9 +299,14 @@
 
       <!-- RIGHT: Registration Form -->
       <div class="reg-card" id="register">
-        <div class="reg-badge">Free — Save Your Spot</div>
-        <h2>Reserve Your Seat</h2>
-        <p class="reg-sub">Join live and get instant access to the replay + bonuses.</p>
+        <div class="reg-badge">$9.99 Per Seat</div>
+        <h2>Get Your Seat</h2>
+        <p class="reg-sub">Live training + replay access + all bonuses included.</p>
+
+        <div class="reg-price-tag">
+          <span class="amount">$9.99</span>
+          <span class="per"> / seat</span>
+        </div>
 
         <form id="webinarForm" onsubmit="return handleRegister(event)">
           <div class="form-group">
@@ -306,17 +332,17 @@
             </select>
           </div>
           <button type="submit" class="btn-register" id="btnRegister">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 10l5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg>
-            Reserve My Free Seat
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            Get My Seat — $9.99
           </button>
           <div class="reg-trust">
             <span>
               <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              No spam
+              Secure checkout
             </span>
             <span>
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              Free forever
+              Instant access
             </span>
             <span>
               <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -330,7 +356,11 @@
             <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
           <h3>You're In!</h3>
-          <p>Check your email for the webinar link and calendar invite. We'll also send you a reminder 1 hour before we go live.</p>
+          <p>Payment confirmed. Check your email for the webinar link and all your bonuses. We'll send a reminder 1 hour before we go live.</p>
+          <a href="/login" class="trial-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            Start Your Free 7-Day Trial of Rollout Heaven
+          </a>
         </div>
       </div>
 
@@ -352,8 +382,8 @@
   <!-- ═══ BONUSES ═══ -->
   <section class="bonuses reveal" id="bonuses">
     <div class="section-divider"></div>
-    <div class="section-title">Attendee Bonuses</div>
-    <div class="section-subtitle">Everyone who registers gets these free resources — even if you can only catch the replay.</div>
+    <div class="section-title">Included With Your Seat</div>
+    <div class="section-subtitle">Every ticket holder gets the live training plus these bonuses — including replay access if you can't make it live.</div>
     <div class="bonus-grid">
       <div class="bonus-card">
         <div class="bonus-icon">
@@ -368,7 +398,7 @@
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         </div>
         <h3>30-Day Release Timeline</h3>
-        <p>Exactly when to register each piece — mapped to a pre-release calendar so nothing falls through the cracks.</p>
+        <p>Exactly when to register each piece — mapped to a release calendar so nothing falls through the cracks.</p>
         <span class="value">Valued at $37</span>
       </div>
       <div class="bonus-card">
@@ -386,14 +416,14 @@
   <section class="cta-bottom reveal">
     <div class="cta-box">
       <h2>Don't Leave <span>Money on the Table</span></h2>
-      <p>Every day your music is unregistered is a day royalties slip through the cracks. This free webinar gives you the complete playbook in under 60 minutes.</p>
+      <p>Every day your music is unregistered is a day royalties slip through the cracks. This webinar gives you the complete playbook in under 60 minutes.</p>
       <button class="btn-register" onclick="document.getElementById('register').scrollIntoView({behavior:'smooth'})">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 10l5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg>
-        Save My Seat — It's Free
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Get My Seat — $9.99
       </button>
       <div class="cta-price">
-        <span class="orig">$97 value</span>
-        <span class="free">FREE for a limited time</span>
+        <span class="amount">$9.99</span>
+        <span class="per"> / seat &mdash; includes live training, replay, and all bonuses</span>
       </div>
     </div>
   </section>
@@ -432,7 +462,6 @@ const revealObs = new IntersectionObserver((entries) => {
 revealEls.forEach(el => revealObs.observe(el));
 
 // ═══ COUNTDOWN TIMER ═══
-// Set your webinar date here (UTC) — update before going live
 const WEBINAR_DATE = new Date('2026-04-22T19:00:00-04:00'); // Tue Apr 22, 7pm ET
 
 function updateCountdown() {
@@ -454,14 +483,25 @@ function updateCountdown() {
 updateCountdown();
 setInterval(updateCountdown, 1000);
 
-// ═══ REGISTRATION HANDLER ═══
-// This posts to /api/webinar-register on your server.
-// The server endpoint saves the lead and can forward to your webinar platform.
+// ═══ CHECK FOR SUCCESS/CANCEL RETURN FROM STRIPE ═══
+const params = new URLSearchParams(window.location.search);
+if (params.get('success') === '1') {
+  document.getElementById('webinarForm').style.display = 'none';
+  document.getElementById('regSuccess').style.display = 'block';
+  // Clean URL
+  history.replaceState(null, '', '/webinar');
+}
+if (params.get('canceled') === '1') {
+  alert('Checkout was canceled — you can try again anytime.');
+  history.replaceState(null, '', '/webinar');
+}
+
+// ═══ REGISTRATION → STRIPE CHECKOUT ═══
 async function handleRegister(e) {
   e.preventDefault();
   const btn = document.getElementById('btnRegister');
   btn.disabled = true;
-  btn.innerHTML = '<span style="opacity:.7">Reserving your seat...</span>';
+  btn.innerHTML = '<span style="opacity:.7">Redirecting to checkout...</span>';
 
   const data = {
     name: document.getElementById('regName').value.trim(),
@@ -476,18 +516,18 @@ async function handleRegister(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (!res.ok) throw new Error('Registration failed');
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Registration failed');
 
-    // Show success
-    document.getElementById('webinarForm').style.display = 'none';
-    document.getElementById('regSuccess').style.display = 'block';
+    // Track lead (before redirect)
+    if (typeof gtag === 'function') gtag('event', 'begin_checkout', { value: 9.99, currency: 'USD', items: [{ name: 'Webinar Seat' }] });
+    if (typeof fbq === 'function') fbq('track', 'InitiateCheckout', { value: 9.99, currency: 'USD' });
 
-    // Track conversion (add your pixel/analytics here)
-    if (typeof gtag === 'function') gtag('event', 'webinar_register', { method: 'form' });
-    if (typeof fbq === 'function') fbq('track', 'Lead');
+    // Redirect to Stripe Checkout
+    window.location.href = json.url;
   } catch (err) {
     btn.disabled = false;
-    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 10l5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg> Reserve My Free Seat';
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> Get My Seat — $9.99';
     alert('Something went wrong — please try again or email josephmadiganmusic@gmail.com');
   }
   return false;
