@@ -2051,7 +2051,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
                   </div>
                   <div style="padding: 16px 32px 32px; font-size: 14px; line-height: 1.7;">
                     <p style="margin: 0 0 16px;"><strong style="color: #ffd700;">Before You Drop That Song&hellip; 5 Ways to Register Your Music Right</strong><br>
-                    Friday, April 19 at 8:00 PM ET</p>
+                    Friday, April 17 at 8:00 PM ET</p>
                     <p style="margin: 0 0 16px;">Here's your private link to join the live webinar:</p>
               <div style="text-align: center; margin: 20px 0;">
                 <a href="https://youtube.com/live/7Kr3-pLusek?feature=share" style="display: inline-block; padding: 14px 36px; background: linear-gradient(135deg, #ffd700, #ff9f1a); color: #080b1e; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px;">Join the Live Webinar</a>
