@@ -3406,6 +3406,41 @@ app.post('/api/admin/outreach/publish', requireAdmin, (req, res) => {
     for (const r of parsed.rows) {
       stmt.run(newVersion, r.category, r.name, r.submission_type, r.submission_value, r.website, r.phone, r.notes);
     }
+    // --- Migrate submission_progress from old contact IDs to new ones ---
+    // Progress is keyed by contact_id (auto-increment), so a version bump
+    // orphans all existing progress. We match old→new by LOWER(name)+category
+    // which is the natural key for contacts. Any progress whose contact was
+    // removed in the new version is left as-is (harmless orphan row).
+    if (diff.current_version > 0) {
+      const oldContacts = dbHelpers.prepare(
+        'SELECT id, LOWER(name) AS lname, category FROM outreach_contacts WHERE version = ?'
+      ).all(diff.current_version);
+      const newContacts = dbHelpers.prepare(
+        'SELECT id, LOWER(name) AS lname, category FROM outreach_contacts WHERE version = ?'
+      ).all(newVersion);
+      // Build lookup: "lname::category" → new id
+      const newIdMap = {};
+      for (const nc of newContacts) {
+        newIdMap[nc.lname + '::' + nc.category] = nc.id;
+      }
+      // For each old contact that has a matching new contact, update progress
+      const updateStmt = dbHelpers.prepare(
+        'UPDATE submission_progress SET contact_id = ? WHERE contact_id = ?'
+      );
+      let migrated = 0;
+      for (const oc of oldContacts) {
+        const key = oc.lname + '::' + oc.category;
+        const newId = newIdMap[key];
+        if (newId && newId !== oc.id) {
+          updateStmt.run(newId, oc.id);
+          migrated++;
+        }
+      }
+      if (migrated > 0) {
+        console.log('[OUTREACH] migrated', migrated, 'submission_progress entries to version', newVersion);
+      }
+    }
+
     const summary = { version: newVersion, ...diff };
     dbHelpers.prepare(`
       UPDATE outreach_list_version
