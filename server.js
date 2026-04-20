@@ -5873,6 +5873,7 @@ app.get('/redemption-logo.png', (req, res) => {
   else res.sendStatus(404);
 });
 app.use('/public', express.static(publicDir, { index: false }));
+app.use('/uploads', express.static(path.join(publicDir, 'uploads'), { index: false }));
 
 // --- Start Server ---
 async function startServer() {
