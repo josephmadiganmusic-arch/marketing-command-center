@@ -1201,6 +1201,7 @@
             <div class="form-group"><label>TikTok</label><input type="text" id="in-tiktok" oninput="intakeUpdate()" placeholder="https://tiktok.com/@..."></div>
             <div class="form-group"><label>Twitter / X</label><input type="text" id="in-twitter" oninput="intakeUpdate()" placeholder="https://x.com/..."></div>
             <div class="form-group full-width"><label>Press Kit Download URL</label><input type="text" id="in-dlPressKit" oninput="intakeUpdate()" placeholder="https://drive.google.com/..."></div>
+            <div class="form-group full-width platform-field"><label><span style="color:#FFFF64;">&#9679;</span> Genius Lyrics</label><input type="text" id="in-linkGenius" oninput="intakeUpdate()" placeholder="https://genius.com/..."></div>
           </div>
         </div>
 
@@ -2287,6 +2288,19 @@
           <div class="summary-field"><span class="summary-label">IPI Nos</span><span class="summary-value empty" id="sum-ipis">—</span><button class="copy-field-btn" onclick="intakeCopyField('ipis',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Label</span><span class="summary-value empty" id="sum-label">—</span><button class="copy-field-btn" onclick="intakeCopyField('label',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Splits</span><span class="summary-value empty" id="sum-splits">—</span><button class="copy-field-btn" onclick="intakeCopyField('splits',this)">Copy</button></div>
+          <div class="intake-summary-title" style="margin-top:14px;font-size:12px;">Links</div>
+          <div class="summary-field"><span class="summary-label">Spotify</span><span class="summary-value empty" id="sum-linkSpotify">—</span><button class="copy-field-btn" onclick="intakeCopyField('linkSpotify',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Apple Music</span><span class="summary-value empty" id="sum-linkApple">—</span><button class="copy-field-btn" onclick="intakeCopyField('linkApple',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">YouTube Music</span><span class="summary-value empty" id="sum-linkYTMusic">—</span><button class="copy-field-btn" onclick="intakeCopyField('linkYTMusic',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">YouTube Video</span><span class="summary-value empty" id="sum-linkYTVideo">—</span><button class="copy-field-btn" onclick="intakeCopyField('linkYTVideo',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">EPK</span><span class="summary-value empty" id="sum-epk">—</span><button class="copy-field-btn" onclick="intakeCopyField('epk',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Website</span><span class="summary-value empty" id="sum-website">—</span><button class="copy-field-btn" onclick="intakeCopyField('website',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Instagram</span><span class="summary-value empty" id="sum-instagram">—</span><button class="copy-field-btn" onclick="intakeCopyField('instagram',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Facebook</span><span class="summary-value empty" id="sum-facebook">—</span><button class="copy-field-btn" onclick="intakeCopyField('facebook',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">TikTok</span><span class="summary-value empty" id="sum-tiktok">—</span><button class="copy-field-btn" onclick="intakeCopyField('tiktok',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Twitter / X</span><span class="summary-value empty" id="sum-twitter">—</span><button class="copy-field-btn" onclick="intakeCopyField('twitter',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Press Kit</span><span class="summary-value empty" id="sum-dlPressKit">—</span><button class="copy-field-btn" onclick="intakeCopyField('dlPressKit',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Genius Lyrics</span><span class="summary-value empty" id="sum-linkGenius">—</span><button class="copy-field-btn" onclick="intakeCopyField('linkGenius',this)">Copy</button></div>
         </div>
       </div>
     </div>
@@ -3003,7 +3017,7 @@ function intakeGetData() {
     linkSpotify: v('in-linkSpotify'), linkApple: v('in-linkApple'), linkYTMusic: v('in-linkYTMusic'),
     linkYTVideo: v('in-linkYTVideo'), epk: v('in-epk'), website: v('in-website'),
     instagram: v('in-instagram'), facebook: v('in-facebook'), tiktok: v('in-tiktok'), twitter: v('in-twitter'),
-    dlWav: v('in-dlWavDirect'), dlMp3: v('in-dlMp3Direct'), dlPressKit: v('in-dlPressKit'),
+    dlWav: v('in-dlWavDirect'), dlMp3: v('in-dlMp3Direct'), dlPressKit: v('in-dlPressKit'), linkGenius: v('in-linkGenius'),
     dlWavDirect: v('in-dlWavDirect'), dlMp3Direct: v('in-dlMp3Direct'),
     bio: v('in-bio'), emailIntro: v('in-emailIntro'), marketingPlan: v('in-marketingPlan'),
     matRadioEdit: c('in-matRadioEdit'), matPressPhotos: c('in-matPressPhotos'), matBio: c('in-matBio'),
@@ -3637,6 +3651,18 @@ function intakeUpdate() {
   setSum('ipis', ipiList);
   setSum('label', d.label);
   setSum('splits', splitList);
+  setSum('linkSpotify', d.linkSpotify);
+  setSum('linkApple', d.linkApple);
+  setSum('linkYTMusic', d.linkYTMusic);
+  setSum('linkYTVideo', d.linkYTVideo);
+  setSum('epk', d.epk);
+  setSum('website', d.website);
+  setSum('instagram', d.instagram);
+  setSum('facebook', d.facebook);
+  setSum('tiktok', d.tiktok);
+  setSum('twitter', d.twitter);
+  setSum('dlPressKit', d.dlPressKit);
+  setSum('linkGenius', d.linkGenius);
 
   // Autosave working data — debounce 500ms
   clearTimeout(_autosaveTimer);
@@ -3711,6 +3737,20 @@ function intakeCopyAll() {
     'PRO: ' + (d.pro || '—'),
     'LANGUAGE: ' + (d.language || '—'),
     'EXPLICIT: ' + d.explicit,
+    '',
+    'LINKS:',
+    'SPOTIFY: ' + (d.linkSpotify || '—'),
+    'APPLE MUSIC: ' + (d.linkApple || '—'),
+    'YOUTUBE MUSIC: ' + (d.linkYTMusic || '—'),
+    'YOUTUBE VIDEO: ' + (d.linkYTVideo || '—'),
+    'EPK: ' + (d.epk || '—'),
+    'WEBSITE: ' + (d.website || '—'),
+    'INSTAGRAM: ' + (d.instagram || '—'),
+    'FACEBOOK: ' + (d.facebook || '—'),
+    'TIKTOK: ' + (d.tiktok || '—'),
+    'TWITTER / X: ' + (d.twitter || '—'),
+    'PRESS KIT: ' + (d.dlPressKit || '—'),
+    'GENIUS LYRICS: ' + (d.linkGenius || '—'),
   ].join('\n');
   navigator.clipboard.writeText(lines).then(() => showToast('All metadata copied!'));
 }
@@ -3982,7 +4022,7 @@ function intakeFillForm(d) {
   setVal('in-epk', d.epk); setVal('in-website', d.website);
   setVal('in-instagram', d.instagram); setVal('in-facebook', d.facebook);
   setVal('in-tiktok', d.tiktok); setVal('in-twitter', d.twitter);
-  setVal('in-dlPressKit', d.dlPressKit);
+  setVal('in-dlPressKit', d.dlPressKit); setVal('in-linkGenius', d.linkGenius);
   setVal('in-dlWavDirect', d.dlWavDirect || d.dlWav); setVal('in-dlMp3Direct', d.dlMp3Direct || d.dlMp3);
   setVal('in-bio', d.bio); setVal('in-emailIntro', d.emailIntro);
   setVal('in-marketingPlan', d.marketingPlan);
@@ -6454,8 +6494,14 @@ function stOverlayRenderMetadata() {
     ['Apple Music', d.linkApple],
     ['YouTube Music', d.linkYTMusic],
     ['YouTube Video', d.linkYTVideo],
+    ['EPK', d.epk],
     ['Website', d.website],
-    ['Press Kit / EPK', d.epk || d.dlPressKit],
+    ['Instagram', d.instagram],
+    ['Facebook', d.facebook],
+    ['TikTok', d.tiktok],
+    ['Twitter / X', d.twitter],
+    ['Press Kit', d.dlPressKit],
+    ['Genius Lyrics', d.linkGenius],
     ['Bio', d.bio],
     ['Email', d.email],
   ];
