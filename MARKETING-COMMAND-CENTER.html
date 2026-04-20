@@ -2279,6 +2279,8 @@
           <div class="summary-field"><span class="summary-label">First Name</span><span class="summary-value empty" id="sum-firstName">—</span><button class="copy-field-btn" onclick="intakeCopyField('firstName',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Last Name</span><span class="summary-value empty" id="sum-lastName">—</span><button class="copy-field-btn" onclick="intakeCopyField('lastName',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Email</span><span class="summary-value empty" id="sum-email">—</span><button class="copy-field-btn" onclick="intakeCopyField('email',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Phone</span><span class="summary-value empty" id="sum-phone">—</span><button class="copy-field-btn" onclick="intakeCopyField('phone',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Artist Name</span><span class="summary-value empty" id="sum-stageName">—</span><button class="copy-field-btn" onclick="intakeCopyField('stageName',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Title</span><span class="summary-value empty" id="sum-songTitle">—</span><button class="copy-field-btn" onclick="intakeCopyField('songTitle',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Artists</span><span class="summary-value empty" id="sum-artists">—</span><button class="copy-field-btn" onclick="intakeCopyField('artists',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Producer</span><span class="summary-value empty" id="sum-producer">—</span><button class="copy-field-btn" onclick="intakeCopyField('producer',this)">Copy</button></div>
@@ -3655,6 +3657,8 @@ function intakeUpdate() {
   setSum('firstName', d.firstName);
   setSum('lastName', d.lastName);
   setSum('email', d.email);
+  setSum('phone', d.phone);
+  setSum('stageName', d.stageName);
   setSum('songTitle', d.songTitle);
   setSum('artists', artists);
   setSum('producer', d.producer);
@@ -3755,6 +3759,8 @@ function intakeCopyAll() {
     'FIRST NAME: ' + (d.firstName || '—'),
     'LAST NAME: ' + (d.lastName || '—'),
     'EMAIL: ' + (d.email || '—'),
+    'PHONE: ' + (d.phone || '—'),
+    'ARTIST NAME: ' + (d.stageName || '—'),
     '',
     'SONG TITLE: ' + (d.songTitle || '—'),
     'ARTISTS: ' + (artists || '—'),
@@ -6494,6 +6500,8 @@ function stOverlayRenderMetadata() {
     ['First Name', d.firstName],
     ['Last Name', d.lastName],
     ['Email', d.email],
+    ['Phone', d.phone],
+    ['Artist Name', d.stageName],
     ['Song Title', d.songTitle],
     ['Artist', artistStr],
     ['Producer', d.producer],
