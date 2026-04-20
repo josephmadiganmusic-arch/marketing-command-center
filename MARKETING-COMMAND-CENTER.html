@@ -2279,6 +2279,7 @@
         <div id="intakeSummaryFields">
           <div class="summary-field"><span class="summary-label">First Name</span><span class="summary-value empty" id="sum-firstName">—</span><button class="copy-field-btn" onclick="intakeCopyField('firstName',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Last Name</span><span class="summary-value empty" id="sum-lastName">—</span><button class="copy-field-btn" onclick="intakeCopyField('lastName',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Full Name</span><span class="summary-value empty" id="sum-fullName">—</span><button class="copy-field-btn" onclick="intakeCopyField('fullName',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Email</span><span class="summary-value empty" id="sum-email">—</span><button class="copy-field-btn" onclick="intakeCopyField('email',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Phone</span><span class="summary-value empty" id="sum-phone">—</span><button class="copy-field-btn" onclick="intakeCopyField('phone',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Artist Name</span><span class="summary-value empty" id="sum-stageName">—</span><button class="copy-field-btn" onclick="intakeCopyField('stageName',this)">Copy</button></div>
@@ -3657,6 +3658,7 @@ function intakeUpdate() {
   const duration = (d.durationMin || d.durationSec) ? (d.durationMin || '0') + ':' + (d.durationSec || '00').toString().padStart(2, '0') : '';
   setSum('firstName', d.firstName);
   setSum('lastName', d.lastName);
+  setSum('fullName', [d.firstName, d.lastName].filter(Boolean).join(' '));
   setSum('email', d.email);
   setSum('phone', d.phone);
   setSum('stageName', d.stageName);
