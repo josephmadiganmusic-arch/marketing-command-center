@@ -1112,6 +1112,8 @@
         <div class="form-section">
           <div class="form-section-title">Artist Information</div>
           <div class="form-grid">
+            <div class="form-group"><label>First Name</label><input type="text" id="in-firstName" oninput="intakeUpdate()" placeholder="First Name"></div>
+            <div class="form-group"><label>Last Name</label><input type="text" id="in-lastName" oninput="intakeUpdate()" placeholder="Last Name"></div>
             <div class="form-group"><label>Legal Name</label><input type="text" id="in-legalName" oninput="intakeUpdate()" placeholder="Your Full Legal Name"></div>
             <div class="form-group"><label>Stage Name</label><input type="text" id="in-stageName" oninput="intakeUpdate()" placeholder="Your Stage Name"></div>
             <div class="form-group"><label>Email</label><input type="email" id="in-email" oninput="intakeUpdate()" placeholder="artist@example.com"></div>
@@ -2274,6 +2276,9 @@
         <div class="intake-summary-title">Metadata Summary</div>
         <button class="btn-copy-all" onclick="intakeCopyAll()">Copy All Metadata</button>
         <div id="intakeSummaryFields">
+          <div class="summary-field"><span class="summary-label">First Name</span><span class="summary-value empty" id="sum-firstName">—</span><button class="copy-field-btn" onclick="intakeCopyField('firstName',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Last Name</span><span class="summary-value empty" id="sum-lastName">—</span><button class="copy-field-btn" onclick="intakeCopyField('lastName',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Email</span><span class="summary-value empty" id="sum-email">—</span><button class="copy-field-btn" onclick="intakeCopyField('email',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Title</span><span class="summary-value empty" id="sum-songTitle">—</span><button class="copy-field-btn" onclick="intakeCopyField('songTitle',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Artists</span><span class="summary-value empty" id="sum-artists">—</span><button class="copy-field-btn" onclick="intakeCopyField('artists',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Producer</span><span class="summary-value empty" id="sum-producer">—</span><button class="copy-field-btn" onclick="intakeCopyField('producer',this)">Copy</button></div>
@@ -3008,6 +3013,7 @@ function intakeGetData() {
     pressRelease: v('in-pressRelease'),
     songwriters, publishers,
     isrc: v('in-isrc'), upc: v('in-upc'), iswc: v('in-iswc'),
+    firstName: v('in-firstName'), lastName: v('in-lastName'),
     legalName: v('in-legalName'), stageName: v('in-stageName'), email: v('in-email'), phone: v('in-phone'),
     label: v('in-label'), pro: s('in-pro'), proAccount: v('in-proAccount'),
     publisherEntity: v('in-publisherEntity'), filmTV: s('in-filmTV'),
@@ -3111,17 +3117,26 @@ window.addEventListener('beforeunload', _beforeUnloadHandler);
 // ARTIST PROFILE — sticky fields that carry over between releases
 // ============================
 const PROFILE_FIELDS = [
+  'firstName','lastName',
   'primaryArtist','genrePrimary','genreSecondary','language',
   'legalName','stageName','email','phone','label','pro','proAccount',
   'publisherEntity','filmTV',
   'epk','website','instagram','facebook','tiktok','twitter',
-  'bio','emailIntro'
+  'bio','emailIntro',
+  'coverArtUrl','artistPhotoUrl'
 ];
 // These complex fields (arrays) are also sticky
 const PROFILE_ARRAY_FIELDS = ['songwriters','publishers'];
 
 function saveArtistProfile() {
   const d = intakeGetData();
+  // Pull coverArtUrl/artistPhotoUrl from the saved release since intakeGetData()
+  // doesn't include them — they're set during intakeSave() after upload.
+  try {
+    const rel = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
+    if (rel.coverArtUrl) d.coverArtUrl = rel.coverArtUrl;
+    if (rel.artistPhotoUrl) d.artistPhotoUrl = rel.artistPhotoUrl;
+  } catch(_) {}
   const profile = {};
   for (const k of PROFILE_FIELDS) { if (d[k]) profile[k] = d[k]; }
   for (const k of PROFILE_ARRAY_FIELDS) {
@@ -3637,6 +3652,9 @@ function intakeUpdate() {
   };
 
   const duration = (d.durationMin || d.durationSec) ? (d.durationMin || '0') + ':' + (d.durationSec || '00').toString().padStart(2, '0') : '';
+  setSum('firstName', d.firstName);
+  setSum('lastName', d.lastName);
+  setSum('email', d.email);
   setSum('songTitle', d.songTitle);
   setSum('artists', artists);
   setSum('producer', d.producer);
@@ -3723,6 +3741,10 @@ function intakeCopyAll() {
   const writerNames = d.songwriters.map(w => w.name + (w.ipi ? ' (IPI: ' + w.ipi + ')' : '') + (w.split ? ' ' + w.split + '%' : '')).join(', ');
   const pubNames = d.publishers.map(p => p.name + (p.ipi ? ' (IPI: ' + p.ipi + ')' : '') + (p.split ? ' ' + p.split + '%' : '')).join(', ');
   const lines = [
+    'FIRST NAME: ' + (d.firstName || '—'),
+    'LAST NAME: ' + (d.lastName || '—'),
+    'EMAIL: ' + (d.email || '—'),
+    '',
     'SONG TITLE: ' + (d.songTitle || '—'),
     'ARTISTS: ' + (artists || '—'),
     'PRODUCER: ' + (d.producer || '—'),
@@ -4006,6 +4028,7 @@ function intakeFillForm(d) {
   setVal('in-lyrics', d.lyrics);
   setVal('in-pressRelease', d.pressRelease);
   setVal('in-isrc', d.isrc); setVal('in-upc', d.upc); setVal('in-iswc', d.iswc);
+  setVal('in-firstName', d.firstName); setVal('in-lastName', d.lastName);
   setVal('in-legalName', d.legalName); setVal('in-stageName', d.stageName);
   setVal('in-email', d.email); setVal('in-phone', d.phone);
   setVal('in-label', d.label); setVal('in-pro', d.pro || '');
@@ -6480,6 +6503,9 @@ function stOverlayRenderMetadata() {
     ? d.songwriters.map(w => w.name + (w.split ? ' ('+w.split+'%)' : '')).join(', ')
     : '';
   const fields = [
+    ['First Name', d.firstName],
+    ['Last Name', d.lastName],
+    ['Email', d.email],
     ['Song Title', d.songTitle],
     ['Artist', artistStr],
     ['Producer', d.producer],
@@ -9082,6 +9108,7 @@ Return ONLY the JSON. No explanation. Extract as much as you can from the files.
       producer: 'in-producer', albumName: 'in-albumName', genrePrimary: 'in-genrePrimary',
       genreSecondary: 'in-genreSecondary', language: 'in-language', releaseDate: 'in-releaseDate',
       isrc: 'in-isrc', upc: 'in-upc', iswc: 'in-iswc',
+      firstName: 'in-firstName', lastName: 'in-lastName',
       legalName: 'in-legalName', stageName: 'in-stageName', email: 'in-email',
       label: 'in-label', proAffiliation: 'in-pro', publisherEntity: 'in-publisherEntity',
       spotify: 'in-linkSpotify', appleMusic: 'in-linkApple', youtubeMusic: 'in-linkYTMusic',
