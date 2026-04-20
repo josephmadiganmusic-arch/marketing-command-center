@@ -6510,22 +6510,34 @@ function stOverlayRenderMetadata() {
   const writersStr = Array.isArray(d.songwriters) && d.songwriters.length
     ? d.songwriters.map(w => w.name + (w.split ? ' ('+w.split+'%)' : '')).join(', ')
     : '';
+  const ipiList = [...(Array.isArray(d.songwriters) ? d.songwriters : []).map(w => w.ipi), ...(Array.isArray(d.publishers) ? d.publishers : []).map(p => p.ipi)].filter(Boolean).join(', ');
+  const pubStr = Array.isArray(d.publishers) && d.publishers.length
+    ? d.publishers.map(p => p.name + (p.split ? ' ('+p.split+'%)' : '')).join(', ')
+    : '';
+  const splitList = [...(Array.isArray(d.songwriters) ? d.songwriters : []).map(w => w.name && w.split ? w.name + ' ' + w.split + '%' : ''), ...(Array.isArray(d.publishers) ? d.publishers : []).map(p => p.name && p.split ? p.name + ' ' + p.split + '%' : '')].filter(Boolean).join(', ');
+  const fullName = [d.firstName, d.lastName].filter(Boolean).join(' ');
   const fields = [
     ['First Name', d.firstName],
     ['Last Name', d.lastName],
+    ['Full Name', fullName],
+    ['Legal Name', d.legalName],
     ['Email', d.email],
     ['Phone', d.phone],
     ['Artist Name', d.stageName],
     ['Song Title', d.songTitle],
     ['Artist', artistStr],
     ['Producer', d.producer],
-    ['Release Date', d.releaseDate],
     ['Genre', genreStr],
     ['Duration', durBits.length ? durBits.join(':') : ''],
+    ['Release Date', d.releaseDate],
     ['ISRC', d.isrc],
     ['UPC', d.upc],
+    ['IPI Nos', ipiList],
+    ['ISWC', d.iswc],
+    ['Writers', writersStr],
+    ['Publishers', pubStr],
     ['Label', d.label],
-    ['Songwriters', writersStr],
+    ['Splits', splitList],
     ['Spotify', d.linkSpotify],
     ['Apple Music', d.linkApple],
     ['YouTube Music', d.linkYTMusic],
@@ -6536,10 +6548,13 @@ function stOverlayRenderMetadata() {
     ['Facebook', d.facebook],
     ['TikTok', d.tiktok],
     ['Twitter / X', d.twitter],
+    ['WAV Drive Link', d.dlWavDirect],
+    ['MP3 Drive Link', d.dlMp3Direct],
     ['Press Kit', d.dlPressKit],
     ['Genius Lyrics', d.linkGenius],
+    ['Song Description', d.songDescription],
+    ['Lyrics', d.lyrics],
     ['Bio', d.bio],
-    ['Email', d.email],
   ];
   const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
   // Personalized DM block for social contacts — appears at the top of the
