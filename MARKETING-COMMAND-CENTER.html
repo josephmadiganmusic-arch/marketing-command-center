@@ -2310,6 +2310,9 @@
           <div class="summary-field"><span class="summary-label">Twitter / X</span><span class="summary-value empty" id="sum-twitter">—</span><button class="copy-field-btn" onclick="intakeCopyField('twitter',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Press Kit</span><span class="summary-value empty" id="sum-dlPressKit">—</span><button class="copy-field-btn" onclick="intakeCopyField('dlPressKit',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Genius Lyrics</span><span class="summary-value empty" id="sum-linkGenius">—</span><button class="copy-field-btn" onclick="intakeCopyField('linkGenius',this)">Copy</button></div>
+          <div class="intake-summary-title" style="margin-top:14px;font-size:12px;">Content</div>
+          <div class="summary-field"><span class="summary-label">Song Description</span><span class="summary-value empty" id="sum-songDescription" style="max-height:80px;overflow-y:auto;white-space:pre-wrap;">—</span><button class="copy-field-btn" onclick="intakeCopyField('songDescription',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Lyrics</span><span class="summary-value empty" id="sum-lyrics" style="max-height:120px;overflow-y:auto;white-space:pre-wrap;">—</span><button class="copy-field-btn" onclick="intakeCopyField('lyrics',this)">Copy</button></div>
         </div>
       </div>
     </div>
@@ -3688,6 +3691,8 @@ function intakeUpdate() {
   setSum('twitter', d.twitter);
   setSum('dlPressKit', d.dlPressKit);
   setSum('linkGenius', d.linkGenius);
+  setSum('songDescription', d.songDescription);
+  setSum('lyrics', d.lyrics);
 
   // Autosave working data — debounce 500ms
   clearTimeout(_autosaveTimer);
