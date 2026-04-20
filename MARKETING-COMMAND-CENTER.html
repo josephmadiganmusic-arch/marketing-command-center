@@ -2316,6 +2316,7 @@
           <div class="intake-summary-title" style="margin-top:14px;font-size:12px;">Content</div>
           <div class="summary-field"><span class="summary-label">Song Description</span><span class="summary-value empty" id="sum-songDescription" style="max-height:80px;overflow-y:auto;white-space:pre-wrap !important;overflow:visible;text-overflow:unset;">—</span><button class="copy-field-btn" onclick="intakeCopyField('songDescription',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Lyrics</span><span class="summary-value empty" id="sum-lyrics" style="max-height:120px;overflow-y:auto;white-space:pre-wrap !important;overflow:visible;text-overflow:unset;">—</span><button class="copy-field-btn" onclick="intakeCopyField('lyrics',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Marketing Plan</span><span class="summary-value empty" id="sum-marketingPlan" style="max-height:100px;overflow-y:auto;white-space:pre-wrap !important;overflow:visible;text-overflow:unset;">—</span><button class="copy-field-btn" onclick="intakeCopyField('marketingPlan',this)">Copy</button></div>
         </div>
       </div>
     </div>
@@ -3699,6 +3700,7 @@ function intakeUpdate() {
   setSum('linkGenius', d.linkGenius);
   setSum('songDescription', d.songDescription);
   setSum('lyrics', d.lyrics);
+  setSum('marketingPlan', d.marketingPlan);
 
   // Autosave working data — debounce 500ms
   clearTimeout(_autosaveTimer);
@@ -6555,6 +6557,7 @@ function stOverlayRenderMetadata() {
     ['Song Description', d.songDescription],
     ['Lyrics', d.lyrics],
     ['Bio', d.bio],
+    ['Marketing Plan', d.marketingPlan],
   ];
   const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
   // Personalized DM block for social contacts — appears at the top of the
