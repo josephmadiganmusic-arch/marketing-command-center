@@ -2280,6 +2280,7 @@
           <div class="summary-field"><span class="summary-label">First Name</span><span class="summary-value empty" id="sum-firstName">—</span><button class="copy-field-btn" onclick="intakeCopyField('firstName',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Last Name</span><span class="summary-value empty" id="sum-lastName">—</span><button class="copy-field-btn" onclick="intakeCopyField('lastName',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Full Name</span><span class="summary-value empty" id="sum-fullName">—</span><button class="copy-field-btn" onclick="intakeCopyField('fullName',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Legal Name</span><span class="summary-value empty" id="sum-legalName">—</span><button class="copy-field-btn" onclick="intakeCopyField('legalName',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Email</span><span class="summary-value empty" id="sum-email">—</span><button class="copy-field-btn" onclick="intakeCopyField('email',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Phone</span><span class="summary-value empty" id="sum-phone">—</span><button class="copy-field-btn" onclick="intakeCopyField('phone',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Artist Name</span><span class="summary-value empty" id="sum-stageName">—</span><button class="copy-field-btn" onclick="intakeCopyField('stageName',this)">Copy</button></div>
@@ -2291,10 +2292,10 @@
           <div class="summary-field"><span class="summary-label">Release</span><span class="summary-value empty" id="sum-releaseDate">—</span><button class="copy-field-btn" onclick="intakeCopyField('releaseDate',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">ISRC</span><span class="summary-value empty" id="sum-isrc">—</span><button class="copy-field-btn" onclick="intakeCopyField('isrc',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">UPC</span><span class="summary-value empty" id="sum-upc">—</span><button class="copy-field-btn" onclick="intakeCopyField('upc',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">IPI Nos</span><span class="summary-value empty" id="sum-ipis">—</span><button class="copy-field-btn" onclick="intakeCopyField('ipis',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">ISWC</span><span class="summary-value empty" id="sum-iswc">—</span><button class="copy-field-btn" onclick="intakeCopyField('iswc',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Writers</span><span class="summary-value empty" id="sum-songwriters">—</span><button class="copy-field-btn" onclick="intakeCopyField('songwriters',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Publishers</span><span class="summary-value empty" id="sum-publishers">—</span><button class="copy-field-btn" onclick="intakeCopyField('publishers',this)">Copy</button></div>
-          <div class="summary-field"><span class="summary-label">IPI Nos</span><span class="summary-value empty" id="sum-ipis">—</span><button class="copy-field-btn" onclick="intakeCopyField('ipis',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Label</span><span class="summary-value empty" id="sum-label">—</span><button class="copy-field-btn" onclick="intakeCopyField('label',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Splits</span><span class="summary-value empty" id="sum-splits">—</span><button class="copy-field-btn" onclick="intakeCopyField('splits',this)">Copy</button></div>
           <div class="intake-summary-title" style="margin-top:14px;font-size:12px;">Links</div>
@@ -3662,6 +3663,7 @@ function intakeUpdate() {
   setSum('firstName', d.firstName);
   setSum('lastName', d.lastName);
   setSum('fullName', [d.firstName, d.lastName].filter(Boolean).join(' '));
+  setSum('legalName', d.legalName);
   setSum('email', d.email);
   setSum('phone', d.phone);
   setSum('stageName', d.stageName);
