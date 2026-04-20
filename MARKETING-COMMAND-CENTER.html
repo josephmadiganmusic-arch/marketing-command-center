@@ -3686,7 +3686,15 @@ function intakeUpdate() {
   clearTimeout(_autosaveTimer);
   _autosaveTimer = setTimeout(() => {
     if (!d) d = intakeGetData();
-    const slim = Object.assign({}, d, { coverArt: null });
+    // Preserve coverArtUrl/artistPhotoUrl from the last explicit save so
+    // the autosave cycle doesn't wipe them (intakeGetData doesn't return them).
+    const prevRelease = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
+    const slim = Object.assign({}, d, {
+      coverArt: prevRelease.coverArtUrl || null,
+      coverArtUrl: prevRelease.coverArtUrl || null,
+      artistPhoto: prevRelease.artistPhotoUrl || null,
+      artistPhotoUrl: prevRelease.artistPhotoUrl || null,
+    });
     try { localStorage.setItem(ukey('release_data'), JSON.stringify(slim)); } catch(e) {}
     // Also update artist profile with sticky fields
     saveArtistProfile();
@@ -3703,7 +3711,10 @@ function intakeUpdate() {
     const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
     const existing = saved[data.songTitle] || {};
     const toSave = Object.assign({}, data, {
-      coverArt: null,
+      coverArt: existing.coverArtUrl || null,
+      coverArtUrl: existing.coverArtUrl || null,
+      artistPhoto: existing.artistPhotoUrl || null,
+      artistPhotoUrl: existing.artistPhotoUrl || null,
       // Preserve campaign bundle so autosave never wipes a generated campaign
       _campaign: existing._campaign,
       _campaignGenerated: existing._campaignGenerated,
