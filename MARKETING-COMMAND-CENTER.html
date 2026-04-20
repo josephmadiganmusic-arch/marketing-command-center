@@ -8298,6 +8298,37 @@ Requirements:
       saveCampaignToRelease(d.songTitle, campaignData);
     } catch(e) {}
 
+    // Upload cover art + artist photo if not yet uploaded (same as intakeSave).
+    // Users may generate a campaign before ever hitting Save Release, so this
+    // ensures images are persisted to the server on the first major save event.
+    try {
+      const existingAll = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+      const existingRel = existingAll[d.songTitle] || {};
+      let coverArtUrl = existingRel.coverArtUrl || null;
+      let artistPhotoUrl = existingRel.artistPhotoUrl || null;
+      if (inCoverData && inCoverData.startsWith('data:') && !coverArtUrl) {
+        const url = await uploadReleaseImage(inCoverData, 'cover');
+        if (url) coverArtUrl = url;
+      }
+      if (inArtistPhotoData && inArtistPhotoData.startsWith('data:') && !artistPhotoUrl) {
+        const url = await uploadReleaseImage(inArtistPhotoData, 'artist');
+        if (url) artistPhotoUrl = url;
+      }
+      if (coverArtUrl || artistPhotoUrl) {
+        const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
+        if (saved[d.songTitle]) {
+          if (coverArtUrl) { saved[d.songTitle].coverArtUrl = coverArtUrl; saved[d.songTitle].coverArt = coverArtUrl; }
+          if (artistPhotoUrl) { saved[d.songTitle].artistPhotoUrl = artistPhotoUrl; saved[d.songTitle].artistPhoto = artistPhotoUrl; }
+          localStorage.setItem(ukey('release_data_all'), JSON.stringify(saved));
+        }
+        const rel = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
+        if (coverArtUrl) { rel.coverArtUrl = coverArtUrl; rel.coverArt = coverArtUrl; }
+        if (artistPhotoUrl) { rel.artistPhotoUrl = artistPhotoUrl; rel.artistPhoto = artistPhotoUrl; }
+        localStorage.setItem(ukey('release_data'), JSON.stringify(rel));
+        saveArtistProfile();
+      }
+    } catch(e) { console.error('Image upload during campaign save:', e); }
+
     // Reset registration pipeline so the new release starts with nothing marked complete
     try {
       localStorage.removeItem(ukey('registration_progress'));
