@@ -352,7 +352,8 @@
   .reg-section-label:first-child { margin-top: 0; border-top: none; padding-top: 0; }
   .site-layout { display: grid; grid-template-columns: 1fr 340px; gap: 32px; align-items: start; }
   .site-panels { min-width: 0; }
-  .site-sidebar { position: sticky; top: 20px; }
+  .site-sidebar { position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow: hidden; }
+  .site-sidebar:hover { overflow-y: auto; }
   .site-sidebar .intake-summary { margin-bottom: 16px; }
   .sidebar-collapse-btn { display: none; background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin-bottom: 12px; transition: all 0.3s; }
   .sidebar-collapse-btn:hover { border-color: var(--accent-1); color: var(--accent-2); }
