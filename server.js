@@ -3733,6 +3733,7 @@ app.post('/api/outreach/social-dm', requireOutreachUnlocked, rlSocialDm, async (
     meta.release_date ? `- Release date: ${meta.release_date}` : '',
     meta.mood ? `- Mood / vibe: ${meta.mood}` : '',
     meta.bio ? `- Artist bio: ${meta.bio}` : '',
+    rd.songDescription ? `- Song description (USE THIS to naturally mention what the song is about — weave it into the DM authentically): ${String(rd.songDescription).slice(0, 1000)}` : '',
     meta.link ? `- Listen link (include at the end on its own line): ${meta.link}` : '',
     ``,
     `Write the DM now. Greet ${contact.name} by name.`
