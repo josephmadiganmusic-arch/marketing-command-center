@@ -1055,11 +1055,6 @@
             </div>
           </div>
           <div class="form-group" style="margin-top:16px;">
-            <label>Song Description / Pitch</label>
-            <textarea id="in-songDescription" rows="4" oninput="intakeUpdate()" placeholder="One-paragraph pitch for THIS song. What is it about, what makes it stand out, why now? Used to auto-fill submission forms that ask for a song description."></textarea>
-            <button type="button" style="margin-top:8px;padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#333'" onclick="generateSongDescription(this)">Generate Song Description</button>
-          </div>
-          <div class="form-group" style="margin-top:16px;">
             <label>Lyrics (Genius format)</label>
             <textarea id="in-lyrics" rows="12" oninput="intakeUpdate()" placeholder="Paste or upload lyrics. Use Genius-style section headers in square brackets:&#10;&#10;[Intro]&#10;...&#10;&#10;[Verse 1]&#10;...&#10;&#10;[Chorus]&#10;...&#10;&#10;[Verse 2]&#10;...&#10;&#10;[Bridge]&#10;...&#10;&#10;[Outro]&#10;...&#10;&#10;Required by stations like God's House of Hip Hop, used for genius.com registration, and fed into Musixmatch (timed lyrics on Spotify / Apple Music / Instagram / TikTok)."></textarea>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
@@ -1069,6 +1064,12 @@
               <span id="in-lyricsStatus" style="font-size:11px;color:#6b7280;"></span>
             </div>
             <p style="font-size:11px;color:#f87171;margin-top:6px;line-height:1.5;"><strong style="color:#fca5a5;">Tip for best accuracy:</strong> fill Song Title + Artist (+ Featured Artist, Producer) in the fields above BEFORE uploading, and upload the <strong style="color:#fca5a5;">vocal stem / acapella</strong> if you have one instead of the full mix. Whisper uses the intake metadata to pre-learn the names in your song so they transcribe correctly. Works on the full mix too, just with more edits needed. No vocal stem on hand? Isolate one for free — no install needed with <a href="https://vocalremover.org" target="_blank" rel="noopener" style="color:#fca5a5;text-decoration:underline;font-weight:600;">vocalremover.org</a> (browser tool, no signup) or best-quality results with <a href="https://ultimatevocalremover.com" target="_blank" rel="noopener" style="color:#fca5a5;text-decoration:underline;font-weight:600;">Ultimate Vocal Remover 5</a> (free Win/Mac desktop app) — then upload the resulting vocal track here for dramatically cleaner results. Required by radio stations like God's House of Hip Hop, used for your genius.com upload, and fed into Musixmatch so timed lyrics appear on Spotify, Apple Music, Instagram, and TikTok.</p>
+          </div>
+          <div class="form-group" style="margin-top:16px;">
+            <label>Song Description / Pitch</label>
+            <p style="font-size:11px;color:#ffb347;margin-bottom:6px;"><strong>Complete lyrics above first</strong> — Song Description is generated from your lyrics + metadata.</p>
+            <textarea id="in-songDescription" rows="4" oninput="intakeUpdate()" placeholder="One-paragraph pitch for THIS song. What is it about, what makes it stand out, why now? Used to auto-fill submission forms that ask for a song description."></textarea>
+            <button type="button" style="margin-top:8px;padding:8px 16px;background:#0f1332;border:1px solid #1a1f4a;border-radius:6px;color:#00d4ff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='#7b2ff7'" onmouseout="this.style.borderColor='#333'" onclick="generateSongDescription(this)">Generate Song Description</button>
           </div>
           <div class="form-group" style="margin-top:16px;">
             <label>Press Release</label>
@@ -2316,6 +2317,7 @@
           <div class="intake-summary-title" style="margin-top:14px;font-size:12px;">Content</div>
           <div class="summary-field"><span class="summary-label">Song Description</span><span class="summary-value empty" id="sum-songDescription" style="max-height:80px;overflow-y:auto;white-space:pre-wrap !important;overflow:visible;text-overflow:unset;">—</span><button class="copy-field-btn" onclick="intakeCopyField('songDescription',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Lyrics</span><span class="summary-value empty" id="sum-lyrics" style="max-height:120px;overflow-y:auto;white-space:pre-wrap !important;overflow:visible;text-overflow:unset;">—</span><button class="copy-field-btn" onclick="intakeCopyField('lyrics',this)">Copy</button></div>
+          <div class="summary-field"><span class="summary-label">Press Release</span><span class="summary-value empty" id="sum-pressRelease" style="max-height:120px;overflow-y:auto;white-space:pre-wrap !important;overflow:visible;text-overflow:unset;">—</span><button class="copy-field-btn" onclick="intakeCopyField('pressRelease',this)">Copy</button></div>
           <div class="summary-field"><span class="summary-label">Marketing Plan</span><span class="summary-value empty" id="sum-marketingPlan" style="max-height:100px;overflow-y:auto;white-space:pre-wrap !important;overflow:visible;text-overflow:unset;">—</span><button class="copy-field-btn" onclick="intakeCopyField('marketingPlan',this)">Copy</button></div>
         </div>
       </div>
@@ -3226,6 +3228,10 @@ async function generateSongDescription(btn) {
     showToast('Fill in Song Title and Artist first');
     return;
   }
+  if (!d.lyrics || d.lyrics.trim().length < 50) {
+    showToast('Complete your lyrics first — Song Description is generated from them');
+    return;
+  }
   const origText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Generating...';
@@ -3247,8 +3253,12 @@ LABEL: ${d.label || 'Independent'}
 ARTIST BIO (context only, do not copy): ${d.bio || 'N/A'}
 EXISTING EMAIL INTRO (context, do not copy): ${d.emailIntro || 'N/A'}
 
-Write ONE paragraph (3 to 5 sentences). It should:
+LYRICS:
+${d.lyrics}
+
+Write ONE paragraph (3 to 5 sentences) drawn from the actual lyrics and metadata above. It should:
 - Focus on THIS song, not the artist's life story
+- Reference specific themes, imagery, or lines from the lyrics
 - Name the song title and briefly describe its sound or message
 - Explain what is distinctive about the record (production, theme, guest features, story behind it)
 - Read like a pitch, not marketing copy
@@ -3517,6 +3527,16 @@ async function generatePressRelease(btn) {
     showToast('Fill in Song Title and Artist first');
     return;
   }
+  if (!d.lyrics || d.lyrics.trim().length < 50) {
+    if (status) { status.textContent = 'Complete lyrics first — press release draws from them.'; status.style.color = '#f87171'; }
+    showToast('Complete lyrics first — press release is compiled from lyrics + song description + metadata');
+    return;
+  }
+  if (!d.songDescription || d.songDescription.trim().length < 20) {
+    if (status) { status.textContent = 'Generate Song Description first — press release uses it.'; status.style.color = '#f87171'; }
+    showToast('Generate Song Description first — press release is compiled from it');
+    return;
+  }
   if (textarea && textarea.value.trim()) {
     const ok = confirm('Replace the existing press release with a fresh AI-generated one?');
     if (!ok) return;
@@ -3700,6 +3720,7 @@ function intakeUpdate() {
   setSum('linkGenius', d.linkGenius);
   setSum('songDescription', d.songDescription);
   setSum('lyrics', d.lyrics);
+  setSum('pressRelease', d.pressRelease);
   setSum('marketingPlan', d.marketingPlan);
 
   // Autosave working data — debounce 500ms
@@ -6557,6 +6578,7 @@ function stOverlayRenderMetadata() {
     ['Song Description', d.songDescription],
     ['Lyrics', d.lyrics],
     ['Bio', d.bio],
+    ['Press Release', d.pressRelease],
     ['Marketing Plan', d.marketingPlan],
   ];
   const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));

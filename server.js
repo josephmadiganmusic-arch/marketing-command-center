@@ -3990,7 +3990,8 @@ app.post('/api/intake/generate-press-release', requireAccess, rlClaude, async (r
     instagram: cap(rd.instagram, 200),
     tiktok: cap(rd.tiktok, 200),
     twitter: cap(rd.twitter, 200),
-    facebook: cap(rd.facebook, 200)
+    facebook: cap(rd.facebook, 200),
+    lyrics: cap(rd.lyrics, 4000)
   };
   if (!meta.songTitle) return res.status(400).json({ error: 'Song title required' });
   if (!meta.primaryArtist) return res.status(400).json({ error: 'Primary artist required' });
@@ -4029,6 +4030,7 @@ app.post('/api/intake/generate-press-release', requireAccess, rlClaude, async (r
     meta.releaseDate ? `Release date: ${meta.releaseDate}` : '',
     meta.label ? `Label: ${meta.label}` : '',
     (meta.hometownCity || meta.hometownState) ? `Hometown: ${[meta.hometownCity, meta.hometownState].filter(Boolean).join(', ')}` : '',
+    meta.lyrics ? `Lyrics (use themes, imagery, and specific lines to ground the body paragraph authentically):\n${meta.lyrics}` : '',
     meta.songDescription ? `Song description / pitch (use this to ground the body paragraph and any quote): ${meta.songDescription}` : '',
     meta.bio ? `Artist bio (use this for the About boilerplate): ${meta.bio}` : '',
     meta.linkSpotify ? `Spotify link: ${meta.linkSpotify}` : '',
