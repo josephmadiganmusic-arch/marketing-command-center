@@ -1527,6 +1527,46 @@
           <button onclick="egCopyForGmail()" style="width:100%;padding:18px 24px;background:var(--gradient-primary);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;letter-spacing:1px;transition:all 0.3s;min-height:52px;" onmouseover="this.style.boxShadow='0 6px 30px rgba(123,47,247,0.5)'" onmouseout="this.style.boxShadow='none'">COPY FOR GMAIL</button>
           <p style="margin:10px 0 0;font-size:13px;color:#888;line-height:1.5;">Click the button above, then open Gmail, click Compose, and paste (Ctrl+V / Cmd+V). Done!</p>
         </div>
+        <!-- Email All — press release blast for outreach-unlocked users -->
+        <div id="egEmailAllBar" style="display:none;margin-bottom:16px;padding:14px;background:linear-gradient(135deg,#1a1020,#12101a);border:1px solid rgba(123,47,247,0.3);border-radius:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-size:13px;font-weight:600;color:#e0e0e0;">Email All — Press Release Blast</div>
+          </div>
+          <div style="margin-bottom:8px;">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Category</label>
+            <select id="egEmailAllCategory" onchange="egEmailAllLoad()" style="width:100%;padding:8px 10px;background:#0d0d12;border:1px solid #333;border-radius:6px;color:#e0e0e0;font-size:12px;font-family:'Inter',sans-serif;">
+              <option value="press_release">Press Release</option>
+              <option value="press">Press</option>
+              <option value="blog">Blog</option>
+              <option value="sirius">Sirius XM</option>
+              <option value="iheart">iHeart</option>
+              <option value="fm_am">FM / AM</option>
+              <option value="online_radio">Online Radio</option>
+              <option value="spotify_playlist">Spotify Playlist</option>
+              <option value="podcast">Podcast</option>
+            </select>
+          </div>
+          <div style="margin-bottom:8px;">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Recipients (<span id="egEmailAllCount">0</span> emails)</label>
+            <textarea id="egEmailAllRecipients" readonly rows="2" style="width:100%;padding:8px;background:#0d0d12;border:1px solid #333;border-radius:6px;color:#ccc;font-size:11px;font-family:monospace;resize:none;"></textarea>
+            <button class="st-meta-copy" onclick="egCopyFieldById('egEmailAllRecipients',this)" style="margin-top:4px;font-size:11px;">Copy All Emails</button>
+          </div>
+          <div style="margin-bottom:8px;">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Subject Line (Rapzilla format: SONG: Artist - Title)</label>
+            <input id="egEmailAllSubject" type="text" readonly style="width:100%;padding:8px 10px;background:#0d0d12;border:1px solid #333;border-radius:6px;color:#e0e0e0;font-size:12px;font-family:'Inter',sans-serif;">
+            <button class="st-meta-copy" onclick="egCopyFieldById('egEmailAllSubject',this)" style="margin-top:4px;font-size:11px;">Copy Subject</button>
+          </div>
+          <div style="margin-bottom:8px;">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Body (your press release)</label>
+            <textarea id="egEmailAllBody" rows="6" style="width:100%;padding:8px;background:#0d0d12;border:1px solid #333;border-radius:6px;color:#ccc;font-size:12px;font-family:'Inter',sans-serif;resize:vertical;line-height:1.5;"></textarea>
+            <button class="st-meta-copy" onclick="egCopyFieldById('egEmailAllBody',this)" style="margin-top:4px;font-size:11px;">Copy Body</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button onclick="egEmailAllSend()" style="flex:1;padding:10px;background:linear-gradient(135deg,#7b2ff7,#5518b4);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">Send to All</button>
+            <button onclick="egEmailAllCopyFull(this)" class="st-meta-copy" style="flex:0.5;padding:10px;font-size:12px;">Copy Full Email</button>
+          </div>
+          <div style="font-size:10px;color:#555;margin-top:6px;">&ldquo;Send to All&rdquo; opens your default mail client with all recipients in BCC and pre-filled subject + body.</div>
+        </div>
         <div class="preview-header">
           <span class="preview-title">Live Preview</span>
           <div class="preview-tabs">
@@ -2843,7 +2883,7 @@ function showPanel(id) {
     t.classList.toggle('active', panelNames[i] === id);
   });
   if (id === 'registration') { renderRegCards(); loadEliteCredentials(); }
-  if (id === 'emailgen') egLoadFromIntake(true);
+  if (id === 'emailgen') { egLoadFromIntake(true); egEmailAllInit(); }
   if (id === 'outreach') { try { stInit(); } catch(_) {} }
   if (id === 'admin') adminLoadData();
   if (id === 'achievements') { loadGamification(); renderAchievementsPanel(); }
@@ -6967,6 +7007,9 @@ function egLoadFromIntake(silent) {
     document.getElementById('egArtistPhotoClearBtn').style.display = 'inline-block';
   }
   if (!silent) showToast('Loaded from Intake!');
+  if (document.getElementById('egEmailAllBar') && document.getElementById('egEmailAllBar').style.display !== 'none') {
+    egEmailAllRefreshSubjectAndBody();
+  }
 }
 
 function egGenerateEmail() {
@@ -7103,6 +7146,81 @@ function egCopyForGmail() {
     sel.removeAllRanges();
     container.innerHTML = '';
     showToast('Copied! Open Gmail → Compose → Paste (Ctrl+V / Cmd+V)');
+  });
+}
+
+// --- Email All (press release blast) — outreach-unlocked feature in Email Generator ---
+// Shows the panel when outreach is unlocked, loads email contacts for selected category,
+// builds subject in Rapzilla format (SONG: Artist - Title), pulls press release from intake.
+function egEmailAllInit() {
+  const bar = document.getElementById('egEmailAllBar');
+  if (!bar) return;
+  // Only show for outreach-unlocked users
+  if (window.OUTREACH_STATE && window.OUTREACH_STATE.unlocked) {
+    bar.style.display = 'block';
+    egEmailAllLoad();
+    egEmailAllRefreshSubjectAndBody();
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function egEmailAllLoad() {
+  const cat = document.getElementById('egEmailAllCategory').value;
+  const countEl = document.getElementById('egEmailAllCount');
+  const recipEl = document.getElementById('egEmailAllRecipients');
+  try {
+    const r = await fetch('/api/outreach/emails/' + cat);
+    if (!r.ok) { recipEl.value = ''; countEl.textContent = '0'; return; }
+    const j = await r.json();
+    const emails = (j.contacts || []).map(c => c.email);
+    countEl.textContent = String(emails.length);
+    recipEl.value = emails.join(', ');
+  } catch(e) {
+    recipEl.value = '';
+    countEl.textContent = '0';
+  }
+}
+
+function egEmailAllRefreshSubjectAndBody() {
+  const artist = document.getElementById('egArtistName').value.trim() || '[Artist]';
+  const song = document.getElementById('egSongTitle').value.trim() || '[Song Title]';
+  const subj = 'SONG: ' + artist + ' - ' + song;
+  document.getElementById('egEmailAllSubject').value = subj;
+  // Pull press release from intake release_data, else use intro paragraph
+  const d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
+  const pressRelease = (d.pressRelease || '').trim();
+  const intro = document.getElementById('egIntroParagraph').value.trim();
+  document.getElementById('egEmailAllBody').value = pressRelease || intro || '';
+}
+
+function egEmailAllSend() {
+  const emails = document.getElementById('egEmailAllRecipients').value.trim();
+  if (!emails) { showToast('No email contacts found for this category'); return; }
+  const subject = document.getElementById('egEmailAllSubject').value;
+  const body = document.getElementById('egEmailAllBody').value;
+  const bcc = encodeURIComponent(emails);
+  const subj = encodeURIComponent(subject);
+  const bod = encodeURIComponent(body);
+  window.open('mailto:?bcc=' + bcc + '&subject=' + subj + '&body=' + bod, '_self');
+}
+
+function egEmailAllCopyFull(btn) {
+  const subject = document.getElementById('egEmailAllSubject').value;
+  const body = document.getElementById('egEmailAllBody').value;
+  const emails = document.getElementById('egEmailAllRecipients').value;
+  const full = 'BCC: ' + emails + '\nSubject: ' + subject + '\n\n' + body;
+  navigator.clipboard.writeText(full).then(() => {
+    if (btn) { const orig = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = orig, 1500); }
+  });
+}
+
+function egCopyFieldById(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const val = el.value || el.textContent || '';
+  navigator.clipboard.writeText(val).then(() => {
+    if (btn) { const orig = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = orig, 1500); }
   });
 }
 

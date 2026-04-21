@@ -3054,6 +3054,30 @@ app.post('/api/admin/redemptions/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// --- Admin: Submission Progress Diagnostics ---
+// Shows orphaned vs matched progress to diagnose lost tracker state.
+app.get('/api/admin/submission-progress-diag', requireAdmin, (req, res) => {
+  const userId = parseInt(req.query.user_id, 10) || req.user.id;
+  const verRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = verRow ? verRow.current_version : 0;
+  const allProgress = dbHelpers.prepare('SELECT * FROM submission_progress WHERE user_id = ?').all(userId);
+  const currentContactIds = version > 0
+    ? dbHelpers.prepare('SELECT id FROM outreach_contacts WHERE version = ?').all(version).map(r => r.id)
+    : [];
+  const idSet = new Set(currentContactIds);
+  const matched = allProgress.filter(p => idSet.has(p.contact_id));
+  const orphaned = allProgress.filter(p => !idSet.has(p.contact_id));
+  res.json({
+    user_id: userId,
+    current_version: version,
+    total_progress_rows: allProgress.length,
+    matched_to_current_version: matched.length,
+    orphaned: orphaned.length,
+    orphaned_contact_ids: orphaned.map(p => p.contact_id),
+    sample_orphaned: orphaned.slice(0, 10)
+  });
+});
+
 // --- Operation Journal (admin read-only view) ---
 // Paginated append-only audit trail. Never exposes a delete/truncate endpoint.
 app.get('/api/admin/journal', requireAdmin, (req, res) => {
@@ -3574,6 +3598,22 @@ app.get('/api/outreach/export/:category.csv', requireOutreachUnlocked, (req, res
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="outreach_${cat}_v${version}.csv"`);
   res.send(lines.join('\n'));
+});
+
+// JSON list of all email contacts for a category — powers the "Email All"
+// press release feature. Returns names + emails (no phone/form contacts).
+app.get('/api/outreach/emails/:category', requireOutreachUnlocked, (req, res) => {
+  const cat = String(req.params.category || '').toLowerCase();
+  if (!OUTREACH_CATEGORIES.includes(cat)) return res.status(400).json({ error: 'Unknown category' });
+  const verRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = verRow ? verRow.current_version : 0;
+  const rows = version > 0
+    ? dbHelpers.prepare("SELECT name, submission_value FROM outreach_contacts WHERE version = ? AND category = ? AND submission_type = 'email' ORDER BY name").all(version, cat)
+    : [];
+  const emails = rows
+    .map(r => ({ name: r.name, email: (r.submission_value || '').trim() }))
+    .filter(r => r.email && r.email.indexOf('@') > 0);
+  res.json({ category: cat, label: OUTREACH_CATEGORY_LABELS[cat] || cat, version, contacts: emails });
 });
 
 // AI-tweaked intro generator — THE R9 ENDPOINT. Gated by
@@ -4661,13 +4701,14 @@ app.get('/playlist-submission', (req, res) => {
   res.sendFile(path.join(__dirname, 'playlist-submission.html'));
 });
 
-// Store uploaded submission files in public/uploads
-const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
+// Store uploaded files on the persistent volume (DATA_DIR) so they survive redeploys.
+// Previously these lived in public/uploads/ which is ephemeral container storage.
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // --- Release Image Upload ---
 // Upload cover art or artist photo as base64, returns a permanent URL.
-// Stored in public/uploads/release/ so they're served as static files.
+// Stored in DATA_DIR/uploads/release/ on the persistent volume.
 const RELEASE_IMG_DIR = path.join(UPLOADS_DIR, 'release');
 if (!fs.existsSync(RELEASE_IMG_DIR)) fs.mkdirSync(RELEASE_IMG_DIR, { recursive: true });
 
@@ -5876,7 +5917,7 @@ app.get('/redemption-logo.png', (req, res) => {
   else res.sendStatus(404);
 });
 app.use('/public', express.static(publicDir, { index: false }));
-app.use('/uploads', express.static(path.join(publicDir, 'uploads'), { index: false }));
+app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads'), { index: false }));
 
 // --- Start Server ---
 async function startServer() {
