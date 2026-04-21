@@ -6931,6 +6931,7 @@ function egGatherFormData() {
     coverArt: egCoverArtData,
     artistPhoto: egArtistPhotoData,
     musicVideo: document.getElementById('egLinkMusicVideo').value.trim(),
+    iswc: (JSON.parse(localStorage.getItem(ukey('release_data')) || '{}')).iswc || '',
     hasMp3: false, hasWav: false
   };
 }
@@ -7004,6 +7005,7 @@ function egGenerateEmail() {
   if(data.genre) metaItems.push({label:'Genre',value:data.genre});
   if(data.upc) metaItems.push({label:'UPC',value:data.upc,mono:true});
   if(data.isrc) metaItems.push({label:'ISRC',value:data.isrc,mono:true});
+  if(data.iswc) metaItems.push({label:'ISWC',value:data.iswc,mono:true});
   if(data.songwriters) metaItems.push({label:'Songwriters',value:data.songwriters});
   let metaHTML = '';
   for(let i=0;i<metaItems.length;i+=2){
