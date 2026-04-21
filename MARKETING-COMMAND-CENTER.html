@@ -2471,29 +2471,95 @@ function serverSave(key, value) {
   _serverSaveTimer = setTimeout(() => serverFlush(), 1000);
 }
 
+// Split release_data_all into metadata (form fields) stored under the
+// original key and per-release campaign bundles stored under separate
+// keys (campaign_<title>). This keeps the main blob well under the
+// 256 KB per-key server limit even with dozens of releases.
+function _splitReleasesForSave(items) {
+  const idx = items.findIndex(i => i.key === 'release_data_all');
+  if (idx === -1) return items;
+  const raw = items[idx].value;
+  let all;
+  try { all = JSON.parse(raw); } catch(_) { return items; }
+  if (!all || typeof all !== 'object') return items;
+
+  const slim = {};
+  const campaignItems = [];
+  for (const [title, entry] of Object.entries(all)) {
+    const clone = Object.assign({}, entry);
+    // Extract campaign bundle into its own key
+    if (clone._campaign) {
+      campaignItems.push({ key: 'campaign_' + title, value: JSON.stringify(clone._campaign) });
+      delete clone._campaign;
+    }
+    slim[title] = clone;
+  }
+  const out = items.slice();
+  out[idx] = { key: 'release_data_all', value: JSON.stringify(slim) };
+  return out.concat(campaignItems);
+}
+
+// Use fetch for regular saves so we can detect errors. Falls back to
+// sendBeacon only during beforeunload (where fetch would be cancelled).
+let _serverFlushIsUnload = false;
 function serverFlush() {
   clearTimeout(_serverSaveTimer);
   const keys = ['release_data','release_data_all','artist_profile','mcc_campaign_data','mcc_campaign_song','mcc_campaign_generated','mcc-checklist','registration_progress','bab_releases'];
-  const items = [];
+  let items = [];
   for (const k of keys) {
     const raw = localStorage.getItem(ukey(k));
     if (raw) items.push({ key: k, value: raw });
   }
   if (!items.length) return;
-  navigator.sendBeacon('/api/data/save-batch', new Blob([JSON.stringify({ items })], { type: 'application/json' }));
+  items = _splitReleasesForSave(items);
+  const body = JSON.stringify({ items });
+  if (_serverFlushIsUnload) {
+    navigator.sendBeacon('/api/data/save-batch', new Blob([body], { type: 'application/json' }));
+    return;
+  }
+  fetch('/api/data/save-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+    .then(r => { if (!r.ok) r.text().then(t => console.warn('[serverFlush] save failed:', r.status, t)); })
+    .catch(e => console.warn('[serverFlush] network error:', e));
 }
 
-async function serverLoad() {
+async function serverLoad(attempt) {
+  attempt = attempt || 1;
   try {
     const resp = await fetch('/api/data/load');
-    if (!resp.ok) return;
+    if (resp.status === 401 || resp.status === 402) {
+      // Session expired — redirect to login so user can re-authenticate
+      window.location.href = '/login';
+      return;
+    }
+    if (!resp.ok) {
+      if (attempt < 3) { await new Promise(r => setTimeout(r, 1000 * attempt)); return serverLoad(attempt + 1); }
+      console.warn('Server load failed after retries, status:', resp.status);
+      return;
+    }
     const data = await resp.json();
+    // Reassemble split campaign keys (campaign_<title>) back into
+    // release_data_all before merging, so the client always sees the
+    // full bundle regardless of how it was stored on the server.
+    const campaignPrefix = 'campaign_';
+    const serverReleases = (data.release_data_all && typeof data.release_data_all === 'object')
+      ? data.release_data_all : {};
+    for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith(campaignPrefix)) {
+        const title = key.slice(campaignPrefix.length);
+        if (serverReleases[title]) {
+          serverReleases[title]._campaign = value;
+        }
+      }
+    }
+    if (Object.keys(serverReleases).length) data.release_data_all = serverReleases;
+
     // Merge server data into localStorage.
     // Most keys: server wins when local is missing (the original behavior).
     // release_data_all: UNION merge — so a save from another device/session
     // is never silently lost. Per-release key conflicts prefer the local
     // copy (assumed fresher on the current device).
     for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith(campaignPrefix)) continue; // already folded in above
       const localKey = ukey(key);
       const localRaw = localStorage.getItem(localKey);
       if (key === 'release_data_all') {
@@ -2509,7 +2575,10 @@ async function serverLoad() {
         localStorage.setItem(localKey, typeof value === 'string' ? value : JSON.stringify(value));
       }
     }
-  } catch(e) { console.warn('Server load failed:', e); }
+  } catch(e) {
+    if (attempt < 3) { await new Promise(r => setTimeout(r, 1000 * attempt)); return serverLoad(attempt + 1); }
+    console.warn('Server load failed after retries:', e);
+  }
 }
 
 // ============================
@@ -3128,7 +3197,9 @@ function doLogout() {
 // ignore the returnValue string, but setting it is still the sanctioned
 // way to request the prompt.
 function _beforeUnloadHandler(e) {
+  _serverFlushIsUnload = true;
   const ok = intakeForceFlush();
+  _serverFlushIsUnload = false;
   if (!ok) {
     e.preventDefault();
     e.returnValue = 'Your most recent changes may not have saved. Leave anyway?';
@@ -10632,6 +10703,16 @@ serverLoad().then(() => {
   checkEliteSlackStatus();
   loadGamification();
   outreachLoadStatus();
+  // One-time re-sync: if this device has release data that may not have
+  // reached the server (sendBeacon silently failed on earlier saves),
+  // force a full flush now so the server is up to date.
+  if (!localStorage.getItem('_resync_v1_' + USER_ID)) {
+    const allRaw = localStorage.getItem(ukey('release_data_all'));
+    if (allRaw && allRaw.length > 100) {
+      serverFlush();
+    }
+    localStorage.setItem('_resync_v1_' + USER_ID, '1');
+  }
 });
 </script>
 

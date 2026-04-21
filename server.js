@@ -1617,9 +1617,9 @@ app.get('/api/referrals/connect-dashboard', requireAuth, async (req, res) => {
 // --- User Data Save/Load (server-side persistence) ---
 // Size caps for durable autosave writes (H1). The outer express.json limit
 // is 10MB but that's the abuse ceiling; real release bundles are < 64KB.
-const USER_DATA_MAX_VALUE_BYTES = 256 * 1024;   // per-key value
-const USER_DATA_MAX_BATCH_ITEMS = 50;           // items per save-batch
-const USER_DATA_MAX_BATCH_BYTES = 2 * 1024 * 1024; // total serialized batch payload
+const USER_DATA_MAX_VALUE_BYTES = 512 * 1024;   // per-key value (raised for campaign bundles)
+const USER_DATA_MAX_BATCH_ITEMS = 100;          // items per save-batch (campaigns are split per-release)
+const USER_DATA_MAX_BATCH_BYTES = 5 * 1024 * 1024; // total serialized batch payload
 function _serializeValue(value) {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
@@ -1689,7 +1689,7 @@ function detectNewReleases(userId, serializedValue) {
   }
 }
 
-app.post('/api/data/save', requireAuth, (req, res) => {
+app.post('/api/data/save', requireAccess, (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'Key required' });
   const serialized = _serializeValue(value);
@@ -1705,7 +1705,7 @@ app.post('/api/data/save', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/data/save-batch', requireAuth, (req, res) => {
+app.post('/api/data/save-batch', requireAccess, (req, res) => {
   const { items } = req.body;
   if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'Items array required' });
   // H1 caps: bound item count, per-value size, and total serialized payload
@@ -1744,7 +1744,7 @@ app.post('/api/data/save-batch', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/data/load', requireAuth, (req, res) => {
+app.get('/api/data/load', requireAccess, (req, res) => {
   const rows = dbHelpers.prepare('SELECT key, value FROM user_data WHERE user_id = ?').all(req.user.id);
   const data = {};
   for (const row of rows) {
