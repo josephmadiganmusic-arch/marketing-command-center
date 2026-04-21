@@ -5973,8 +5973,7 @@ window.ST_DM_CACHE = window.ST_DM_CACHE || {};
 // so the UI always has something to show. Returns { dm, source: 'ai'|'fallback' }.
 async function stFetchSocialDm(contact, d) {
   const parsed = stParseSocialValue(contact.submission_value || contact.website || '');
-  const cacheKey = contact.id + '::' + (d.songTitle || '');
-  if (window.ST_DM_CACHE[cacheKey]) return window.ST_DM_CACHE[cacheKey];
+  // No cache — each DM must be unique since we reach out repeatedly
 
   try {
     const resp = await fetch('/api/outreach/social-dm', {
@@ -5994,9 +5993,7 @@ async function stFetchSocialDm(contact, d) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (!data || !data.dm) throw new Error('Empty response');
-    const result = { dm: data.dm, source: 'ai' };
-    window.ST_DM_CACHE[cacheKey] = result;
-    return result;
+    return { dm: data.dm, source: 'ai' };
   } catch (e) {
     console.error('[stFetchSocialDm] falling back to template:', e?.message || e);
     return { dm: stBuildSocialDmFallback(contact, d), source: 'fallback' };
