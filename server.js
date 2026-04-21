@@ -3572,13 +3572,15 @@ app.post('/api/outreach/dismiss-banner', requireOutreachUnlocked, (req, res) => 
 // Google Contacts import spec: Name, E-mail 1 - Value, Group Membership.
 app.get('/api/outreach/export/:category.csv', requireOutreachUnlocked, (req, res) => {
   const cat = String(req.params.category || '').toLowerCase();
-  if (!OUTREACH_CATEGORIES.includes(cat)) return res.status(400).send('Unknown category');
+  const isAll = cat === 'all';
+  if (!isAll && !OUTREACH_CATEGORIES.includes(cat)) return res.status(400).send('Unknown category');
   const verRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
   const version = verRow ? verRow.current_version : 0;
   const rows = version > 0
-    ? dbHelpers.prepare('SELECT name, submission_type, submission_value FROM outreach_contacts WHERE version = ? AND category = ? ORDER BY name').all(version, cat)
+    ? isAll
+      ? dbHelpers.prepare('SELECT name, category, submission_type, submission_value FROM outreach_contacts WHERE version = ? ORDER BY category, name').all(version)
+      : dbHelpers.prepare('SELECT name, category, submission_type, submission_value FROM outreach_contacts WHERE version = ? AND category = ? ORDER BY name').all(version, cat)
     : [];
-  const groupLabel = OUTREACH_CATEGORY_LABELS[cat] || cat;
   const csvEscape = (s) => {
     const str = String(s || '');
     if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
@@ -3586,13 +3588,10 @@ app.get('/api/outreach/export/:category.csv', requireOutreachUnlocked, (req, res
   };
   const lines = ['Name,E-mail 1 - Value,Group Membership'];
   for (const r of rows) {
-    // Google Contacts only makes sense for email contacts — skip form,
-    // social, phone, and anything without a valid-looking email address
-    // so the exported CSV never contains blank-email rows that would
-    // pollute the user's Google Contacts with unaddressable entries.
     if (r.submission_type !== 'email') continue;
     const email = String(r.submission_value || '').trim();
     if (!email || email.indexOf('@') < 1) continue;
+    const groupLabel = OUTREACH_CATEGORY_LABELS[r.category] || r.category || cat;
     lines.push([csvEscape(r.name), csvEscape(email), csvEscape('Rollout Heaven :: ' + groupLabel)].join(','));
   }
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
