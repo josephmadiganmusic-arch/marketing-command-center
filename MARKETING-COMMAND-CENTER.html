@@ -1535,32 +1535,12 @@
             <button class="preview-tab" onclick="egShowPreview('code',this)">HTML Code</button>
           </div>
         </div>
-        <!-- Email All send bar — shown when Email All audience button is active -->
-        <div id="egEmailAllSendBar" style="display:none;margin-bottom:12px;padding:12px;background:rgba(123,47,247,0.08);border:1px solid rgba(123,47,247,0.25);border-radius:8px;">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+        <!-- Email All subject bar — shown when Email All audience button is active -->
+        <div id="egEmailAllSendBar" style="display:none;margin-bottom:12px;padding:10px 12px;background:rgba(123,47,247,0.08);border:1px solid rgba(123,47,247,0.25);border-radius:8px;">
+          <div style="display:flex;gap:8px;align-items:center;">
             <span style="font-size:11px;color:#888;white-space:nowrap;">Subject:</span>
             <input id="egEmailAllSubject" type="text" readonly style="flex:1;min-width:180px;padding:6px 8px;background:#0d0d12;border:1px solid #333;border-radius:5px;color:#e0e0e0;font-size:12px;font-family:'Inter',sans-serif;">
-            <button class="st-meta-copy" onclick="egCopyFieldById('egEmailAllSubject',this)" style="font-size:11px;padding:4px 8px;">Copy</button>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
-            <span style="font-size:11px;color:#888;white-space:nowrap;">BCC (<span id="egEmailAllCount">0</span>):</span>
-            <input id="egEmailAllRecipients" type="text" readonly style="flex:1;min-width:180px;padding:6px 8px;background:#0d0d12;border:1px solid #333;border-radius:5px;color:#ccc;font-size:11px;font-family:monospace;">
-            <button class="st-meta-copy" onclick="egCopyFieldById('egEmailAllRecipients',this)" style="font-size:11px;padding:4px 8px;">Copy</button>
-          </div>
-          <div style="display:flex;gap:8px;">
-            <button onclick="egEmailAllSend()" style="padding:8px 16px;background:linear-gradient(135deg,#7b2ff7,#5518b4);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">Send to All</button>
-            <select id="egEmailAllCategory" onchange="egEmailAllGenerate()" style="padding:6px 10px;background:#0d0d12;border:1px solid #333;border-radius:5px;color:#e0e0e0;font-size:11px;font-family:'Inter',sans-serif;">
-              <option value="press_release">Press Release</option>
-              <option value="press">Press</option>
-              <option value="blog">Blog</option>
-              <option value="sirius">Sirius XM</option>
-              <option value="iheart">iHeart</option>
-              <option value="fm_am">FM / AM</option>
-              <option value="online_radio">Online Radio</option>
-              <option value="spotify_playlist">Spotify Playlist</option>
-              <option value="podcast">Podcast</option>
-            </select>
-            <span style="font-size:10px;color:#555;align-self:center;">Opens mail client with BCC + subject + body</span>
+            <button class="st-meta-copy" onclick="egCopyFieldById('egEmailAllSubject',this)" style="font-size:11px;padding:4px 10px;">Copy Subject</button>
           </div>
         </div>
         <div class="preview-frame-wrap">
@@ -7146,10 +7126,9 @@ function egCopyForGmail() {
 }
 
 // --- Email All — audience button that generates press release email in preview ---
-// Loads email contacts for the selected category, sets subject in Rapzilla format
-// (SONG: Artist - Title), fills intro with press release, generates the HTML email,
-// and shows the send bar with BCC recipients + Send to All button.
-async function egEmailAllGenerate() {
+// Sets subject in Rapzilla format (SONG: Artist - Title), fills intro with press
+// release from intake, generates the HTML email in the Live Preview.
+function egEmailAllGenerate() {
   const sendBar = document.getElementById('egEmailAllSendBar');
   if (sendBar) sendBar.style.display = 'block';
 
@@ -7157,20 +7136,6 @@ async function egEmailAllGenerate() {
   const artist = document.getElementById('egArtistName').value.trim() || '[Artist]';
   const song = document.getElementById('egSongTitle').value.trim() || '[Song Title]';
   document.getElementById('egEmailAllSubject').value = 'SONG: ' + artist + ' - ' + song;
-
-  // Load recipients for selected category
-  const cat = document.getElementById('egEmailAllCategory').value;
-  const countEl = document.getElementById('egEmailAllCount');
-  const recipEl = document.getElementById('egEmailAllRecipients');
-  try {
-    const r = await fetch('/api/outreach/emails/' + cat);
-    if (r.ok) {
-      const j = await r.json();
-      const emails = (j.contacts || []).map(c => c.email);
-      countEl.textContent = String(emails.length);
-      recipEl.value = emails.join(', ');
-    } else { recipEl.value = ''; countEl.textContent = '0'; }
-  } catch(e) { recipEl.value = ''; countEl.textContent = '0'; }
 
   // Fill intro with press release and generate the email preview
   const d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
@@ -7181,23 +7146,10 @@ async function egEmailAllGenerate() {
     ta.dispatchEvent(new Event('input', { bubbles: true }));
   }
   const statusEl = document.getElementById('egCategoryStatus');
-  if (statusEl) statusEl.innerHTML = '<span style="color:#b388ff;">Email All \u2014 press release loaded. Use Send to All to BCC all contacts.</span>';
+  if (statusEl) statusEl.innerHTML = '<span style="color:#b388ff;">Email All \u2014 press release loaded. Copy subject above, then COPY FOR GMAIL.</span>';
   if (typeof egGenerateEmail === 'function') {
     try { egGenerateEmail(); } catch(_) {}
   }
-}
-
-function egEmailAllSend() {
-  const emails = document.getElementById('egEmailAllRecipients').value.trim();
-  if (!emails) { showToast('No email contacts found for this category'); return; }
-  const subject = document.getElementById('egEmailAllSubject').value;
-  // Use the generated email as plain text body for mailto
-  const d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
-  const body = (d.pressRelease || '').trim() || document.getElementById('egIntroParagraph').value.trim();
-  const bcc = encodeURIComponent(emails);
-  const subj = encodeURIComponent(subject);
-  const bod = encodeURIComponent(body);
-  window.open('mailto:?bcc=' + bcc + '&subject=' + subj + '&body=' + bod, '_self');
 }
 
 function egCopyFieldById(id, btn) {
