@@ -6777,9 +6777,9 @@ async function egSetCategory(cat) {
     b.classList.toggle('active', b.dataset.cat === cat);
   });
   document.getElementById('egCategoryRegen').style.display = '';
-  // Hide the Email All send bar when switching to a different category
+  // Hide the Email All send bar and clear extras when switching away
   const sendBar = document.getElementById('egEmailAllSendBar');
-  if (sendBar && cat !== 'email_all') sendBar.style.display = 'none';
+  if (sendBar && cat !== 'email_all') { sendBar.style.display = 'none'; window._egEmailAllExtras = null; }
 
   // Email All: generate press release email and show recipients/subject/send-all
   // inline above the preview. Uses Rapzilla subject format (SONG: Artist - Title).
@@ -7180,8 +7180,6 @@ function egEmailAllGenerate() {
   if (typeof egGenerateEmail === 'function') {
     try { egGenerateEmail(); } catch(_) {}
   }
-  // Clear extras so normal email generation doesn't include them
-  window._egEmailAllExtras = null;
 }
 
 function egCopyFieldById(id, btn) {
