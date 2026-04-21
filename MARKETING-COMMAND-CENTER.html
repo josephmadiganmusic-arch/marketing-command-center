@@ -7137,9 +7137,17 @@ function egEmailAllGenerate() {
   const song = document.getElementById('egSongTitle').value.trim() || '[Song Title]';
   document.getElementById('egEmailAllSubject').value = 'SONG: ' + artist + ' - ' + song;
 
-  // Fill intro with press release and generate the email preview
+  // Fill intro with press release, stripping greeting and FOR IMMEDIATE RELEASE header
   const d = JSON.parse(localStorage.getItem(ukey('release_data')) || '{}');
-  const pressRelease = (d.pressRelease || '').trim();
+  let pressRelease = (d.pressRelease || '').trim();
+  if (pressRelease) {
+    // Remove greeting lines (Good afternoon, Good morning, Hello, Hi, etc.)
+    pressRelease = pressRelease.replace(/^(Good\s+(afternoon|morning|evening)|Hello|Hi|Hey)[,.]?\s*/gim, '');
+    // Remove FOR IMMEDIATE RELEASE line
+    pressRelease = pressRelease.replace(/^FOR\s+IMMEDIATE\s+RELEASE\s*/im, '');
+    // Trim leading blank lines left behind
+    pressRelease = pressRelease.replace(/^\s*\n+/, '').trim();
+  }
   const ta = document.getElementById('egIntroParagraph');
   if (ta && pressRelease) {
     ta.value = pressRelease;
