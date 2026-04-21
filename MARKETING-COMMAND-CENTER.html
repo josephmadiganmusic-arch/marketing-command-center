@@ -7216,6 +7216,10 @@ function egCopyForGmail() {
 // Sets subject in Rapzilla format (SONG: Artist - Title), fills intro with press
 // release from intake, generates the HTML email in the Live Preview.
 function egEmailAllGenerate() {
+  // Ensure EG form is populated from intake before generating — critical on
+  // mobile or new devices where the form may not have been filled yet.
+  try { egLoadFromIntake(true); } catch(_) {}
+
   const sendBar = document.getElementById('egEmailAllSendBar');
   if (sendBar) sendBar.style.display = 'block';
 

@@ -3530,7 +3530,7 @@ function buildOutreachState(user) {
 
 // Public status — anyone logged in can call this. Used by the frontend
 // to decide whether to show the locked card or the full tracker UI.
-app.get('/api/outreach/status', requireAuth, (req, res) => {
+app.get('/api/outreach/status', requireAccess, (req, res) => {
   res.json(buildOutreachState(req.user));
 });
 
