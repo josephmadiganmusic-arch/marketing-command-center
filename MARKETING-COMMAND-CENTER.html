@@ -7410,11 +7410,14 @@ async function getTrendContext() {
   const d = intakeGetData();
   const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' ') || 'Hip-Hop';
 
+  // Derive niche hashtags from genre for CHH/faith-based/niche-specific viral research
+  const nicheHashtags = _deriveNicheHashtags(genre);
+
   let tiktok = null, instagram = null;
   try {
     const [ttRes, igRes] = await Promise.all([
-      fetch('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'tiktokTrends', genre }) }),
-      fetch('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'instagramMonitor', genre }) })
+      fetch('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'tiktokTrends', genre, nicheHashtags }) }),
+      fetch('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'instagramMonitor', genre, nicheHashtags }) })
     ]);
     if (ttRes.ok) tiktok = await ttRes.json();
     if (igRes.ok) instagram = await igRes.json();
@@ -7440,6 +7443,9 @@ async function getTrendContext() {
     block += 'Trending Sounds:\n' + summarizeItems(tiktok.songs, 8) + '\n';
     block += 'Trending Creators:\n' + summarizeItems(tiktok.creators, 5) + '\n';
     block += 'Viral Video Formats:\n' + summarizeItems(tiktok.videos, 5) + '\n';
+    if (tiktok.nicheViral && tiktok.nicheViral.length) {
+      block += `\nNICHE VIRAL CONTENT (${nicheHashtags.join(', ')} — what's winning RIGHT NOW in this space):\n` + summarizeItems(tiktok.nicheViral, 10) + '\n';
+    }
   }
 
   if (instagram) {
@@ -7449,12 +7455,43 @@ async function getTrendContext() {
     block += 'Trending Hashtags:\n' + summarizeItems(instagram.hashtags, 5) + '\n';
     block += 'Content Strategies:\n' + summarizeItems(instagram.strategies, 5) + '\n';
     block += 'Reels Trends:\n' + summarizeItems(instagram.reelTrends, 5) + '\n';
+    if (instagram.nicheViral && instagram.nicheViral.length) {
+      block += `\nNICHE VIRAL CONTENT (${nicheHashtags.join(', ')} — top performing Instagram content):\n` + summarizeItems(instagram.nicheViral, 8) + '\n';
+    }
   }
 
-  block += '\nIMPORTANT: Reference specific trending sounds, hashtags, and content formats from above. Do NOT give generic advice like "use trending audio" — name the actual trends.\n===\n';
+  block += '\nIMPORTANT: Reference specific trending sounds, hashtags, and content formats from above. Study the NICHE VIRAL CONTENT section closely — these are the formats and hooks already winning in this artist\'s exact space. Adapt them, don\'t copy them. Do NOT give generic advice like "use trending audio" — name the actual trends.\n===\n';
 
   _trendCache = { data: block, expires: Date.now() + 3600000 }; // cache 1hr
   return block;
+}
+
+// Derive niche-specific hashtags from the artist's genre for targeted viral research
+function _deriveNicheHashtags(genre) {
+  const g = (genre || '').toLowerCase();
+  // CHH / Christian Hip-Hop variants
+  if (g.includes('christian') || g.includes('chh') || g.includes('gospel') || g.includes('faith')) {
+    return ['#christianrap', '#chh', '#christianhiphop', '#faithmusic', '#gospelrap', '#christianartist'];
+  }
+  // Hip-Hop / Rap
+  if (g.includes('hip') || g.includes('rap')) {
+    return ['#hiphop', '#rap', '#newrap', '#rapper', '#hiphopmusic', '#rapmusic'];
+  }
+  // R&B / Soul
+  if (g.includes('r&b') || g.includes('rnb') || g.includes('soul')) {
+    return ['#rnb', '#rnbmusic', '#soulmusic', '#rnbsinger', '#newrnb'];
+  }
+  // Pop
+  if (g.includes('pop')) {
+    return ['#popmusic', '#newpop', '#popartist', '#popsong'];
+  }
+  // Latin
+  if (g.includes('latin') || g.includes('reggaeton') || g.includes('spanish')) {
+    return ['#latinmusic', '#reggaeton', '#musicaurbana', '#latinartist'];
+  }
+  // Fallback: derive from genre name
+  const tag = '#' + genre.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  return [tag, tag + 'music', '#newmusic', '#indieartist'];
 }
 
 function openAiModal(action) { document.getElementById('aiModal-'+action).classList.add('active'); }
@@ -7717,11 +7754,11 @@ async function runAiAction(action) {
 
   let userPrompt = '';
   switch(action) {
-    case 'freshContent': { const extra=document.getElementById('aiFreshContext').value.trim(); const _d=intakeGetData(); const _feat=_d.featArtist?' ft '+_d.featArtist:''; userPrompt=`Generate fresh social media content for "${_d.songTitle||'the release'}" by ${_d.primaryArtist||'the artist'}${_feat}.${trends}\n\nProvide exactly:\n1. 5 new Instagram/Facebook captions (each with relevant hashtags and a Spotify save CTA)\n2. 5 new video hooks (short punchy lines to say on camera at the start of a reel/TikTok)\n3. 3 video content concepts (describe what to film, the angle, and the caption approach)\n\n${extra?'Additional direction: '+extra:''}\n\nFormat each section with a clear header. Number each item.`; break; }
+    case 'freshContent': { const extra=document.getElementById('aiFreshContext').value.trim(); const _d=intakeGetData(); const _feat=_d.featArtist?' ft '+_d.featArtist:''; const _lyrics=(_d.lyrics||'').trim(); const _songDesc=(_d.songDescription||'').trim(); const _bio=(_d.bio||'').trim(); const _songCtx=(_lyrics||_songDesc||_bio)?`\n\nSONG CONTEXT:\n${_songDesc?'DESCRIPTION: '+_songDesc+'\n':''}${_bio?'BIO: '+_bio+'\n':''}${_lyrics?'LYRICS:\n'+_lyrics.slice(0,2000)+'\n':''}`:'' ; userPrompt=`Generate fresh social media content for "${_d.songTitle||'the release'}" by ${_d.primaryArtist||'the artist'}${_feat}.${_songCtx}${trends}\n\nProvide exactly:\n1. 5 new Instagram/Facebook captions — each must reference specific lyrics or song themes, not generic promo. Include relevant hashtags and Spotify save CTA.\n2. 5 new video hooks — at least 3 mined from the lyrics (quote the bar or build around it). Short punchy lines to say on camera.\n3. 3 video content concepts — describe what to film, the angle, which viral format it adapts from the trends, and the caption approach. At least 1 should adapt a currently winning format from NICHE VIRAL CONTENT.\n\n${extra?'Additional direction: '+extra:''}\n\nFormat each section with a clear header. Number each item.`; break; }
     case 'outreach': { const name=document.getElementById('aiOutreachName').value.trim(); const playlist=document.getElementById('aiOutreachPlaylist').value.trim(); const notes=document.getElementById('aiOutreachNotes').value.trim(); if(!name||!playlist) { showToast('Fill in curator name and playlist/show name'); return; } userPrompt=`Write personalized outreach messages for a playlist curator / media contact.\n\nContact Name: ${name}\nPlaylist/Show/Blog: ${playlist}\n${notes?'Notes about them: '+notes:''}\n\nGenerate:\n1. A personalized Instagram/Twitter DM (short, casual, respectful -- under 200 words)\n2. A personalized email (professional but warm, includes all relevant track info, under 300 words)\n\nMake each message feel genuinely personal to ${name} and ${playlist}, not generic. Reference their specific platform.`; break; }
     case 'repurpose': { const text=document.getElementById('aiRepurposeText').value.trim(); if(!text) { showToast('Paste your caption or hook first'); return; } const platforms=[]; document.querySelectorAll('#aiRepurposePlatforms input:checked').forEach(cb=>platforms.push(cb.value)); if(platforms.length===0) { showToast('Select at least one platform'); return; } userPrompt=`Take this caption/hook and adapt it for each of these platforms: ${platforms.join(', ')}${trends}\n\nOriginal content:\n"${text}"\n\nFor each platform, write a version optimized for that platform's style, length limits, and audience behavior. Include relevant hashtags and a Spotify save CTA for each.`; break; }
     case 'analytics': { const stats=document.getElementById('aiAnalyticsStats').value.trim(); if(!stats) { showToast('Paste your stats first'); return; } const _d2=intakeGetData(); userPrompt=`Analyze these music/social media stats for ${_d2.primaryArtist||'the artist'} and provide strategic recommendations:\n\n${stats}\n\nProvide:\n1. KEY OBSERVATIONS\n2. WINS\n3. AREAS TO IMPROVE\n4. IMMEDIATE ACTIONS - 5 specific things to do this week\n5. 30-DAY STRATEGY`; break; }
-    case 'captionGen': { const mood=document.getElementById('aiCaptionMood').value.trim(); if(!mood) { showToast('Enter a mood or theme'); return; } const _d3=intakeGetData(); const _feat3=_d3.featArtist?' ft '+_d3.featArtist:''; userPrompt=`Generate 3 Instagram/Facebook captions for ${_d3.primaryArtist||'the artist'}'s "${_d3.songTitle||'release'}"${_feat3} with this mood/theme/angle: "${mood}"${trends}\n\nEach caption should be ready to copy and paste, include relevant hashtags (8-12 per caption), include a clear CTA focused on Spotify saves, and be in the artist's authentic voice.`; break; }
+    case 'captionGen': { const mood=document.getElementById('aiCaptionMood').value.trim(); if(!mood) { showToast('Enter a mood or theme'); return; } const _d3=intakeGetData(); const _feat3=_d3.featArtist?' ft '+_d3.featArtist:''; const _ly3=(_d3.lyrics||'').trim(); const _sd3=(_d3.songDescription||'').trim(); const _bi3=(_d3.bio||'').trim(); const _sc3=(_ly3||_sd3||_bi3)?`\n\nSONG CONTEXT:\n${_sd3?'DESCRIPTION: '+_sd3+'\n':''}${_bi3?'BIO: '+_bi3+'\n':''}${_ly3?'LYRICS:\n'+_ly3.slice(0,2000)+'\n':''}`:'' ; userPrompt=`Generate 3 Instagram/Facebook captions for ${_d3.primaryArtist||'the artist'}'s "${_d3.songTitle||'release'}"${_feat3} with this mood/theme/angle: "${mood}"${_sc3}${trends}\n\nEach caption MUST reference specific lyrics, song themes, or the artist's real story — no generic "new music" filler. Include relevant hashtags (8-12 per caption, mix niche + trending), include a clear CTA focused on Spotify saves, and be in the artist's authentic voice. If NICHE VIRAL CONTENT is available in trends, adapt a winning content angle.`; break; }
   }
   loadingEl.classList.add('active'); resultsEl.innerHTML = '';
   const submitBtn = loadingEl.previousElementSibling;
@@ -7756,18 +7793,24 @@ function buildInlinePrompt(id) {
   const songFull = `"${song}"${feat}`;
   const genre = [d.genrePrimary, d.genreSecondary].filter(Boolean).join(' / ') || 'Hip-Hop';
   const label = d.label || 'Independent';
+  const lyrics = (d.lyrics || '').trim();
+  const songDesc = (d.songDescription || '').trim();
+  const bio = (d.bio || '').trim();
+
+  // Build a rich context block for content-creation prompts
+  const songContext = (lyrics || songDesc || bio) ? `\n\nSONG CONTEXT — use this to create authentic, meaningful content:\n${songDesc ? 'SONG DESCRIPTION: ' + songDesc + '\n' : ''}${bio ? 'ARTIST BIO: ' + bio + '\n' : ''}${lyrics ? 'LYRICS (mine these for hooks, quotes, and content angles):\n' + lyrics.slice(0, 2000) + '\n' : ''}` : '';
 
   const checkSummary = getChecklistSummary();
   const checkContext = `Current checklist status: ${checkSummary.done}/${checkSummary.total} tasks completed.\nRecent items:\n${checkSummary.items.slice(0,20).join('\n')}`;
   switch(id) {
     case 'dashPlanWeek': { const notes=document.getElementById('inlineAiInput-dashPlanWeek').value.trim(); return `Based on the current state of ${artist}'s ${songFull} 30-day marketing campaign, create a prioritized weekly action plan.\n\n${checkContext}\n\n${notes?'User notes: '+notes:''}\n\nCreate a day-by-day plan (Monday-Sunday) with the most important task for each day, quick wins, content to post, and any outreach to send. Keep it actionable and specific.`; }
     case 'dashNextAction': return `Based on the current state of ${artist}'s ${songFull} campaign, what is the single highest-impact action to take RIGHT NOW?\n\n${checkContext}\n\nGive me:\n1. THE ONE THING to do next (be specific)\n2. WHY this is the highest priority right now\n3. How long it should take\n4. What to do immediately after\n\nBe direct and specific.`;
-    case 'genHooks': { const angle=document.getElementById('inlineAiInput-genHooks').value.trim(); return `Generate 5 brand new video hooks for ${artist} to say on camera at the start of a reel or TikTok promoting ${songFull}.\n\n${angle?'Focus/angle: '+angle:''}\n\nThese should be punchy, attention-grabbing opening lines (1-2 sentences max) in the artist's authentic voice.\n\nNumber them 1-5. Just the hooks.`; }
-    case 'genCaption': { const topic=document.getElementById('inlineAiInput-genCaption').value.trim(); return `Write a ready-to-post Instagram/Facebook caption for ${artist}'s ${songFull}.\n\nTopic/angle: ${topic||'general promotion'}\n\nThe caption should be 100-250 words, in the artist's authentic voice, include 8-12 relevant hashtags at the end, and include a clear CTA focused on Spotify saves.\n\nWrite just the caption, nothing else.`; }
-    case 'genHashtags': { const theme=document.getElementById('inlineAiInput-genHashtags').value.trim(); return `Create a new hashtag set for ${artist}'s ${songFull} content.\n\nGenre: ${genre}\nTheme: ${theme||'general promotion'}\n\nGenerate 12-15 hashtags that mix high-volume tags with niche ${genre} tags, are relevant to the theme, and include a set name/label.\n\nFormat: Set Name followed by all hashtags on one line with # prefix.`; }
-    case 'genCTAs': return `Write 5 fresh calls-to-action for ${artist}'s ${songFull} campaign.\n\nThese should be short (under 15 words each), focused on driving Spotify saves, shares, and engagement, in the artist's direct, authentic voice.\n\nNumber them 1-5. Just the CTAs.`;
-    case 'calDay': { const date=document.getElementById('inlineAiInput-calDay-date').value; const platform=document.getElementById('inlineAiInput-calDay-platform').value; const notes=document.getElementById('inlineAiInput-calDay').value.trim(); return `Generate a complete social media post plan for ${artist}'s ${songFull} campaign.\n\nDate: ${date||'upcoming day'}\nPlatform: ${platform}\n${notes?'Notes: '+notes:''}\n\nProvide:\n1. VIDEO CONCEPT\n2. HOOK - What to say in the first 3 seconds\n3. FULL CAPTION - Ready to copy and paste\n4. HASHTAGS - 10-12\n5. CTA\n6. POSTING TIPS`; }
-    case 'calWeek': { const week=document.getElementById('inlineAiInput-calWeek').value; return `Create a complete content calendar for Week ${week} of ${artist}'s ${songFull} 30-day campaign.\n\nPlan 5 posts for the week plus daily Story ideas.\n\nFor each post provide: Day, Platform(s), Content type, What to film/create, Brief caption direction, CTA.\n\n${week==='1'?'This is release week -- focus on announcement, first impressions, driving initial saves.':''}${week==='2'?'This is week 2 -- deepen connection, share more of the story, behind the scenes.':''}${week==='3'?'This is week 3 -- expand reach, UGC prompts, trends, collaboration content.':''}${week==='4'?'This is week 4 -- compound momentum, recap, gratitude, tease what is next.':''}`; }
+    case 'genHooks': { const angle=document.getElementById('inlineAiInput-genHooks').value.trim(); return `Generate 5 brand new video hooks for ${artist} to say on camera at the start of a reel or TikTok promoting ${songFull}.${songContext}\n\n${angle?'Focus/angle: '+angle:''}\n\nINSTRUCTIONS:\n- At least 3 hooks MUST be mined from specific lyrics — quote the bar or build the hook around a lyric's meaning\n- At least 1 hook should come from the artist's real story/bio\n- Study any NICHE VIRAL CONTENT in the trends below — adapt a winning format if possible\n- These should be punchy, attention-grabbing opening lines (1-2 sentences max) in the artist's authentic voice\n- If a hook is based on a lyric, note which line inspired it\n\nNumber them 1-5. Just the hooks.`; }
+    case 'genCaption': { const topic=document.getElementById('inlineAiInput-genCaption').value.trim(); return `Write a ready-to-post Instagram/Facebook caption for ${artist}'s ${songFull}.${songContext}\n\nTopic/angle: ${topic||'general promotion'}\n\nINSTRUCTIONS:\n- Reference specific lyrics or the song's themes — don't write generic "new music" filler\n- Pull from the artist's real story and bio for authenticity\n- The caption should be 100-250 words, in the artist's authentic voice\n- Include 8-12 relevant hashtags at the end (mix niche + broader tags)\n- Include a clear CTA focused on Spotify saves\n- If trend data is available below, adapt a currently winning content angle\n\nWrite just the caption, nothing else.`; }
+    case 'genHashtags': { const theme=document.getElementById('inlineAiInput-genHashtags').value.trim(); return `Create a new hashtag set for ${artist}'s ${songFull} content.\n\nGenre: ${genre}\nTheme: ${theme||'general promotion'}\n\nGenerate 12-15 hashtags that mix high-volume tags with niche ${genre} tags, are relevant to the theme, and include a set name/label. If trend data is available below, include currently trending hashtags from the NICHE VIRAL CONTENT section.\n\nFormat: Set Name followed by all hashtags on one line with # prefix.`; }
+    case 'genCTAs': return `Write 5 fresh calls-to-action for ${artist}'s ${songFull} campaign.${songContext}\n\nThese should be short (under 15 words each), focused on driving Spotify saves, shares, and engagement, in the artist's direct, authentic voice. At least 2 should reference a specific lyric, theme, or emotion from the song.\n\nNumber them 1-5. Just the CTAs.`;
+    case 'calDay': { const date=document.getElementById('inlineAiInput-calDay-date').value; const platform=document.getElementById('inlineAiInput-calDay-platform').value; const notes=document.getElementById('inlineAiInput-calDay').value.trim(); return `Generate a complete social media post plan for ${artist}'s ${songFull} campaign.${songContext}\n\nDate: ${date||'upcoming day'}\nPlatform: ${platform}\n${notes?'Notes: '+notes:''}\n\nProvide:\n1. VIDEO CONCEPT — describe exactly what to film, adapting a viral format from the trends if available\n2. HOOK — What to say in the first 3 seconds (mine from lyrics if possible)\n3. FULL CAPTION — Ready to copy and paste, referencing specific lyrics or song themes\n4. HASHTAGS — 10-12 (include trending niche hashtags)\n5. CTA\n6. DAILY STORY IDEA — A quick Story to post alongside (poll, lyric card, BTS, Q&A, or worship moment)\n7. POSTING TIPS`; }
+    case 'calWeek': { const week=document.getElementById('inlineAiInput-calWeek').value; return `Create a complete content calendar for Week ${week} of ${artist}'s ${songFull} 30-day campaign.${songContext}\n\nPlan 5 posts/week (Mon-Fri) + DAILY Stories (all 7 days).\n\nFor each of the 5 main posts provide: Day, Platform(s), Content type, What to film/create, Hook (mined from lyrics when possible), Brief caption direction, CTA.\n\nFor DAILY STORIES provide: Day, What to post (poll, lyric card, BTS clip, Q&A box, worship moment, countdown, fan repost), and any interactive elements (link sticker, poll, question box).\n\nAt least 2 posts per week MUST be built around specific lyrics from the song. At least 1 post should adapt a currently viral format from the trends data.\n\n${week==='1'?'This is release week -- focus on announcement, first impressions, driving initial saves. Stories should build hype with countdown, snippet teasers, behind-the-scenes.':''}${week==='2'?'This is week 2 -- deepen connection, share the story behind specific lyrics, testimony content, behind the scenes. Stories should feature lyric cards, fan reactions, Q&A about the song.':''}${week==='3'?'This is week 3 -- expand reach, UGC prompts, trend-jacking with the song, collaboration content. Stories should feature fan reposts, polls, and user-generated content.':''}${week==='4'?'This is week 4 -- compound momentum, recap wins, gratitude, tease what is next. Stories should celebrate milestones, thank fans, and preview upcoming music.':''}`; }
     case 'outPitch': { const name=document.getElementById('inlineAiInput-outPitch-name').value.trim(); const type=document.getElementById('inlineAiInput-outPitch-type').value; const notes=document.getElementById('inlineAiInput-outPitch').value.trim(); if(!name) { showToast('Enter the outlet name'); return null; } return `Write a tailored pitch for ${artist}'s ${songFull} to submit to a ${type.toLowerCase()}.\n\nOutlet: ${name}\nType: ${type}\nGenre: ${genre}\n${notes?'Notes about them: '+notes:''}\n\nGenerate:\n1. EMAIL PITCH - Professional email (subject line + body, under 300 words)\n2. SHORT DM VERSION - Casual DM (under 150 words)\n3. ONE-LINE PITCH - Single sentence elevator pitch\n\nMake it feel personal to ${name}, not generic.`; }
     case 'outCurator': { const name=document.getElementById('inlineAiInput-outCurator-name').value.trim(); const playlist=document.getElementById('inlineAiInput-outCurator-playlist').value.trim(); const notes=document.getElementById('inlineAiInput-outCurator').value.trim(); if(!name||!playlist) { showToast('Enter curator name and playlist name'); return null; } return `Write personalized outreach for a playlist curator.\n\nArtist: ${artist}\nSong: ${songFull}\nCurator: ${name}\nPlaylist: ${playlist}\n${notes?'Notes: '+notes:''}\n\nGenerate:\n1. INSTAGRAM/TWITTER DM - Short, casual, respectful (under 200 words)\n2. EMAIL VERSION - Professional but warm (under 300 words)\n\nMake each message feel genuinely personal to ${name} and reference ${playlist} specifically.`; }
     case 'outFollowup': { const who=document.getElementById('inlineAiInput-outFollowup-who').value.trim(); const context=document.getElementById('inlineAiInput-outFollowup').value.trim(); if(!who) { showToast('Enter who you are following up with'); return null; } return `Write a follow-up message for ${artist} to send about ${songFull}.\n\nFollowing up with: ${who}\nContext: ${context||'Sent initial outreach, no response yet'}\n\nGenerate:\n1. DM FOLLOW-UP - Short, respectful, not pushy (under 100 words)\n2. EMAIL FOLLOW-UP - Professional, includes a reason to re-engage (under 200 words)\n\nKeep it warm and non-pushy. Never guilt-trip.`; }
@@ -8104,6 +8147,9 @@ async function generateCampaign() {
   const targetPodcasts = (document.getElementById('gen-podcasts').value || '').split(',').map(s=>s.trim()).filter(Boolean);
   const targetCollabs = (document.getElementById('gen-collabs').value || '').split(',').map(s=>s.trim()).filter(Boolean);
 
+  const lyrics = (d.lyrics || '').trim();
+  const songDescription = (d.songDescription || '').trim();
+
   const ctx = `SONG: "${d.songTitle}"${feat}
 ARTIST: ${d.primaryArtist}
 ALBUM/SINGLE: ${d.albumName || d.songTitle}
@@ -8113,6 +8159,9 @@ PRODUCER: ${d.producer || 'N/A'}
 SONGWRITERS: ${writers || 'N/A'}
 LABEL: ${d.label || 'Independent'}
 BIO: ${bio || 'N/A'}
+SONG DESCRIPTION: ${songDescription || 'N/A'}
+LYRICS:
+${lyrics ? lyrics.slice(0, 3000) : 'N/A'}
 SOCIALS: ${socials || 'N/A'}
 AVAILABLE MATERIALS: ${materials.join(', ') || 'None specified'}
 SPOTIFY: ${d.linkSpotify || 'N/A'}
@@ -8292,13 +8341,29 @@ Generate a complete content bank for this release. Return ONLY valid JSON (no ma
   "ctas": ["cta1", "cta2", ...]
 }
 
+CRITICAL INSTRUCTIONS — READ CAREFULLY:
+
+1. MINE THE LYRICS for hooks. Read every line of the lyrics above. Pull out the hardest-hitting bars, the most emotional lines, the most quotable phrases. Turn these into camera-ready hooks by framing them as "POV:", "When [lyric context]...", or leading with the bar itself. At least 6 of the 12 hooks MUST come directly from or be inspired by specific lyrics.
+
+2. USE THE SONG DESCRIPTION to understand what this song is really about — its themes, emotional core, and why it matters. Every caption should connect to the song's actual meaning, not generic "new music" filler.
+
+3. USE THE ARTIST BIO to pull real testimony moments, real story beats, real turning points. The hooks and captions should feel like ONLY this artist could have written them.
+
+4. STUDY THE NICHE VIRAL CONTENT in the trends data above. These are formats and hooks already getting high views in this artist's exact space. Adapt winning formats: if a "POV: when the beat drops at church" format is going viral, create a version using THIS song's content. If a storytelling hook format is winning, use THIS artist's real story in that format. Name the specific trend you're adapting.
+
+5. STUDY THE TIKTOK CREATIVE CENTER trends. Reference actual trending sounds, hashtags, and content formats by name. Create hooks that ride current viral waves while staying authentic to the song.
+
 Requirements:
-- 12 video hooks (short, punchy, camera-ready openers specific to this song and artist story)
-- 10 captions (mix of: release announcement, testimony/story, engagement, Spotify save push, behind the scenes, collab shoutout, fan engagement, milestone, pre-release teaser, one-month-out hype)
-- 5 hashtag sets (Release, Genre/Niche, Engagement, Streaming Growth, Viral/TikTok) with 12-15 tags each relevant to this artist's genre and niche
-- 10 calls-to-action focused on Spotify saves, shares, playlist adds
-- Include PRE-RELEASE content (teasers, countdown, snippet hooks) for content to post 2-4 weeks before release
-- Voice: direct, authentic, never preachy or generic`, 2, 8000);
+- 15 video hooks (short, punchy, camera-ready openers):
+  - 6+ hooks mined directly from lyrics (quote the bar or build the hook around it)
+  - 3+ hooks based on the artist's real testimony/bio story
+  - 3+ hooks adapting currently viral TikTok/Reels formats from the trends data
+  - 3+ engagement/educational hooks (Spotify saves, algorithm tips, community prompts)
+- 12 captions (mix of: release announcement, testimony/story, engagement, Spotify save push, behind the scenes, collab shoutout, fan engagement, milestone, pre-release teaser, recovery community, worship/faith moment, one-month hype). Each caption should reference specific lyrics or song themes — not generic promo.
+- 6 hashtag sets (Release, Genre/Niche, Engagement, Streaming Growth, Viral/TikTok, Community/Faith) with 12-15 tags each. Include currently trending niche hashtags from the trends data.
+- 12 calls-to-action focused on Spotify saves, shares, playlist adds, story reposts, fan UGC
+- Include PRE-RELEASE content (teasers, countdown, snippet hooks) for 2-4 weeks before release
+- Voice: direct, authentic, never preachy or generic. Write like the artist talks, not like a marketer.`, 2, 8000);
 
     try {
       const c = parseJSONLoose(contentResult);
@@ -8315,7 +8380,7 @@ Requirements:
     markStep('calendar', 'active'); clMarkStep('calendar', 'active');
     const calResult = await callClaudeWithRetry(`${ctx}${trends}
 
-Generate a 30-day marketing calendar. The calendar has 4 weeks. If the release date is in the future, the first 1-2 weeks should be PRE-RELEASE strategy (teasers, countdowns, snippet drops, hype building, pre-save campaigns). Post-release weeks focus on streaming growth, engagement, and outreach.
+Generate a 30-day content calendar. The calendar has 4 weeks. If the release date is in the future, the first 1-2 weeks should be PRE-RELEASE strategy (teasers, countdowns, snippet drops, hype building, pre-save campaigns). Post-release weeks focus on streaming growth, engagement, and outreach.
 
 Return ONLY valid JSON (no markdown, no code fences) in this format:
 {
@@ -8325,14 +8390,28 @@ Return ONLY valid JSON (no markdown, no code fences) in this format:
   "4": [...]
 }
 
+CRITICAL INSTRUCTIONS — READ CAREFULLY:
+
+1. SCHEDULE: 5 posts/week (Mon-Fri) + DAILY Stories (7 days/week, including weekends). Every week MUST include 5 main posts AND 7 Story entries. Stories are quick, raw, personal — behind the scenes, polls, Q&As, lyric cards, reaction reposts, prayer requests, worship moments.
+
+2. MINE THE LYRICS for content angles. Each week should feature at least 2 posts that pull from specific lyrics — quote cards, lyric-over-video reels, "the meaning behind this bar" breakdowns, POV videos using a lyric as the hook.
+
+3. USE THE SONG DESCRIPTION to inform the emotional arc of the 30 days. The calendar should tell a story — Week 1 introduces the song's "why," Week 2 deepens with testimony/meaning, Week 3 expands reach with viral formats, Week 4 compounds momentum and teases what's next.
+
+4. ADAPT VIRAL FORMATS from the trends data. Study the NICHE VIRAL CONTENT section — these are formats already getting high views in this artist's space. At least 3 posts per week should adapt a currently winning format. Name the format you're adapting (e.g., "Adapting the 'POV: when the beat drops' TikTok trend").
+
+5. USE THE ARTIST BIO for authentic story-driven content. Testimony moments, turning points, family references, recovery journey — these are the posts that go viral in the faith/CHH space because they're REAL.
+
 Requirements:
-- 5-7 entries per week
-- Week labels should reflect the phase (e.g., "Pre-Release Week" or "Release Week" or "Growth Week")
-- Platforms: mix of Instagram, TikTok, Facebook, YouTube, Stories, Twitter/X
-- Content types: Reel, Story, Carousel, Live, TikTok, Post, Collab
-- PRE-RELEASE ideas: snippet previews, studio BTS, countdown posts, pre-save links, artist story teasers, collab announcements
-- POST-RELEASE ideas: release announcement, testimonials, engagement posts, playlist pushes, live sessions, fan reposts
-- All CTAs should be specific and actionable`, 2, 8000);
+- 7-9 entries per week (5 main posts + 2-4 Story sequences)
+- Platforms: mix of Instagram Reel, TikTok, Facebook, YouTube Short, Instagram Stories, Twitter/X
+- Content types: Reel, Story Sequence, Carousel, Live, TikTok, Post, Collab, Lyric Card, Behind the Scenes, UGC Prompt
+- DAILY STORIES: Include specific Story ideas for EVERY day — not just "post stories." Each Story entry should describe: what to film/post, the vibe, and whether it needs a link sticker, poll, question box, or countdown.
+- PRE-RELEASE ideas: snippet previews, studio BTS, countdown posts, pre-save links, artist story teasers, lyric teaser cards, collab announcements, "guess the lyrics" engagement
+- POST-RELEASE ideas: release announcement, lyric breakdown videos, testimony tied to specific bars, engagement posts, playlist pushes, live sessions, fan reaction reposts, "the story behind this line" series
+- Every post should reference a specific lyric, theme, or story from the artist — ZERO generic "new music out now" filler
+- All CTAs should be specific and actionable
+- Optimal post times: IG 11am-1pm or 7pm-9pm EST, TikTok 10am-12pm or 6pm-9pm EST, FB 1pm-3pm EST, YouTube Shorts 2pm-4pm EST`, 2, 8000);
 
     try {
       const cal = parseJSONLoose(calResult);

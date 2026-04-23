@@ -2706,16 +2706,17 @@ app.post('/api/research', requireAccess, rlResearch, async (req, res) => {
 
       case 'tiktokTrends': {
         if (!genre) return res.status(400).json({ error: 'Genre required' });
-        const searches = await Promise.all([
+        // Core genre searches
+        const coreSearches = await Promise.all([
           serperSearch(`site:ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag ${genre}`, 10),
           serperSearch(`tiktok creative center trending songs ${genre} music`, 10),
           serperSearch(`tiktok creative center trending ${genre} creators artists`, 10),
           serperSearch(`tiktok ${genre} trending sounds viral 2026`, 10),
           serperSearch(`tiktok ${genre} music trends what is trending now`, 10)
         ]);
-        const trends = { hashtags: [], songs: [], creators: [], videos: [] };
-        for (let i = 0; i < searches.length; i++) {
-          const s = searches[i];
+        const trends = { hashtags: [], songs: [], creators: [], videos: [], nicheViral: [] };
+        for (let i = 0; i < coreSearches.length; i++) {
+          const s = coreSearches[i];
           const items = [];
           if (s.organic) {
             for (const r of s.organic) {
@@ -2727,30 +2728,73 @@ app.post('/api/research', requireAccess, rlResearch, async (req, res) => {
           else if (i === 2) trends.creators = items;
           else { trends.videos = trends.videos.concat(items); }
         }
+
+        // Niche hashtag viral content searches (client passes nicheHashtags array)
+        const nicheHashtags = Array.isArray(req.body.nicheHashtags) ? req.body.nicheHashtags.slice(0, 6) : [];
+        if (nicheHashtags.length) {
+          const nicheSearches = await Promise.all([
+            // Search TikTok Creative Center for each niche hashtag
+            ...nicheHashtags.slice(0, 3).map(tag =>
+              serperSearch(`site:ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag "${tag.replace(/^#/, '')}"`, 10)
+            ),
+            // Search for viral content using these hashtags
+            serperSearch(`tiktok ${nicheHashtags.join(' ')} viral videos high views 2026`, 10),
+            // Search for winning formats and hooks in this niche
+            serperSearch(`tiktok ${nicheHashtags.join(' ')} best performing content hooks format`, 10),
+            // Search for what's trending RIGHT NOW in this niche
+            serperSearch(`tiktok ${nicheHashtags[0].replace(/^#/, '')} trending today most viewed`, 10)
+          ]);
+          for (const s of nicheSearches) {
+            if (s.organic) {
+              for (const r of s.organic) {
+                trends.nicheViral.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
+              }
+            }
+          }
+        }
+
         result = trends;
         break;
       }
 
       case 'instagramMonitor': {
         if (!genre) return res.status(400).json({ error: 'Genre required' });
-        const searches = await Promise.all([
+        const igSearches = await Promise.all([
           serperSearch(`instagram ${genre} music accounts to follow independent artists`, 10),
           serperSearch(`instagram ${genre} repost pages promotion music`, 10),
           serperSearch(`#${genre.replace(/\s+/g, '')} instagram top posts music`, 10),
           serperSearch(`instagram ${genre} music content strategy hooks captions 2026`, 10),
           serperSearch(`instagram reels ${genre} music trending audio format`, 10)
         ]);
-        const monitor = { accounts: [], repostPages: [], hashtags: [], strategies: [], reelTrends: [] };
-        const keys = ['accounts', 'repostPages', 'hashtags', 'strategies', 'reelTrends'];
-        for (let i = 0; i < searches.length; i++) {
+        const monitor = { accounts: [], repostPages: [], hashtags: [], strategies: [], reelTrends: [], nicheViral: [] };
+        const igKeys = ['accounts', 'repostPages', 'hashtags', 'strategies', 'reelTrends'];
+        for (let i = 0; i < igSearches.length; i++) {
           const items = [];
-          if (searches[i].organic) {
-            for (const r of searches[i].organic) {
+          if (igSearches[i].organic) {
+            for (const r of igSearches[i].organic) {
               items.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
             }
           }
-          monitor[keys[i]] = items;
+          monitor[igKeys[i]] = items;
         }
+
+        // Niche hashtag viral content on Instagram
+        const igNicheHashtags = Array.isArray(req.body.nicheHashtags) ? req.body.nicheHashtags.slice(0, 6) : [];
+        if (igNicheHashtags.length) {
+          const nicheIgSearches = await Promise.all([
+            serperSearch(`instagram ${igNicheHashtags.join(' ')} top posts viral reels 2026`, 10),
+            serperSearch(`instagram ${igNicheHashtags.join(' ')} most liked content hooks`, 10),
+            serperSearch(`instagram reels ${igNicheHashtags[0].replace(/^#/, '')} trending format high views`, 10)
+          ]);
+          for (const s of nicheIgSearches) {
+            if (s.organic) {
+              for (const r of s.organic) {
+                monitor.nicheViral.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
+              }
+            }
+          }
+        }
+
         result = monitor;
         break;
       }
