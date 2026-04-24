@@ -4106,6 +4106,8 @@ function intakeLoad(title) {
   if (currentData.songTitle && campaignGenerated) {
     saveCampaignToRelease(currentData.songTitle, getCampaignSnapshot());
   }
+  // Force submission tracker to reload with the new release's progress
+  window.ST_STATE.loaded = false;
   const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
   const d = saved[title]; if (!d) return;
   intakeFillForm(d);
@@ -5551,6 +5553,12 @@ async function stLockBuy(tier, btnEl) {
 async function stInit() {
   stApplyLockState();
   if (!window.OUTREACH_STATE.unlocked) return;
+  // Get the current release ID so progress is per-release
+  const currentRelease = (JSON.parse(localStorage.getItem(ukey('release_data')) || '{}') || {}).songTitle || null;
+  // If the release changed, force reload so we get fresh progress
+  if (window.ST_STATE.loaded && window.ST_STATE._releaseId !== currentRelease) {
+    window.ST_STATE.loaded = false;
+  }
   if (window.ST_STATE.loaded || window.ST_STATE.loading) {
     stRender();
     return;
@@ -5559,7 +5567,10 @@ async function stInit() {
   const listEl = document.getElementById('stList');
   if (listEl) listEl.innerHTML = '<div class="st-empty">Loading your outreach list\u2026</div>';
   try {
-    const r = await fetch('/api/outreach/contacts');
+    const url = currentRelease
+      ? '/api/outreach/contacts?release_id=' + encodeURIComponent(currentRelease)
+      : '/api/outreach/contacts';
+    const r = await fetch(url);
     if (!r.ok) {
       if (listEl) listEl.innerHTML = '<div class="st-empty">Could not load outreach list ('+ r.status +').</div>';
       return;
@@ -5578,6 +5589,7 @@ async function stInit() {
     (j.progress || []).forEach(p => { prog[p.contact_id] = p; });
     window.ST_STATE.progress = prog;
     window.ST_STATE.loaded = true;
+    window.ST_STATE._releaseId = currentRelease;
   } catch(e) {
     if (listEl) listEl.innerHTML = '<div class="st-empty">Network error loading outreach list.</div>';
     return;

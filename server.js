@@ -655,7 +655,13 @@ function initDb() {
     )
   `);
   db.run('CREATE INDEX IF NOT EXISTS idx_submission_progress_user ON submission_progress(user_id)');
-  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_submission_progress_user_contact ON submission_progress(user_id, contact_id)');
+  // Per-release progress: each release gets its own submitted/pending state.
+  // Migration: drop the old (user_id, contact_id) unique index and create
+  // a new one keyed by (user_id, contact_id, release_id). Existing rows with
+  // NULL release_id keep their state — they just won't conflict with future
+  // per-release rows.
+  try { db.run('DROP INDEX IF EXISTS idx_submission_progress_user_contact'); } catch(e) {}
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_submission_progress_user_contact_release ON submission_progress(user_id, contact_id, release_id)');
 
   // --- Data Safety: soft-delete columns (additive, tolerant) ---
   // deleted_at enables soft delete: rows are marked, not destroyed. Queries
@@ -3596,7 +3602,12 @@ app.get('/api/outreach/contacts', requireOutreachUnlocked, (req, res) => {
   const contacts = version > 0
     ? dbHelpers.prepare("SELECT id, category, name, submission_type, submission_value, website, phone, notes FROM outreach_contacts WHERE version = ? AND submission_type != 'phone' AND submission_type != 'email' ORDER BY category, name").all(version)
     : [];
-  const progress = dbHelpers.prepare('SELECT contact_id, status, release_id, submitted_at FROM submission_progress WHERE user_id = ?').all(req.user.id);
+  // Per-release progress: if release_id is provided, only return progress for
+  // that release so the tracker shows fresh state for each new campaign.
+  const releaseId = (req.query.release_id || '').trim() || null;
+  const progress = releaseId
+    ? dbHelpers.prepare('SELECT contact_id, status, release_id, submitted_at FROM submission_progress WHERE user_id = ? AND release_id = ?').all(req.user.id, releaseId)
+    : dbHelpers.prepare('SELECT contact_id, status, release_id, submitted_at FROM submission_progress WHERE user_id = ?').all(req.user.id);
   res.json({ version, contacts, progress });
 });
 
@@ -4194,8 +4205,10 @@ app.post('/api/outreach/submission/mark', requireOutreachUnlocked, (req, res) =>
   const contact = dbHelpers.prepare('SELECT id, category FROM outreach_contacts WHERE id = ?').get(contactId);
   if (!contact) return res.status(404).json({ error: 'Contact not found' });
 
-  // Idempotent insert — if a row already exists, skip the XP grant.
-  const existing = dbHelpers.prepare('SELECT id FROM submission_progress WHERE user_id = ? AND contact_id = ?').get(req.user.id, contactId);
+  // Idempotent insert — if a row already exists for this user+contact+release, skip the XP grant.
+  const existing = releaseId
+    ? dbHelpers.prepare('SELECT id FROM submission_progress WHERE user_id = ? AND contact_id = ? AND release_id = ?').get(req.user.id, contactId, releaseId)
+    : dbHelpers.prepare('SELECT id FROM submission_progress WHERE user_id = ? AND contact_id = ? AND release_id IS NULL').get(req.user.id, contactId);
   let awardedXp = 0;
   if (!existing) {
     dbHelpers.prepare(`
