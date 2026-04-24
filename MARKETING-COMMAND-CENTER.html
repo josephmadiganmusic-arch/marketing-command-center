@@ -7498,12 +7498,31 @@ function openAiModal(action) { document.getElementById('aiModal-'+action).classL
 function closeAiModal(action) { document.getElementById('aiModal-'+action).classList.remove('active'); }
 document.addEventListener('click', e => { if(e.target.classList.contains('ai-modal-overlay')) e.target.classList.remove('active'); });
 
+// Strip lone surrogates that break JSON.stringify (from copy-pasted lyrics, bios, etc.)
+function sanitizeForJson(str) {
+  if (typeof str !== 'string') return str;
+  let out = '';
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c >= 0xD800 && c <= 0xDBFF) {
+      const next = i + 1 < str.length ? str.charCodeAt(i + 1) : 0;
+      if (next >= 0xDC00 && next <= 0xDFFF) { out += str[i] + str[i + 1]; i++; }
+      else { out += '\uFFFD'; }
+    } else if (c >= 0xDC00 && c <= 0xDFFF) {
+      out += '\uFFFD';
+    } else {
+      out += str[i];
+    }
+  }
+  return out;
+}
+
 async function callClaude(userMessage, maxTokens) {
   const model = document.getElementById('claudeModel').value;
   const response = await fetch('/api/claude', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: maxTokens || 4096, system:buildSystemPrompt(), messages:[{role:'user',content:userMessage}] })
+    body: JSON.stringify({ model, max_tokens: maxTokens || 4096, system:sanitizeForJson(buildSystemPrompt()), messages:[{role:'user',content:sanitizeForJson(userMessage)}] })
   });
   if(!response.ok) {
     let errMsg = 'Server error (' + response.status + ')';
