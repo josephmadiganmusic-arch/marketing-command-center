@@ -9598,7 +9598,7 @@ async function adminLoadData() {
       var tier = u.subscription_tier || 'pro';
       var tierColor = tier === 'elite_plus' ? '#ffd700' : (tier === 'elite_partner' ? '#00d4ff' : (tier === 'elite' ? '#c084fc' : '#6b7094'));
       var tierLabel = tier === 'elite_plus' ? 'Elite+' : (tier === 'elite_partner' ? 'Partner' : (tier === 'elite' ? 'Elite' : 'Pro'));
-      var onbWarn = (tier === 'elite' || tier === 'elite_plus' || tier === 'elite_partner') && !u.onboarding_completed
+      var onbWarn = (tier === 'elite' || tier === 'elite_plus') && !u.onboarding_completed
         ? ' <span title="Onboarding not completed" style="color:#ff4444;font-size:10px;">\u26A0</span>' : '';
       var tierCell = '<span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;background:' + tierColor + '20;color:' + tierColor + ';">' + tierLabel + '</span>' + onbWarn;
       return '<tr>' +
@@ -10725,7 +10725,7 @@ function showSubscriptionGate() {
 // they complete it.
 function setupEliteOnboardingNudge() {
   if (USER_ROLE === 'admin') return;
-  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus' && USER_TIER !== 'elite_partner') return;
+  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus') return;
   if (ONBOARDING_COMPLETED) return;
 
   var bar = document.createElement('div');
@@ -10745,7 +10745,7 @@ let _slackStatus = { required: false, inSlack: false, inviteUrl: '', checked: fa
 
 async function checkEliteSlackStatus() {
   if (USER_ROLE === 'admin') return;
-  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus' && USER_TIER !== 'elite_partner') return;
+  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus') return;
   try {
     const resp = await fetch('/api/slack/check');
     if (!resp.ok) return;
@@ -10773,7 +10773,7 @@ function showSlackJoinBanner() {
 }
 
 function requireSlackForCampaign() {
-  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus' && USER_TIER !== 'elite_partner') return true; // non-Elite can proceed
+  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus') return true; // non-Elite can proceed (elite_partner skips Slack requirement)
   if (!_slackStatus.checked) return true; // haven't checked yet, don't block
   if (_slackStatus.inSlack) return true;
   // Not in Slack — show modal
