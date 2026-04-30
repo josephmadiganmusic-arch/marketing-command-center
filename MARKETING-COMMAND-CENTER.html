@@ -965,6 +965,7 @@
     <button class="tab" onclick="window.location.href='/redemption'" style="background:linear-gradient(135deg,rgba(123,47,247,0.15),rgba(0,212,255,0.15));border:1px solid rgba(123,47,247,0.4);" title="Fix up an older release that's missing registration or backend setup">Redemption</button>
     <button class="tab" id="adminTab" style="display:none;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;font-weight:700;" onclick="showPanel('admin')">Master Admin</button>
     <button class="tab" id="regPrepTab" style="display:none;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(123,47,247,0.15));border:1px solid rgba(0,212,255,0.3);position:relative;" onclick="showPanel('regprep')">Reg Prep <span id="regPrepTabCount" style="background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-size:10px;padding:1px 7px;border-radius:99px;font-weight:700;margin-left:4px;">0</span></button>
+    <button class="tab" id="managerTab" style="display:none;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(123,47,247,0.15));border:1px solid rgba(0,212,255,0.4);" onclick="showPanel('manager')">Artist Manager</button>
   </div>
 
   <div class="site-layout">
@@ -2270,6 +2271,142 @@
     </div>
   </div><!-- end panel-regprep -->
 
+  <!-- ============ MANAGER PANEL ============ -->
+  <div class="panel" id="panel-manager">
+    <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
+      <button class="mgr-subtab active" onclick="mgrShowSub('dashboard')">Dashboard</button>
+      <button class="mgr-subtab" onclick="mgrShowSub('artists')">Artists</button>
+      <button class="mgr-subtab" onclick="mgrShowSub('catalog')">Catalog</button>
+      <button class="mgr-subtab" onclick="mgrShowSub('registration')">Registration</button>
+      <button class="mgr-subtab" onclick="mgrShowSub('royalties')">Royalties</button>
+      <button class="mgr-subtab" onclick="mgrShowSub('tasks')">Tasks</button>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="mgr-sub" id="mgr-sub-dashboard">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;" id="mgrDashStats"></div>
+      <h3 style="color:#00d4ff;margin-bottom:10px;">Priority Tasks</h3>
+      <div id="mgrDashTasks"></div>
+    </div>
+
+    <!-- Artists -->
+    <div class="mgr-sub" id="mgr-sub-artists" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="color:#00d4ff;margin:0;">Managed Artists</h3>
+        <button class="btn-primary" onclick="mgrShowAddArtist()">+ Add Artist</button>
+      </div>
+      <div id="mgrAddArtistForm" style="display:none;background:rgba(123,47,247,0.08);border:1px solid rgba(123,47,247,0.3);border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group"><label>Artist Name *</label><input id="mgrArtistName" class="form-control"></div>
+          <div class="form-group"><label>Legal Name</label><input id="mgrArtistLegal" class="form-control"></div>
+          <div class="form-group"><label>Label</label><input id="mgrArtistLabel" class="form-control"></div>
+          <div class="form-group"><label>Distributor</label><input id="mgrArtistDistributor" class="form-control"></div>
+          <div class="form-group"><label>PRO</label><input id="mgrArtistPro" class="form-control" placeholder="BMI, ASCAP, etc."></div>
+          <div class="form-group"><label>PRO Member ID</label><input id="mgrArtistProId" class="form-control"></div>
+          <div class="form-group"><label>Writer IPI</label><input id="mgrArtistIpi" class="form-control"></div>
+          <div class="form-group"><label>Publisher</label><input id="mgrArtistPublisher" class="form-control"></div>
+          <div class="form-group"><label>Spotify URL</label><input id="mgrArtistSpotify" class="form-control"></div>
+          <div class="form-group"><label>Instagram</label><input id="mgrArtistIg" class="form-control" placeholder="@handle"></div>
+          <div class="form-group"><label>Location</label><input id="mgrArtistLocation" class="form-control"></div>
+          <div class="form-group"><label>Management %</label><input id="mgrArtistPct" class="form-control" type="number" step="0.1"></div>
+        </div>
+        <div class="form-group"><label>Notes</label><textarea id="mgrArtistNotes" class="form-control" rows="2"></textarea></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn-primary" onclick="mgrSaveArtist()">Save Artist</button>
+          <button class="btn-secondary" onclick="document.getElementById('mgrAddArtistForm').style.display='none'">Cancel</button>
+        </div>
+      </div>
+      <div id="mgrArtistList"></div>
+    </div>
+
+    <!-- Catalog -->
+    <div class="mgr-sub" id="mgr-sub-catalog" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <h3 style="color:#00d4ff;margin:0;">Full Catalog</h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="mgrCatalogFilter" class="form-control" style="width:auto;" onchange="mgrRenderCatalog()">
+            <option value="all">All Artists</option>
+          </select>
+          <button class="btn-primary" onclick="mgrShowBulkImport()">Bulk Import</button>
+        </div>
+      </div>
+      <div id="mgrBulkImportArea" style="display:none;background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.3);border-radius:10px;padding:16px;margin-bottom:16px;">
+        <h4 style="color:#00d4ff;margin-top:0;">Bulk Import Songs</h4>
+        <p style="color:#999;font-size:13px;margin-bottom:10px;">Select an artist, then paste CSV data or add rows manually. Columns: Title, Release Type, Release Date, ISRC, UPC, Featured Artists, Producer, DK Split%, Notes</p>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+          <select id="mgrBulkArtist" class="form-control" style="width:200px;"></select>
+          <button class="btn-secondary" onclick="mgrAddBulkRow()">+ Row</button>
+        </div>
+        <textarea id="mgrBulkCsv" class="form-control" rows="6" placeholder="Paste CSV here (one song per line)...&#10;Song Title, Single, 2024-01-15, QZXX1234, 198012345, feat. Artist, Producer Name, 100, notes"></textarea>
+        <div id="mgrBulkPreview" style="margin-top:10px;"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn-primary" onclick="mgrParseBulk()">Preview Import</button>
+          <button class="btn-primary" id="mgrBulkConfirmBtn" style="display:none;" onclick="mgrConfirmBulk()">Confirm Import</button>
+          <button class="btn-secondary" onclick="document.getElementById('mgrBulkImportArea').style.display='none'">Cancel</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;" id="mgrCatalogTable">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
+              <th style="padding:8px 6px;color:#00d4ff;">Artist</th>
+              <th style="padding:8px 6px;color:#00d4ff;">Title</th>
+              <th style="padding:8px 6px;color:#00d4ff;">Date</th>
+              <th style="padding:8px 6px;color:#00d4ff;">ISRC</th>
+              <th style="padding:8px 6px;color:#00d4ff;" title="BMI">BMI</th>
+              <th style="padding:8px 6px;color:#00d4ff;" title="SoundExchange">SE</th>
+              <th style="padding:8px 6px;color:#00d4ff;" title="MLC">MLC</th>
+              <th style="padding:8px 6px;color:#00d4ff;" title="Musixmatch">MM</th>
+              <th style="padding:8px 6px;color:#00d4ff;">Streams</th>
+            </tr>
+          </thead>
+          <tbody id="mgrCatalogBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Registration -->
+    <div class="mgr-sub" id="mgr-sub-registration" style="display:none;">
+      <h3 style="color:#00d4ff;margin-bottom:10px;">Registration Gaps</h3>
+      <div id="mgrRegDash" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px;"></div>
+      <div id="mgrRegGaps"></div>
+    </div>
+
+    <!-- Royalties -->
+    <div class="mgr-sub" id="mgr-sub-royalties" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="color:#00d4ff;margin:0;">Royalties</h3>
+        <button class="btn-primary" onclick="mgrShowAddRoyalty()">+ Log Payment</button>
+      </div>
+      <div id="mgrAddRoyaltyForm" style="display:none;background:rgba(123,47,247,0.08);border:1px solid rgba(123,47,247,0.3);border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+          <div class="form-group"><label>Artist</label><select id="mgrRoyArtist" class="form-control"></select></div>
+          <div class="form-group"><label>Platform</label><select id="mgrRoyPlatform" class="form-control"><option>DistroKid</option><option>BMI</option><option>SoundExchange</option><option>MLC</option><option>Songtrust</option><option>Other</option></select></div>
+          <div class="form-group"><label>Period</label><input id="mgrRoyPeriod" class="form-control" placeholder="Q1 2026"></div>
+          <div class="form-group"><label>Amount ($)</label><input id="mgrRoyAmount" class="form-control" type="number" step="0.01"></div>
+        </div>
+        <div class="form-group"><label>Notes</label><input id="mgrRoyNotes" class="form-control"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn-primary" onclick="mgrSaveRoyalty()">Save</button>
+          <button class="btn-secondary" onclick="document.getElementById('mgrAddRoyaltyForm').style.display='none'">Cancel</button>
+        </div>
+      </div>
+      <div id="mgrRoyaltyList"></div>
+    </div>
+
+    <!-- Tasks -->
+    <div class="mgr-sub" id="mgr-sub-tasks" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="color:#00d4ff;margin:0;">Tasks</h3>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-secondary" onclick="mgrAutoGenTasks()">Auto-Generate from Gaps</button>
+          <button class="btn-primary" onclick="mgrShowAddTask()">+ Task</button>
+        </div>
+      </div>
+      <div id="mgrTaskList"></div>
+    </div>
+  </div><!-- end panel-manager -->
+
   </div><!-- end site-panels -->
 
   <!-- GLOBAL METADATA SIDEBAR — visible on every tab -->
@@ -2815,7 +2952,7 @@ const regPlatforms = [
 // nav button row. Clicking that tab navigates to /redemption directly, so
 // no panel is rendered and showPanel() is never called for it. lockTabs
 // excludes it so it never gets a .locked greyed-out state.
-const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin','regprep'];
+const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin','regprep','manager'];
 let campaignGenerated = false;
 
 function lockTabs() {
@@ -2912,8 +3049,8 @@ function showPanel(id) {
     showUpgradeNudge('Music Agent Pro is a premium feature. Subscribe to unlock AI-powered research tools.');
     return;
   }
-  // Block locked tabs (except intake, admin, achievements)
-  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && id !== 'regprep' && !campaignGenerated) {
+  // Block locked tabs (except intake, admin, achievements, manager)
+  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && id !== 'regprep' && id !== 'manager' && !campaignGenerated) {
     showToast('Generate your campaign first to unlock all tabs');
     return;
   }
@@ -2928,6 +3065,7 @@ function showPanel(id) {
   if (id === 'admin') adminLoadData();
   if (id === 'achievements') { loadGamification(); renderAchievementsPanel(); }
   if (id === 'regprep') regPrepLoad();
+  if (id === 'manager') managerLoad();
 }
 
 function showToast(msg) {
@@ -10812,6 +10950,7 @@ serverLoad().then(() => {
   migrateOldStorage();
   init();
   adminInit();
+  managerInit();
   setupTrialBanner();
   setupEliteOnboardingNudge();
   checkEliteSlackStatus();
@@ -10828,6 +10967,391 @@ serverLoad().then(() => {
     localStorage.setItem('_resync_v1_' + USER_ID, '1');
   }
 });
+
+// ============================================================
+// --- ARTIST MANAGER MODULE ---
+// ============================================================
+let MGR = { artists: [], catalog: [], tasks: [], royalties: [], activeSub: 'dashboard' };
+
+function managerInit() {
+  if (USER_ROLE !== 'admin') return;
+  document.getElementById('managerTab').style.display = '';
+}
+
+async function managerLoad() {
+  try {
+    const [artists, tasks] = await Promise.all([
+      fetch('/api/manager/artists', { credentials: 'include' }).then(r => r.json()),
+      fetch('/api/manager/tasks', { credentials: 'include' }).then(r => r.json()),
+    ]);
+    MGR.artists = artists;
+    MGR.tasks = tasks;
+    mgrRenderDashboard();
+    mgrPopulateArtistDropdowns();
+  } catch (e) { console.error('[MGR] load error:', e); }
+}
+
+function mgrShowSub(name) {
+  MGR.activeSub = name;
+  document.querySelectorAll('.mgr-sub').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.mgr-subtab').forEach(el => el.classList.remove('active'));
+  document.getElementById('mgr-sub-' + name).style.display = '';
+  event.target.classList.add('active');
+  if (name === 'catalog') mgrLoadCatalog();
+  if (name === 'registration') mgrLoadRegistration();
+  if (name === 'royalties') mgrLoadRoyalties();
+  if (name === 'tasks') mgrLoadTasks();
+  if (name === 'artists') mgrRenderArtists();
+}
+
+// --- Dashboard ---
+function mgrRenderDashboard() {
+  const totalSongs = MGR.catalog.length || '...';
+  const statsHtml = `
+    <div class="content-card" style="text-align:center;padding:14px;">
+      <div style="font-size:24px;font-weight:700;color:#00d4ff;">${MGR.artists.length}</div>
+      <div style="font-size:11px;color:#999;">Artists</div>
+    </div>
+    <div class="content-card" style="text-align:center;padding:14px;">
+      <div style="font-size:24px;font-weight:700;color:#7b2ff7;">${totalSongs}</div>
+      <div style="font-size:11px;color:#999;">Songs</div>
+    </div>
+    <div class="content-card" style="text-align:center;padding:14px;">
+      <div style="font-size:24px;font-weight:700;color:#ffc107;">${MGR.tasks.filter(t => t.status === 'pending').length}</div>
+      <div style="font-size:11px;color:#999;">Pending Tasks</div>
+    </div>
+  `;
+  document.getElementById('mgrDashStats').innerHTML = statsHtml;
+
+  // Priority tasks
+  const urgent = MGR.tasks.filter(t => t.status !== 'completed').slice(0, 10);
+  document.getElementById('mgrDashTasks').innerHTML = urgent.length
+    ? urgent.map(t => `<div class="content-card" style="padding:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+        <div><span style="color:#fff;font-weight:600;">${t.description}</span><br><span style="font-size:11px;color:#999;">${t.artist_name || ''} ${t.song_title ? '- ' + t.song_title : ''}</span></div>
+        <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="mgrCompleteTask(${t.id})">Done</button>
+      </div>`).join('')
+    : '<p style="color:#666;">No pending tasks</p>';
+}
+
+// --- Artists ---
+function mgrRenderArtists() {
+  const container = document.getElementById('mgrArtistList');
+  if (!MGR.artists.length) { container.innerHTML = '<p style="color:#666;">No artists yet. Click + Add Artist to get started.</p>'; return; }
+  container.innerHTML = MGR.artists.map(a => `
+    <div class="content-card" style="padding:14px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <strong style="color:#fff;font-size:15px;">${a.artist_name}</strong>
+          ${a.label ? `<span style="margin-left:8px;font-size:11px;color:#7b2ff7;">${a.label}</span>` : ''}
+          ${a.location ? `<span style="margin-left:8px;font-size:11px;color:#999;">${a.location}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="mgrViewArtistCatalog(${a.id})">Catalog</button>
+          <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="mgrDeleteArtist(${a.id})">Remove</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#999;margin-top:6px;">
+        ${a.distributor ? a.distributor + ' | ' : ''}${a.pro || ''}${a.management_pct ? ' | ' + a.management_pct + '% mgmt' : ''}
+        ${a.instagram ? ' | ' + a.instagram : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function mgrShowAddArtist() {
+  document.getElementById('mgrAddArtistForm').style.display = '';
+}
+
+async function mgrSaveArtist() {
+  const name = document.getElementById('mgrArtistName').value.trim();
+  if (!name) { showToast('Artist name required'); return; }
+  const body = {
+    artist_name: name,
+    artist_legal_name: document.getElementById('mgrArtistLegal').value.trim() || null,
+    label: document.getElementById('mgrArtistLabel').value.trim() || null,
+    distributor: document.getElementById('mgrArtistDistributor').value.trim() || null,
+    pro: document.getElementById('mgrArtistPro').value.trim() || null,
+    pro_member_id: document.getElementById('mgrArtistProId').value.trim() || null,
+    writer_ipi: document.getElementById('mgrArtistIpi').value.trim() || null,
+    publisher_name: document.getElementById('mgrArtistPublisher').value.trim() || null,
+    spotify_url: document.getElementById('mgrArtistSpotify').value.trim() || null,
+    instagram: document.getElementById('mgrArtistIg').value.trim() || null,
+    location: document.getElementById('mgrArtistLocation').value.trim() || null,
+    management_pct: parseFloat(document.getElementById('mgrArtistPct').value) || null,
+    notes: document.getElementById('mgrArtistNotes').value.trim() || null,
+  };
+  const resp = await fetch('/api/manager/artists', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body) });
+  if (!resp.ok) { showToast('Error saving artist'); return; }
+  showToast('Artist added!');
+  document.getElementById('mgrAddArtistForm').style.display = 'none';
+  // Clear form
+  ['mgrArtistName','mgrArtistLegal','mgrArtistLabel','mgrArtistDistributor','mgrArtistPro','mgrArtistProId','mgrArtistIpi','mgrArtistPublisher','mgrArtistSpotify','mgrArtistIg','mgrArtistLocation','mgrArtistPct','mgrArtistNotes'].forEach(id => document.getElementById(id).value = '');
+  await managerLoad();
+  mgrRenderArtists();
+}
+
+async function mgrDeleteArtist(id) {
+  if (!confirm('Remove this artist?')) return;
+  await fetch('/api/manager/artists/' + id, { method: 'DELETE', credentials: 'include' });
+  await managerLoad();
+  mgrRenderArtists();
+}
+
+function mgrViewArtistCatalog(artistId) {
+  document.getElementById('mgrCatalogFilter').value = String(artistId);
+  mgrShowSub('catalog');
+  // Re-activate the catalog subtab button
+  document.querySelectorAll('.mgr-subtab').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.mgr-subtab')[2].classList.add('active');
+}
+
+// --- Catalog ---
+async function mgrLoadCatalog() {
+  // Fetch all catalogs for all artists
+  let allSongs = [];
+  for (const a of MGR.artists) {
+    const songs = await fetch('/api/manager/artists/' + a.id + '/catalog', { credentials: 'include' }).then(r => r.json());
+    allSongs = allSongs.concat(songs.map(s => ({ ...s, artist_name: a.artist_name })));
+  }
+  MGR.catalog = allSongs;
+  mgrPopulateCatalogFilter();
+  mgrRenderCatalog();
+  mgrRenderDashboard(); // update song count
+}
+
+function mgrPopulateCatalogFilter() {
+  const sel = document.getElementById('mgrCatalogFilter');
+  const current = sel.value;
+  sel.innerHTML = '<option value="all">All Artists</option>' + MGR.artists.map(a => `<option value="${a.id}">${a.artist_name}</option>`).join('');
+  sel.value = current || 'all';
+}
+
+function mgrRenderCatalog() {
+  const filter = document.getElementById('mgrCatalogFilter').value;
+  const songs = filter === 'all' ? MGR.catalog : MGR.catalog.filter(s => String(s.artist_id) === filter);
+  const tbody = document.getElementById('mgrCatalogBody');
+  if (!songs.length) { tbody.innerHTML = '<tr><td colspan="9" style="padding:20px;color:#666;text-align:center;">No songs yet. Use Bulk Import to add catalog.</td></tr>'; return; }
+  tbody.innerHTML = songs.map(s => {
+    const reg = (val) => val ? '<span style="color:#4caf50;">&#10003;</span>' : '<span style="color:#f44336;">&#10007;</span>';
+    const streams = s.spotify_streams ? s.spotify_streams.toLocaleString() : '-';
+    return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+      <td style="padding:6px;">${s.artist_name || ''}</td>
+      <td style="padding:6px;color:#fff;font-weight:500;">${s.song_title}${s.featured_artists ? ' <span style="color:#999;font-size:11px;">ft. ' + s.featured_artists + '</span>' : ''}</td>
+      <td style="padding:6px;font-size:12px;">${s.release_date || '-'}</td>
+      <td style="padding:6px;font-size:11px;font-family:monospace;">${s.isrc || '<span style="color:#f44336;">missing</span>'}</td>
+      <td style="padding:6px;text-align:center;cursor:pointer;" onclick="mgrToggleReg(${s.id},'bmi',${s.bmi_registered})">${reg(s.bmi_registered)}</td>
+      <td style="padding:6px;text-align:center;cursor:pointer;" onclick="mgrToggleReg(${s.id},'soundexchange',${s.soundexchange_claimed})">${reg(s.soundexchange_claimed)}</td>
+      <td style="padding:6px;text-align:center;cursor:pointer;" onclick="mgrToggleReg(${s.id},'mlc',${s.mlc_registered})">${reg(s.mlc_registered)}</td>
+      <td style="padding:6px;text-align:center;cursor:pointer;" onclick="mgrToggleReg(${s.id},'musixmatch',${s.musixmatch_lyrics})">${reg(s.musixmatch_lyrics)}</td>
+      <td style="padding:6px;font-size:12px;text-align:right;">${streams}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function mgrToggleReg(songId, platform, current) {
+  await fetch('/api/manager/catalog/' + songId + '/register', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ platform, registered: !current })
+  });
+  // Update local state
+  const song = MGR.catalog.find(s => s.id === songId);
+  if (song) {
+    const map = { bmi: 'bmi_registered', soundexchange: 'soundexchange_claimed', mlc: 'mlc_registered', musixmatch: 'musixmatch_lyrics' };
+    song[map[platform]] = current ? 0 : 1;
+  }
+  mgrRenderCatalog();
+}
+
+// --- Bulk Import ---
+function mgrShowBulkImport() {
+  document.getElementById('mgrBulkImportArea').style.display = '';
+  mgrPopulateBulkArtist();
+}
+
+function mgrPopulateBulkArtist() {
+  const sel = document.getElementById('mgrBulkArtist');
+  sel.innerHTML = MGR.artists.map(a => `<option value="${a.id}">${a.artist_name}</option>`).join('');
+}
+
+let MGR_BULK_PARSED = [];
+function mgrParseBulk() {
+  const csv = document.getElementById('mgrBulkCsv').value.trim();
+  if (!csv) { showToast('Paste CSV data first'); return; }
+  const lines = csv.split('\n').filter(l => l.trim());
+  MGR_BULK_PARSED = lines.map(line => {
+    const cols = line.split(',').map(c => c.trim());
+    return {
+      song_title: cols[0] || '',
+      release_type: cols[1] || 'Single',
+      release_date: cols[2] || null,
+      isrc: cols[3] || null,
+      upc: cols[4] || null,
+      featured_artists: cols[5] || null,
+      producer: cols[6] || null,
+      dk_split_pct: cols[7] ? parseFloat(cols[7]) : null,
+      notes: cols[8] || null,
+    };
+  }).filter(s => s.song_title);
+
+  // Show preview
+  const preview = document.getElementById('mgrBulkPreview');
+  preview.innerHTML = `<p style="color:#00d4ff;font-weight:600;">${MGR_BULK_PARSED.length} songs parsed:</p>
+    <div style="max-height:200px;overflow-y:auto;font-size:12px;color:#ccc;">
+    ${MGR_BULK_PARSED.map((s, i) => `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">${i + 1}. <strong>${s.song_title}</strong> ${s.isrc ? '(' + s.isrc + ')' : ''} ${s.release_date || ''}</div>`).join('')}
+    </div>`;
+  document.getElementById('mgrBulkConfirmBtn').style.display = '';
+}
+
+async function mgrConfirmBulk() {
+  const artistId = document.getElementById('mgrBulkArtist').value;
+  if (!artistId) { showToast('Select an artist first'); return; }
+  const resp = await fetch('/api/manager/artists/' + artistId + '/catalog/bulk', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ songs: MGR_BULK_PARSED })
+  });
+  const data = await resp.json();
+  if (!resp.ok) { showToast('Import error: ' + (data.error || 'unknown')); return; }
+  showToast(data.imported + ' songs imported!');
+  document.getElementById('mgrBulkImportArea').style.display = 'none';
+  document.getElementById('mgrBulkCsv').value = '';
+  document.getElementById('mgrBulkPreview').innerHTML = '';
+  document.getElementById('mgrBulkConfirmBtn').style.display = 'none';
+  MGR_BULK_PARSED = [];
+  await mgrLoadCatalog();
+}
+
+// --- Registration ---
+async function mgrLoadRegistration() {
+  const [dash, gaps] = await Promise.all([
+    fetch('/api/manager/registration/dashboard', { credentials: 'include' }).then(r => r.json()),
+    fetch('/api/manager/catalog/gaps', { credentials: 'include' }).then(r => r.json()),
+  ]);
+  const pct = (n) => dash.total ? Math.round(n / dash.total * 100) + '%' : '0%';
+  document.getElementById('mgrRegDash').innerHTML = `
+    <div class="content-card" style="padding:10px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#4caf50;">${pct(dash.bmi)}</div><div style="font-size:11px;color:#999;">BMI</div></div>
+    <div class="content-card" style="padding:10px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#2196f3;">${pct(dash.soundexchange)}</div><div style="font-size:11px;color:#999;">SoundExchange</div></div>
+    <div class="content-card" style="padding:10px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#ff9800;">${pct(dash.mlc)}</div><div style="font-size:11px;color:#999;">MLC</div></div>
+    <div class="content-card" style="padding:10px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#e91e63;">${pct(dash.musixmatch)}</div><div style="font-size:11px;color:#999;">Musixmatch</div></div>
+  `;
+  document.getElementById('mgrRegGaps').innerHTML = gaps.length
+    ? `<p style="color:#999;font-size:12px;margin-bottom:8px;">${gaps.length} songs with registration gaps (sorted by streams):</p>` +
+      gaps.slice(0, 30).map(s => {
+        const missing = [];
+        if (!s.bmi_registered) missing.push('BMI');
+        if (!s.soundexchange_claimed) missing.push('SE');
+        if (!s.mlc_registered) missing.push('MLC');
+        if (!s.musixmatch_lyrics) missing.push('MM');
+        return `<div class="content-card" style="padding:8px 12px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
+          <div><strong style="color:#fff;">${s.song_title}</strong> <span style="color:#999;font-size:11px;">${s.artist_name}</span></div>
+          <div style="font-size:11px;"><span style="color:#f44336;">${missing.join(', ')}</span> ${s.spotify_streams ? '<span style="color:#666;margin-left:8px;">' + s.spotify_streams.toLocaleString() + ' plays</span>' : ''}</div>
+        </div>`;
+      }).join('')
+    : '<p style="color:#4caf50;">All songs registered everywhere!</p>';
+}
+
+// --- Royalties ---
+async function mgrLoadRoyalties() {
+  const [list, summary] = await Promise.all([
+    fetch('/api/manager/royalties', { credentials: 'include' }).then(r => r.json()),
+    fetch('/api/manager/royalties/summary', { credentials: 'include' }).then(r => r.json()),
+  ]);
+  MGR.royalties = list;
+  const totalCents = summary.byArtist.reduce((sum, a) => sum + a.total_cents, 0);
+  let html = `<div style="margin-bottom:14px;"><span style="font-size:20px;font-weight:700;color:#4caf50;">$${(totalCents / 100).toFixed(2)}</span> <span style="color:#999;font-size:12px;">total logged</span></div>`;
+  if (list.length) {
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);"><th style="padding:6px;text-align:left;color:#00d4ff;">Artist</th><th style="padding:6px;color:#00d4ff;">Platform</th><th style="padding:6px;color:#00d4ff;">Period</th><th style="padding:6px;text-align:right;color:#00d4ff;">Amount</th></tr></thead><tbody>';
+    html += list.map(r => `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);"><td style="padding:6px;">${r.artist_name}</td><td style="padding:6px;">${r.platform}</td><td style="padding:6px;">${r.period}</td><td style="padding:6px;text-align:right;color:#4caf50;">$${(r.amount_cents / 100).toFixed(2)}</td></tr>`).join('');
+    html += '</tbody></table>';
+  } else { html += '<p style="color:#666;">No royalties logged yet.</p>'; }
+  document.getElementById('mgrRoyaltyList').innerHTML = html;
+}
+
+function mgrShowAddRoyalty() {
+  document.getElementById('mgrAddRoyaltyForm').style.display = '';
+  const sel = document.getElementById('mgrRoyArtist');
+  sel.innerHTML = MGR.artists.map(a => `<option value="${a.id}">${a.artist_name}</option>`).join('');
+}
+
+async function mgrSaveRoyalty() {
+  const artist_id = parseInt(document.getElementById('mgrRoyArtist').value);
+  const platform = document.getElementById('mgrRoyPlatform').value;
+  const period = document.getElementById('mgrRoyPeriod').value.trim();
+  const amount = parseFloat(document.getElementById('mgrRoyAmount').value);
+  const statement_notes = document.getElementById('mgrRoyNotes').value.trim() || null;
+  if (!artist_id || !period || isNaN(amount)) { showToast('Fill all required fields'); return; }
+  await fetch('/api/manager/royalties', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ artist_id, platform, period, amount_cents: Math.round(amount * 100), statement_notes })
+  });
+  showToast('Payment logged');
+  document.getElementById('mgrAddRoyaltyForm').style.display = 'none';
+  mgrLoadRoyalties();
+}
+
+// --- Tasks ---
+async function mgrLoadTasks() {
+  const tasks = await fetch('/api/manager/tasks', { credentials: 'include' }).then(r => r.json());
+  MGR.tasks = tasks;
+  const pending = tasks.filter(t => t.status !== 'completed');
+  const completed = tasks.filter(t => t.status === 'completed');
+  let html = '';
+  if (pending.length) {
+    html += pending.map(t => `<div class="content-card" style="padding:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+      <div><span style="color:#fff;">${t.description}</span><br><span style="font-size:11px;color:#999;">${t.artist_name} ${t.song_title ? '| ' + t.song_title : ''} | ${t.task_type}</span></div>
+      <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="mgrCompleteTask(${t.id})">Done</button>
+    </div>`).join('');
+  } else { html += '<p style="color:#4caf50;">All tasks completed!</p>'; }
+  if (completed.length) {
+    html += `<details style="margin-top:14px;"><summary style="color:#666;cursor:pointer;font-size:12px;">${completed.length} completed tasks</summary>
+      ${completed.slice(0, 20).map(t => `<div style="padding:4px 0;font-size:12px;color:#555;text-decoration:line-through;">${t.description}</div>`).join('')}
+    </details>`;
+  }
+  document.getElementById('mgrTaskList').innerHTML = html;
+}
+
+async function mgrCompleteTask(id) {
+  await fetch('/api/manager/tasks/' + id, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ status: 'completed' })
+  });
+  await mgrLoadTasks();
+  mgrRenderDashboard();
+}
+
+async function mgrAutoGenTasks() {
+  if (!MGR.artists.length) { showToast('Add an artist first'); return; }
+  let totalCreated = 0;
+  for (const a of MGR.artists) {
+    const resp = await fetch('/api/manager/tasks/auto-generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ artist_id: a.id })
+    });
+    const data = await resp.json();
+    totalCreated += data.created || 0;
+  }
+  showToast(totalCreated + ' tasks generated from gaps');
+  mgrLoadTasks();
+}
+
+function mgrShowAddTask() {
+  // Simple prompt-based task creation for now
+  const desc = prompt('Task description:');
+  if (!desc) return;
+  const artistId = MGR.artists.length === 1 ? MGR.artists[0].id : parseInt(prompt('Artist ID (' + MGR.artists.map(a => a.id + '=' + a.artist_name).join(', ') + '):'));
+  if (!artistId) return;
+  fetch('/api/manager/tasks', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ artist_id: artistId, task_type: 'manual', description: desc })
+  }).then(() => mgrLoadTasks());
+}
+
+// --- Helpers ---
+function mgrPopulateArtistDropdowns() {
+  // Populate any artist dropdowns that exist
+  const bulkSel = document.getElementById('mgrBulkArtist');
+  if (bulkSel) bulkSel.innerHTML = MGR.artists.map(a => `<option value="${a.id}">${a.artist_name}</option>`).join('');
+}
+
 </script>
 
 <!-- Submission Overlay (commit 8) -->
@@ -10927,6 +11451,10 @@ serverLoad().then(() => {
     #stOverlay #stOverlayLeft { width:100%;max-width:100%;max-height:45vh;border-right:none;border-bottom:1px solid #2a2a32; }
     #stOverlay > div > div:nth-child(2) { flex-direction:column; }
   }
+  /* Manager sub-tabs */
+  .mgr-subtab { background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#ccc;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s; }
+  .mgr-subtab:hover { background:rgba(0,212,255,0.1);border-color:rgba(0,212,255,0.3); }
+  .mgr-subtab.active { background:rgba(0,212,255,0.15);border-color:#00d4ff;color:#00d4ff; }
 </style>
 </body>
 </html>
