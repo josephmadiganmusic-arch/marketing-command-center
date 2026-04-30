@@ -5982,22 +5982,29 @@ app.post('/api/slack/interactions',
 // --- BULK BACKLOG: Platform scraping + registration prep ---
 // ============================================================
 
-// Spotify client credentials flow (app-level, no user auth)
+// Spotify anonymous access token (public web player token, no credentials needed)
 async function getSpotifyToken() {
+  // First try client credentials if configured
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
-  const resp = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64')
-    },
-    body: 'grant_type=client_credentials'
+  if (clientId && clientSecret) {
+    const resp = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64')
+      },
+      body: 'grant_type=client_credentials'
+    });
+    if (resp.ok) { const data = await resp.json(); return data.access_token; }
+  }
+  // Fallback: get anonymous token from Spotify's public endpoint
+  const resp = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' }
   });
   if (!resp.ok) return null;
   const data = await resp.json();
-  return data.access_token;
+  return data.accessToken;
 }
 
 // Extract Spotify artist ID from URL
@@ -6062,7 +6069,7 @@ app.post('/api/backlog/fetch-spotify', requireAdmin, async (req, res) => {
     if (!artistId) return res.status(400).json({ error: 'Could not extract artist ID from URL' });
 
     const token = await getSpotifyToken();
-    if (!token) return res.status(500).json({ error: 'Spotify API not configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET env vars.' });
+    if (!token) return res.status(500).json({ error: 'Could not get Spotify access token. Try again.' });
 
     const artist = await fetchSpotifyArtist(artistId, token);
     const albums = await fetchSpotifyDiscography(artistId, token);
