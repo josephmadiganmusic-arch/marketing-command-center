@@ -6063,7 +6063,10 @@ async function fetchSpotifyArtist(artistId, token) {
   const resp = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, {
     headers: { 'Authorization': 'Bearer ' + token }
   });
-  if (!resp.ok) return null;
+  if (!resp.ok) {
+    console.error(`[BACKLOG] Spotify artist fetch failed: ${resp.status} ${resp.statusText} for ID ${artistId}`);
+    return null;
+  }
   return resp.json();
 }
 
@@ -6079,6 +6082,7 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
     if (!token) return res.status(500).json({ error: 'Could not get Spotify access token. Try again.' });
 
     const artist = await fetchSpotifyArtist(artistId, token);
+    if (!artist) return res.status(404).json({ error: 'Artist not found on Spotify. Check the URL and try again.' });
     const albums = await fetchSpotifyDiscography(artistId, token);
 
     // Fetch tracks with ISRCs for each album
