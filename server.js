@@ -6075,6 +6075,35 @@ async function fetchSpotifyArtist(artistId, token) {
   return resp.json();
 }
 
+// Backlog: Debug Spotify token (admin only, temporary)
+app.get('/api/backlog/spotify-debug', requireAdmin, async (req, res) => {
+  const clientId = (process.env.SPOTIFY_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.SPOTIFY_CLIENT_SECRET || '').trim();
+  const results = { hasClientId: !!clientId, clientIdLen: clientId.length, hasSecret: !!clientSecret, secretLen: clientSecret.length };
+  // Test client credentials
+  if (clientId && clientSecret) {
+    try {
+      const resp = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64') },
+        body: 'grant_type=client_credentials'
+      });
+      results.credentialsStatus = resp.status;
+      results.credentialsBody = await resp.text();
+    } catch (e) { results.credentialsError = e.message; }
+  }
+  // Test anonymous
+  try {
+    const resp2 = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' }
+    });
+    results.anonStatus = resp2.status;
+    const anonText = await resp2.text();
+    results.anonBody = anonText.substring(0, 300);
+  } catch (e) { results.anonError = e.message; }
+  res.json(results);
+});
+
 // Backlog: Fetch full discography from Spotify
 app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) => {
   try {
