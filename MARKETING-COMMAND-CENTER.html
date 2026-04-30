@@ -2420,7 +2420,7 @@ const USER_ROLE = '%%USER_ROLE%%';
 const TRIAL_DAYS = parseInt('%%TRIAL_DAYS%%', 10) || 0;
 const SUB_STATUS = '%%SUB_STATUS%%';
 const USER_EMAIL = '%%USER_EMAIL%%';
-const USER_TIER = '%%USER_TIER%%'; // 'pro' | 'elite' | 'elite_plus'
+const USER_TIER = '%%USER_TIER%%'; // 'pro' | 'elite' | 'elite_plus' | 'elite_partner'
 const ONBOARDING_COMPLETED = '%%ONBOARDING_COMPLETED%%' === '1';
 const IS_IMPERSONATING = '%%IMPERSONATING%%' === '1';
 
@@ -4587,7 +4587,7 @@ function loadEliteCredentials() {
     const list = document.getElementById('eliteCredList');
     const order = ['pro','distribution','musixmatch','soundexchange','mlc','songtrust'];
     // Elite Plus also needs email access
-    if (data.tier === 'elite_plus') order.push('email');
+    if (data.tier === 'elite_plus' || data.tier === 'elite_partner') order.push('email');
     list.innerHTML = order.map((svc, i) => {
       const has = data.services && data.services[svc];
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;${i < order.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}" id="eliteCred-${svc}">
@@ -9596,9 +9596,9 @@ async function adminLoadData() {
         '<button data-delete-user-id="' + Number(u.id) + '" data-delete-user-email="' + escAdmin(u.email) + '" style="background:#ff444420;color:#ff4444;border:1px solid #ff444440;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Delete</button>';
       // Tier badge: highlight Elite/Plus customers; show onboarding warning if pending.
       var tier = u.subscription_tier || 'pro';
-      var tierColor = tier === 'elite_plus' ? '#ffd700' : (tier === 'elite' ? '#c084fc' : '#6b7094');
-      var tierLabel = tier === 'elite_plus' ? 'Elite+' : (tier === 'elite' ? 'Elite' : 'Pro');
-      var onbWarn = (tier === 'elite' || tier === 'elite_plus') && !u.onboarding_completed
+      var tierColor = tier === 'elite_plus' ? '#ffd700' : (tier === 'elite_partner' ? '#00d4ff' : (tier === 'elite' ? '#c084fc' : '#6b7094'));
+      var tierLabel = tier === 'elite_plus' ? 'Elite+' : (tier === 'elite_partner' ? 'Partner' : (tier === 'elite' ? 'Elite' : 'Pro'));
+      var onbWarn = (tier === 'elite' || tier === 'elite_plus' || tier === 'elite_partner') && !u.onboarding_completed
         ? ' <span title="Onboarding not completed" style="color:#ff4444;font-size:10px;">\u26A0</span>' : '';
       var tierCell = '<span style="display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;background:' + tierColor + '20;color:' + tierColor + ';">' + tierLabel + '</span>' + onbWarn;
       return '<tr>' +
@@ -9753,8 +9753,8 @@ async function adminLoadCommissions(filter) {
     }
     tbody.innerHTML = commissions.map(c => {
       const statusColor = c.status === 'paid' ? '#4ade80' : '#ffd700';
-      const tierColor = c.subscription_tier === 'elite_plus' ? '#ffd700' : (c.subscription_tier === 'elite' ? '#c084fc' : '#00d4ff');
-      const tierLabel = c.subscription_tier === 'elite_plus' ? 'Elite+' : (c.subscription_tier === 'elite' ? 'Elite' : 'Pro');
+      const tierColor = c.subscription_tier === 'elite_plus' ? '#ffd700' : (c.subscription_tier === 'elite_partner' ? '#00d4ff' : (c.subscription_tier === 'elite' ? '#c084fc' : '#00d4ff'));
+      const tierLabel = c.subscription_tier === 'elite_plus' ? 'Elite+' : (c.subscription_tier === 'elite_partner' ? 'Partner' : (c.subscription_tier === 'elite' ? 'Elite' : 'Pro'));
       const date = c.created_at ? new Date(c.created_at).toLocaleDateString() : '—';
       const payBtn = c.status === 'pending'
         ? '<button data-pay-commission="' + c.id + '" style="background:#4ade8020;color:#4ade80;border:1px solid #4ade8040;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Mark Paid</button>'
@@ -9943,7 +9943,7 @@ function adminRenderReg() {
       <td style="font-weight:600;font-size:13px;">${r.releaseTitle}<br><span style="font-size:10px;color:#6b7094;font-weight:400;">${r.confirmedCount}/${r.totalPlatforms} confirmed</span></td>
       <td style="min-width:280px;">${platformStrip}</td>
       <td>
-        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, decodeURIComponent('${safeTitle}'))" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
+        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus' || r.tier === 'elite_partner') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, decodeURIComponent('${safeTitle}'))" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -10357,7 +10357,7 @@ function regPrepRender() {
       <td style="font-weight:600;font-size:13px;">${r.releaseTitle}<br><span style="font-size:10px;color:#6b7094;font-weight:400;">${r.confirmedCount}/${r.totalPlatforms} confirmed</span></td>
       <td style="min-width:280px;">${platformStrip}</td>
       <td>
-        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, decodeURIComponent('${safeTitle}'))" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
+        ${hasMissing && (r.tier === 'elite' || r.tier === 'elite_plus' || r.tier === 'elite_partner') ? `<button class="btn-action" onclick="adminAskSlack(${r.userId}, decodeURIComponent('${safeTitle}'))" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,#611f69,#e01e5a);color:#fff;">Ask in Slack</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -10725,13 +10725,13 @@ function showSubscriptionGate() {
 // they complete it.
 function setupEliteOnboardingNudge() {
   if (USER_ROLE === 'admin') return;
-  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus') return;
+  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus' && USER_TIER !== 'elite_partner') return;
   if (ONBOARDING_COMPLETED) return;
 
   var bar = document.createElement('div');
   bar.id = 'eliteOnboardingNudge';
   bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#ffd700,#ff9f1a);color:#080b1e;padding:10px 16px;text-align:center;font-size:13px;font-weight:700;font-family:Inter,sans-serif;box-shadow:0 2px 12px rgba(255,215,0,0.3);display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;';
-  var label = USER_TIER === 'elite_plus' ? 'Elite Plus' : 'Elite';
+  var label = USER_TIER === 'elite_plus' ? 'Elite Plus' : (USER_TIER === 'elite_partner' ? 'Elite Partner' : 'Elite');
   bar.innerHTML =
     '<span>\u26A1 Welcome to ' + label + '! Complete your onboarding so Rollout Heaven can start your manual distribution and concierge work.</span>' +
     '<a href="/elite-onboarding" style="background:#080b1e;color:#ffd700;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:800;font-size:12px;letter-spacing:0.5px;">COMPLETE ONBOARDING</a>';
@@ -10745,7 +10745,7 @@ let _slackStatus = { required: false, inSlack: false, inviteUrl: '', checked: fa
 
 async function checkEliteSlackStatus() {
   if (USER_ROLE === 'admin') return;
-  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus') return;
+  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus' && USER_TIER !== 'elite_partner') return;
   try {
     const resp = await fetch('/api/slack/check');
     if (!resp.ok) return;
@@ -10760,7 +10760,7 @@ async function checkEliteSlackStatus() {
 
 function showSlackJoinBanner() {
   if (document.getElementById('slackJoinBanner')) return;
-  const label = USER_TIER === 'elite_plus' ? 'Elite Plus' : 'Elite';
+  const label = USER_TIER === 'elite_plus' ? 'Elite Plus' : (USER_TIER === 'elite_partner' ? 'Elite Partner' : 'Elite');
   const inviteLink = _slackStatus.inviteUrl || '#';
   const bar = document.createElement('div');
   bar.id = 'slackJoinBanner';
@@ -10773,12 +10773,12 @@ function showSlackJoinBanner() {
 }
 
 function requireSlackForCampaign() {
-  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus') return true; // non-Elite can proceed
+  if (USER_TIER !== 'elite' && USER_TIER !== 'elite_plus' && USER_TIER !== 'elite_partner') return true; // non-Elite can proceed
   if (!_slackStatus.checked) return true; // haven't checked yet, don't block
   if (_slackStatus.inSlack) return true;
   // Not in Slack — show modal
   const inviteLink = _slackStatus.inviteUrl || '#';
-  const label = USER_TIER === 'elite_plus' ? 'Elite Plus' : 'Elite';
+  const label = USER_TIER === 'elite_plus' ? 'Elite Plus' : (USER_TIER === 'elite_partner' ? 'Elite Partner' : 'Elite');
   const overlay = document.createElement('div');
   overlay.id = 'slackRequiredOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;';

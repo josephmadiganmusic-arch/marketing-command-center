@@ -867,6 +867,26 @@ function initDb() {
       console.log('[BOOT] jocejm20@gmail.com not found — will be promoted on next registration');
     }
   }
+
+  // --- Elite Partner accounts: managed artists get full access ---
+  // These are artists managed by admin. They get elite_partner tier which has
+  // all Elite features. Accounts are created at boot if they don't exist;
+  // existing accounts are promoted to elite_partner if not already.
+  const ELITE_PARTNERS = [
+    { email: 'lighthousewis@gmail.com', name: 'Lighthouse', password: 'RolloutPartner1' },
+    { email: 'brandonteague101422@gmail.com', name: 'J Truth', password: 'RolloutPartner2' },
+  ];
+  for (const partner of ELITE_PARTNERS) {
+    const existing = dbHelpers.prepare('SELECT id, subscription_tier, subscription_status FROM users WHERE email = ? AND deleted_at IS NULL').get(partner.email);
+    if (!existing) {
+      const hash = bcrypt.hashSync(partner.password, 10);
+      dbHelpers.prepare("INSERT INTO users (email, password, role, subscription_status, subscription_tier) VALUES (?, ?, 'user', 'active', 'elite_partner')").run(partner.email, hash);
+      console.log('[BOOT] seeded Elite Partner account: ' + partner.email + ' (' + partner.name + ')');
+    } else if (existing.subscription_tier !== 'elite_partner' || existing.subscription_status !== 'active') {
+      dbHelpers.prepare("UPDATE users SET subscription_tier = 'elite_partner', subscription_status = 'active', updated_at = datetime('now') WHERE id = ?").run(existing.id);
+      console.log('[BOOT] promoted ' + partner.email + ' to elite_partner');
+    }
+  }
 }
 
 // --- Stripe Setup ---
@@ -915,7 +935,7 @@ function tierFromPriceId(priceId) {
   if (STRIPE_PRICE_ID && priceId === STRIPE_PRICE_ID) return 'pro';
   return null;
 }
-function isEliteTier(tier) { return tier === 'elite' || tier === 'elite_plus'; }
+function isEliteTier(tier) { return tier === 'elite' || tier === 'elite_plus' || tier === 'elite_partner'; }
 
 // --- Onboarding credential encryption (AES-256-GCM) ---
 // Elite/Elite Plus customers submit distribution + social credentials so
@@ -1768,7 +1788,7 @@ app.post('/api/create-checkout', requireAuth, async (req, res) => {
   // ($3000/yr, immediate charge, everything in elite + outreach + playlist
   // curation). Default to 'pro' for backwards compat with old subscribe.html.
   const requestedTier = (req.body && typeof req.body.tier === 'string') ? req.body.tier : 'pro';
-  if (!['pro', 'elite', 'elite_plus'].includes(requestedTier)) {
+  if (!['pro', 'elite', 'elite_plus', 'elite_partner'].includes(requestedTier)) {
     return res.status(400).json({ error: 'Invalid tier' });
   }
   const priceId = TIER_PRICE_MAP[requestedTier];
