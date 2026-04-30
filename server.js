@@ -6076,7 +6076,7 @@ async function fetchSpotifyArtist(artistId, token) {
 }
 
 // Backlog: Debug Spotify token (admin only, temporary)
-app.get('/api/backlog/spotify-debug', requireAdmin, async (req, res) => {
+app.get('/api/backlog/spotify-debug', requireAdminOrPartner, async (req, res) => {
   const clientId = (process.env.SPOTIFY_CLIENT_ID || '').trim();
   const clientSecret = (process.env.SPOTIFY_CLIENT_SECRET || '').trim();
   const results = { hasClientId: !!clientId, clientIdLen: clientId.length, hasSecret: !!clientSecret, secretLen: clientSecret.length };
