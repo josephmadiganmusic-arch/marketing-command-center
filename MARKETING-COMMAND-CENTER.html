@@ -965,7 +965,8 @@
     <button class="tab" onclick="window.location.href='/redemption'" style="background:linear-gradient(135deg,rgba(123,47,247,0.15),rgba(0,212,255,0.15));border:1px solid rgba(123,47,247,0.4);" title="Fix up an older release that's missing registration or backend setup">Redemption</button>
     <button class="tab" id="adminTab" style="display:none;background:linear-gradient(135deg,#ffd700,#ffed4a);color:#080b1e;font-weight:700;" onclick="showPanel('admin')">Master Admin</button>
     <button class="tab" id="regPrepTab" style="display:none;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(123,47,247,0.15));border:1px solid rgba(0,212,255,0.3);position:relative;" onclick="showPanel('regprep')">Reg Prep <span id="regPrepTabCount" style="background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-size:10px;padding:1px 7px;border-radius:99px;font-weight:700;margin-left:4px;">0</span></button>
-    <button class="tab" id="managerTab" style="display:none;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(123,47,247,0.15));border:1px solid rgba(0,212,255,0.4);" onclick="showPanel('manager')">Artist Manager</button>
+    <!-- Manager tab hidden — features distributed into existing tabs via artist selector in intake -->
+    <button class="tab" id="managerTab" style="display:none;" onclick="showPanel('manager')">Artist Manager</button>
   </div>
 
   <div class="site-layout">
@@ -995,6 +996,17 @@
       </div>
       <div class="inline-ai-loading" id="aiScanLoading" style="display:none;margin-top:12px;"><div class="ai-spinner"></div><div class="ai-loading-text">Music Agent Pro is scanning your files and extracting metadata...</div></div>
       <div id="aiScanResults" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- Managed Artist Selector (admin only) -->
+    <div id="mgrArtistSelector" style="display:none;margin-bottom:18px;padding:14px 18px;background:linear-gradient(135deg,rgba(0,212,255,0.05),rgba(123,47,247,0.05));border:1px solid rgba(0,212,255,0.2);border-radius:10px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <label style="font-size:12px;font-weight:700;color:#00d4ff;white-space:nowrap;">Managed Artist:</label>
+        <select id="mgrArtistPick" class="form-control" style="width:200px;font-size:13px;" onchange="mgrAutoFillArtist(this.value)">
+          <option value="">-- None (manual entry) --</option>
+        </select>
+        <span style="font-size:11px;color:#666;">Select to auto-fill artist profile data</span>
+      </div>
     </div>
 
     <div class="intake-save-bar">
@@ -10981,7 +10993,9 @@ let MGR = { artists: [], catalog: [], tasks: [], royalties: [], activeSub: 'dash
 
 function managerInit() {
   if (USER_ROLE !== 'admin') return;
-  document.getElementById('managerTab').style.display = '';
+  // Show artist selector in intake (instead of separate manager tab)
+  document.getElementById('mgrArtistSelector').style.display = '';
+  mgrLoadArtistSelector();
 }
 
 async function managerLoad() {
@@ -11349,6 +11363,64 @@ function mgrShowAddTask() {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
     body: JSON.stringify({ artist_id: artistId, task_type: 'manual', description: desc })
   }).then(() => mgrLoadTasks());
+}
+
+// --- Intake Artist Selector ---
+async function mgrLoadArtistSelector() {
+  try {
+    const artists = await fetch('/api/manager/artists', { credentials: 'include' }).then(r => r.json());
+    MGR.artists = artists;
+    const sel = document.getElementById('mgrArtistPick');
+    sel.innerHTML = '<option value="">-- None (manual entry) --</option>' +
+      artists.map(a => `<option value="${a.id}">${a.artist_name}</option>`).join('');
+  } catch (e) { console.error('[MGR] load artist selector error:', e); }
+}
+
+async function mgrAutoFillArtist(artistId) {
+  if (!artistId) return; // "None" selected, don't clear
+  const artist = MGR.artists.find(a => String(a.id) === String(artistId));
+  if (!artist) return;
+
+  // Auto-fill intake fields from artist profile
+  const fill = (id, val) => { if (val) { const el = document.getElementById(id); if (el) { el.value = val; } } };
+
+  fill('in-primaryArtist', artist.artist_name);
+  fill('in-stageName', artist.artist_name);
+  fill('in-label', artist.label);
+  fill('in-instagram', artist.instagram);
+  fill('in-linkSpotify', artist.spotify_url);
+
+  // Legal name split into first/last
+  if (artist.artist_legal_name) {
+    const parts = artist.artist_legal_name.split(' ');
+    if (parts.length >= 2) {
+      fill('in-firstName', parts[0]);
+      fill('in-lastName', parts.slice(1).join(' '));
+    }
+    fill('in-legalName', artist.artist_legal_name);
+  }
+
+  // PRO
+  if (artist.pro) {
+    const proSel = document.getElementById('in-pro');
+    if (proSel) {
+      const opt = Array.from(proSel.options).find(o => o.value.toLowerCase() === artist.pro.toLowerCase());
+      if (opt) proSel.value = opt.value;
+    }
+  }
+  fill('in-proAccount', artist.pro_member_id);
+  fill('in-publisherEntity', artist.publisher_name);
+
+  // Location
+  if (artist.location) {
+    const locParts = artist.location.split(',').map(s => s.trim());
+    fill('in-hometownCity', locParts[0] || '');
+    fill('in-hometownState', locParts[1] || '');
+  }
+
+  // Trigger autosave
+  if (typeof intakeUpdate === 'function') intakeUpdate();
+  showToast('Auto-filled profile for ' + artist.artist_name);
 }
 
 // --- Helpers ---
