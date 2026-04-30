@@ -5978,6 +5978,254 @@ app.post('/api/slack/interactions',
   }
 });
 
+// ============================================================
+// --- BULK BACKLOG: Platform scraping + registration prep ---
+// ============================================================
+
+// Spotify client credentials flow (app-level, no user auth)
+async function getSpotifyToken() {
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+  const resp = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64')
+    },
+    body: 'grant_type=client_credentials'
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  return data.access_token;
+}
+
+// Extract Spotify artist ID from URL
+function extractSpotifyArtistId(url) {
+  const m = url.match(/artist\/([a-zA-Z0-9]+)/);
+  return m ? m[1] : null;
+}
+
+// Fetch all albums/singles from Spotify artist
+async function fetchSpotifyDiscography(artistId, token) {
+  const albums = [];
+  let url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&limit=50&market=US`;
+  while (url) {
+    const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!resp.ok) break;
+    const data = await resp.json();
+    albums.push(...data.items);
+    url = data.next;
+  }
+  return albums;
+}
+
+// Fetch album tracks with ISRCs
+async function fetchSpotifyAlbumTracks(albumId, token) {
+  const resp = await fetch(`https://api.spotify.com/v1/albums/${albumId}?market=US`, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (!resp.ok) return [];
+  const data = await resp.json();
+  return (data.tracks && data.tracks.items || []).map(t => ({
+    song_title: t.name,
+    isrc: t.external_ids && t.external_ids.isrc || null,
+    duration_ms: t.duration_ms,
+    track_number: t.track_number,
+    featured_artists: t.artists.filter((a, i) => i > 0).map(a => a.name).join(', '),
+    album_name: data.name,
+    album_type: data.album_type,
+    release_date: data.release_date,
+    upc: data.external_ids && data.external_ids.upc || null,
+    label: data.label,
+    total_tracks: data.total_tracks,
+    album_image: data.images && data.images[0] && data.images[0].url || null,
+    spotify_uri: t.uri,
+  }));
+}
+
+// Fetch artist info from Spotify
+async function fetchSpotifyArtist(artistId, token) {
+  const resp = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (!resp.ok) return null;
+  return resp.json();
+}
+
+// Backlog: Fetch full discography from Spotify
+app.post('/api/backlog/fetch-spotify', requireAdmin, async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'Spotify artist URL required' });
+    const artistId = extractSpotifyArtistId(url);
+    if (!artistId) return res.status(400).json({ error: 'Could not extract artist ID from URL' });
+
+    const token = await getSpotifyToken();
+    if (!token) return res.status(500).json({ error: 'Spotify API not configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET env vars.' });
+
+    const artist = await fetchSpotifyArtist(artistId, token);
+    const albums = await fetchSpotifyDiscography(artistId, token);
+
+    // Fetch tracks with ISRCs for each album
+    const allTracks = [];
+    for (const album of albums) {
+      const tracks = await fetchSpotifyAlbumTracks(album.id, token);
+      allTracks.push(...tracks);
+    }
+
+    // Deduplicate by ISRC (same song can appear on album + single)
+    const seen = new Set();
+    const unique = [];
+    for (const t of allTracks) {
+      const key = t.isrc || t.song_title;
+      if (!seen.has(key)) { seen.add(key); unique.push(t); }
+    }
+
+    res.json({
+      artist: {
+        name: artist.name,
+        spotify_id: artistId,
+        followers: artist.followers && artist.followers.total,
+        genres: artist.genres,
+        image: artist.images && artist.images[0] && artist.images[0].url,
+      },
+      albums: albums.length,
+      tracks: unique,
+    });
+  } catch (e) {
+    console.error('[BACKLOG] Spotify fetch error:', e.message);
+    res.status(500).json({ error: 'Spotify fetch failed: ' + e.message });
+  }
+});
+
+// Backlog: Search BMI Repertoire for writer/publisher info
+app.post('/api/backlog/search-bmi', requireAdmin, async (req, res) => {
+  try {
+    const { title, artist } = req.body;
+    if (!title) return res.status(400).json({ error: 'title required' });
+    const query = encodeURIComponent(title);
+    const url = `https://repertoire.bmi.com/api/catalog/search?query=${query}&searchType=title`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
+    });
+    if (!resp.ok) {
+      // Try HTML scrape fallback
+      const htmlUrl = `https://repertoire.bmi.com/Search/Search?Main_Search_Text=${query}&Main_Search_Type=Title&Search_Type=all`;
+      const htmlResp = await fetch(htmlUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const html = await htmlResp.text();
+      res.json({ raw_html: html.substring(0, 5000), source: 'bmi_html', query: title });
+      return;
+    }
+    const data = await resp.json();
+    res.json({ results: data, source: 'bmi_api', query: title });
+  } catch (e) {
+    res.status(500).json({ error: 'BMI search failed: ' + e.message });
+  }
+});
+
+// Backlog: Search ASCAP Repertoire for writer/publisher info
+app.post('/api/backlog/search-ascap', requireAdmin, async (req, res) => {
+  try {
+    const { title, artist } = req.body;
+    if (!title) return res.status(400).json({ error: 'title required' });
+    const query = encodeURIComponent(title);
+    const url = `https://www.ascap.com/api/wservice/MbrService/works/search?searchTerm=${query}&searchType=title`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
+    });
+    if (!resp.ok) {
+      // Fallback: use Serper to search ASCAP
+      if (SERPER_API_KEY) {
+        const serperResp = await fetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: `site:ascap.com/repertory "${title}" ${artist || ''}`, num: 5 })
+        });
+        const serperData = await serperResp.json();
+        res.json({ results: serperData.organic || [], source: 'ascap_serper', query: title });
+        return;
+      }
+      res.json({ results: [], source: 'ascap_unavailable', query: title });
+      return;
+    }
+    const data = await resp.json();
+    res.json({ results: data, source: 'ascap_api', query: title });
+  } catch (e) {
+    res.status(500).json({ error: 'ASCAP search failed: ' + e.message });
+  }
+});
+
+// Backlog: AI-powered verification — cross-reference all sources
+app.post('/api/backlog/verify', requireAdmin, async (req, res) => {
+  try {
+    const { tracks, artist_name } = req.body;
+    if (!tracks || !tracks.length) return res.status(400).json({ error: 'tracks required' });
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+    if (!ANTHROPIC_API_KEY) return res.status(500).json({ error: 'Claude API not configured' });
+
+    // Build a verification prompt
+    const trackList = tracks.slice(0, 50).map((t, i) =>
+      `${i+1}. "${t.song_title}" | ISRC: ${t.isrc || 'MISSING'} | Date: ${t.release_date || '?'} | UPC: ${t.upc || '?'} | Featured: ${t.featured_artists || 'none'} | Label: ${t.label || '?'}`
+    ).join('\n');
+
+    const prompt = `You are verifying music catalog data for MLC and SoundExchange registration.
+
+Artist: ${artist_name}
+
+Here are the tracks scraped from Spotify. For each track, verify:
+1. Is the ISRC format valid? (2-letter country + 3-char registrant + 2-digit year + 5-digit designation)
+2. Is the release date plausible?
+3. Flag any duplicates (same song appearing twice)
+4. Flag any tracks that appear to be by a DIFFERENT artist with the same name
+5. Note any missing required fields for MLC (title, ISRC, writer info) or SoundExchange (artist, title, ISRC, label, release date)
+
+Tracks:
+${trackList}
+
+Respond in JSON format:
+{
+  "verified_count": number,
+  "issues": [{"track_index": number, "song_title": string, "issue": string, "severity": "error"|"warning"|"info"}],
+  "summary": "brief summary"
+}`;
+
+    const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: DEFAULT_CLAUDE_MODEL,
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!claudeResp.ok) {
+      const err = await claudeResp.text();
+      return res.status(500).json({ error: 'Claude verification failed', detail: err });
+    }
+    const claudeData = await claudeResp.json();
+    const text = claudeData.content && claudeData.content[0] && claudeData.content[0].text || '';
+
+    // Try to parse JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return res.json(parsed);
+      } catch (_) {}
+    }
+    res.json({ raw: text });
+  } catch (e) {
+    res.status(500).json({ error: 'Verification failed: ' + e.message });
+  }
+});
+
 // Static files — only serve safe static assets, NOT the entire project directory
 const publicDir = path.join(__dirname, 'public');
 if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });

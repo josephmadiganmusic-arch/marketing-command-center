@@ -952,6 +952,7 @@
 </header>
 <div class="container">
   <div class="tabs" id="mainTabs">
+    <button class="tab" id="backlogTab" style="display:none;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(123,47,247,0.15));border:1px solid rgba(0,212,255,0.3);" onclick="showPanel('backlog')">Bulk Backlog</button>
     <button class="tab active" onclick="showPanel('intake')">Intake</button>
     <button class="tab" onclick="showPanel('registration')">Registration</button>
     <button class="tab" onclick="showPanel('emailgen')">Email Generator</button>
@@ -969,6 +970,53 @@
 
   <div class="site-layout">
   <div class="site-panels">
+
+  <!-- BULK BACKLOG TAB (admin only) -->
+  <div class="panel" id="panel-backlog">
+    <h2>Bulk Backlog</h2>
+    <p class="subtitle">Drop in artist platform links to pull their full catalog for MLC + SoundExchange registration.</p>
+
+    <div class="form-section">
+      <div class="form-section-title">Artist Platform Links</div>
+      <div class="form-grid">
+        <div class="form-group full-width"><label><span style="color:#1DB954;">&#9679;</span> Spotify Artist Page</label><input type="text" id="bl-spotify" placeholder="https://open.spotify.com/artist/..."></div>
+        <div class="form-group full-width"><label><span style="color:#FC3C44;">&#9679;</span> Apple Music Artist Page</label><input type="text" id="bl-apple" placeholder="https://music.apple.com/us/artist/..."></div>
+        <div class="form-group full-width"><label><span style="color:#FF0000;">&#9654;</span> YouTube Channel</label><input type="text" id="bl-youtube" placeholder="https://youtube.com/@..."></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-primary" onclick="blFetchCatalog()" id="blFetchBtn">Fetch Full Catalog</button>
+        <button class="btn-secondary" onclick="blVerify()" id="blVerifyBtn" style="display:none;">Verify with AI</button>
+        <button class="btn-secondary" onclick="blExportMLC()" id="blExportMlcBtn" style="display:none;">Export MLC (.xlsx)</button>
+        <button class="btn-secondary" onclick="blExportSE()" id="blExportSeBtn" style="display:none;">Export SoundExchange (.xlsx)</button>
+        <span id="blStatus" style="font-size:12px;color:#666;"></span>
+      </div>
+    </div>
+
+    <div id="blArtistInfo" style="display:none;margin-bottom:16px;"></div>
+
+    <div class="form-section" id="blResultsSection" style="display:none;">
+      <div class="form-section-title">Catalog Results <span id="blTrackCount" style="font-size:12px;color:#999;font-weight:400;"></span></div>
+      <div id="blVerifyResults" style="display:none;margin-bottom:14px;padding:12px;background:rgba(0,0,0,0.3);border-radius:8px;"></div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;" id="blTable">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
+              <th style="padding:6px;color:#00d4ff;">Title</th>
+              <th style="padding:6px;color:#00d4ff;">Type</th>
+              <th style="padding:6px;color:#00d4ff;">Date</th>
+              <th style="padding:6px;color:#00d4ff;">ISRC</th>
+              <th style="padding:6px;color:#00d4ff;">UPC</th>
+              <th style="padding:6px;color:#00d4ff;">Featured</th>
+              <th style="padding:6px;color:#00d4ff;">Label</th>
+              <th style="padding:6px;color:#00d4ff;">Writer</th>
+              <th style="padding:6px;color:#00d4ff;">Publisher</th>
+            </tr>
+          </thead>
+          <tbody id="blTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
   <!-- INTAKE TAB -->
   <div class="panel active" id="panel-intake">
@@ -2815,7 +2863,7 @@ const regPlatforms = [
 // nav button row. Clicking that tab navigates to /redemption directly, so
 // no panel is rendered and showPanel() is never called for it. lockTabs
 // excludes it so it never gets a .locked greyed-out state.
-const panelNames = ['intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin','regprep'];
+const panelNames = ['backlog','intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin','regprep'];
 let campaignGenerated = false;
 
 function lockTabs() {
@@ -2913,7 +2961,7 @@ function showPanel(id) {
     return;
   }
   // Block locked tabs (except intake, admin, achievements)
-  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && id !== 'regprep' && !campaignGenerated) {
+  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && id !== 'regprep' && id !== 'backlog' && !campaignGenerated) {
     showToast('Generate your campaign first to unlock all tabs');
     return;
   }
@@ -10812,6 +10860,7 @@ serverLoad().then(() => {
   migrateOldStorage();
   init();
   adminInit();
+  backlogInit();
   setupTrialBanner();
   setupEliteOnboardingNudge();
   checkEliteSlackStatus();
@@ -10828,6 +10877,125 @@ serverLoad().then(() => {
     localStorage.setItem('_resync_v1_' + USER_ID, '1');
   }
 });
+
+// ============================================================
+// --- BULK BACKLOG MODULE ---
+// ============================================================
+let BL_TRACKS = [];
+let BL_ARTIST = null;
+
+function backlogInit() {
+  if (USER_ROLE !== 'admin') return;
+  document.getElementById('backlogTab').style.display = '';
+}
+
+async function blFetchCatalog() {
+  const spotifyUrl = document.getElementById('bl-spotify').value.trim();
+  if (!spotifyUrl) { showToast('Enter a Spotify artist URL'); return; }
+
+  const btn = document.getElementById('blFetchBtn');
+  const status = document.getElementById('blStatus');
+  btn.disabled = true;
+  status.textContent = 'Fetching from Spotify...';
+
+  try {
+    const resp = await fetch('/api/backlog/fetch-spotify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ url: spotifyUrl })
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Fetch failed'); status.textContent = data.error || 'Error'; btn.disabled = false; return; }
+
+    BL_ARTIST = data.artist;
+    BL_TRACKS = data.tracks;
+
+    // Show artist info
+    const info = document.getElementById('blArtistInfo');
+    info.style.display = '';
+    info.innerHTML = `<div class="content-card" style="padding:14px;display:flex;align-items:center;gap:14px;">
+      ${data.artist.image ? `<img src="${data.artist.image}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;">` : ''}
+      <div>
+        <div style="font-size:16px;font-weight:700;color:#fff;">${data.artist.name}</div>
+        <div style="font-size:12px;color:#999;">${data.artist.followers ? data.artist.followers.toLocaleString() + ' followers' : ''} ${data.artist.genres ? '| ' + data.artist.genres.slice(0,3).join(', ') : ''}</div>
+        <div style="font-size:12px;color:#00d4ff;">${data.albums} releases | ${data.tracks.length} unique tracks</div>
+      </div>
+    </div>`;
+
+    // Render table
+    blRenderTable();
+    document.getElementById('blResultsSection').style.display = '';
+    document.getElementById('blTrackCount').textContent = `(${BL_TRACKS.length} tracks)`;
+    document.getElementById('blVerifyBtn').style.display = '';
+    document.getElementById('blExportMlcBtn').style.display = '';
+    document.getElementById('blExportSeBtn').style.display = '';
+    status.textContent = 'Done - ' + BL_TRACKS.length + ' tracks found';
+  } catch (e) {
+    showToast('Fetch error: ' + e.message);
+    status.textContent = 'Error';
+  }
+  btn.disabled = false;
+}
+
+function blRenderTable() {
+  const tbody = document.getElementById('blTableBody');
+  tbody.innerHTML = BL_TRACKS.map((t, i) => {
+    const isrcOk = t.isrc && /^[A-Z]{2}[A-Z0-9]{3}\d{2}\d{5}$/.test(t.isrc);
+    return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+      <td style="padding:6px;color:#fff;font-weight:500;">${t.song_title}</td>
+      <td style="padding:6px;font-size:11px;">${t.album_type || 'single'}</td>
+      <td style="padding:6px;font-size:11px;">${t.release_date || '-'}</td>
+      <td style="padding:6px;font-family:monospace;font-size:11px;${isrcOk ? 'color:#4caf50' : 'color:#f44336'}">${t.isrc || 'MISSING'}</td>
+      <td style="padding:6px;font-size:11px;">${t.upc || '-'}</td>
+      <td style="padding:6px;font-size:11px;color:#999;">${t.featured_artists || '-'}</td>
+      <td style="padding:6px;font-size:11px;">${t.label || '-'}</td>
+      <td style="padding:6px;font-size:11px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:100px;" value="${t.writer || ''}" onchange="BL_TRACKS[${i}].writer=this.value"></td>
+      <td style="padding:6px;font-size:11px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:100px;" value="${t.publisher || ''}" onchange="BL_TRACKS[${i}].publisher=this.value"></td>
+    </tr>`;
+  }).join('');
+}
+
+async function blVerify() {
+  if (!BL_TRACKS.length) return;
+  const status = document.getElementById('blStatus');
+  status.textContent = 'Verifying with AI...';
+  document.getElementById('blVerifyBtn').disabled = true;
+
+  try {
+    const resp = await fetch('/api/backlog/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ tracks: BL_TRACKS, artist_name: BL_ARTIST ? BL_ARTIST.name : '' })
+    });
+    const data = await resp.json();
+    const box = document.getElementById('blVerifyResults');
+    box.style.display = '';
+
+    if (data.issues && data.issues.length) {
+      const errors = data.issues.filter(i => i.severity === 'error');
+      const warnings = data.issues.filter(i => i.severity === 'warning');
+      box.innerHTML = `<div style="font-weight:700;color:#00d4ff;margin-bottom:8px;">Verification: ${data.verified_count || BL_TRACKS.length} tracks checked</div>
+        ${data.summary ? `<p style="color:#ccc;font-size:12px;margin-bottom:8px;">${data.summary}</p>` : ''}
+        ${errors.length ? `<div style="color:#f44336;font-size:12px;margin-bottom:6px;"><strong>${errors.length} errors:</strong><ul style="margin:4px 0 0 16px;">${errors.map(e => `<li>${e.song_title}: ${e.issue}</li>`).join('')}</ul></div>` : ''}
+        ${warnings.length ? `<div style="color:#ffc107;font-size:12px;"><strong>${warnings.length} warnings:</strong><ul style="margin:4px 0 0 16px;">${warnings.map(w => `<li>${w.song_title}: ${w.issue}</li>`).join('')}</ul></div>` : ''}
+        ${!errors.length && !warnings.length ? '<div style="color:#4caf50;">All tracks verified clean!</div>' : ''}`;
+    } else if (data.raw) {
+      box.innerHTML = `<pre style="color:#ccc;font-size:11px;white-space:pre-wrap;">${data.raw}</pre>`;
+    } else {
+      box.innerHTML = '<div style="color:#4caf50;">All tracks verified clean!</div>';
+    }
+    status.textContent = 'Verification complete';
+  } catch (e) {
+    status.textContent = 'Verification error';
+  }
+  document.getElementById('blVerifyBtn').disabled = false;
+}
+
+function blExportMLC() {
+  window.open('/api/manager/registration/export/mlc', '_blank');
+}
+function blExportSE() {
+  window.open('/api/manager/registration/export/soundexchange', '_blank');
+}
+
 </script>
 
 <!-- Submission Overlay (commit 8) -->
