@@ -6092,6 +6092,18 @@ app.get('/api/backlog/spotify-debug', requireAdminOrPartner, async (req, res) =>
       results.credentialsBody = await resp.text();
     } catch (e) { results.credentialsError = e.message; }
   }
+  // Test artist fetch with the token
+  if (results.credentialsStatus === 200) {
+    try {
+      const tokenData = JSON.parse(results.credentialsBody);
+      const artistResp = await fetch('https://api.spotify.com/v1/artists/1YONuiYyTSZiWtE5NJDUsp', {
+        headers: { 'Authorization': 'Bearer ' + tokenData.access_token }
+      });
+      results.artistFetchStatus = artistResp.status;
+      const artistText = await artistResp.text();
+      results.artistFetchBody = artistText.substring(0, 300);
+    } catch (e) { results.artistFetchError = e.message; }
+  }
   // Test anonymous
   try {
     const resp2 = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', {
