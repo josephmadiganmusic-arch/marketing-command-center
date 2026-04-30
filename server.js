@@ -6364,6 +6364,119 @@ app.post('/api/manager/tasks/auto-generate', requireAdmin, (req, res) => {
   res.json({ created });
 });
 
+// --- Manager: Export for MLC (MLCBulkWork format) ---
+app.get('/api/manager/registration/export/mlc', requireAdmin, (req, res) => {
+  const XLSX = require('xlsx');
+  const songs = dbHelpers.prepare(`
+    SELECT mc.*, ma.artist_name, ma.artist_legal_name, ma.writer_ipi, ma.publisher_name, ma.publisher_ipi, ma.label, ma.pro
+    FROM manager_catalog mc
+    JOIN manager_artists ma ON mc.artist_id = ma.id
+    WHERE mc.deleted_at IS NULL AND ma.deleted_at IS NULL AND mc.mlc_registered = 0
+    ORDER BY mc.spotify_streams DESC NULLS LAST
+  `).all();
+
+  // MLC BulkWork header
+  const header = ['PRIMARY TITLE *','MLC SONG CODE','MEMBERS SONG ID','ISWC','AKA TITLE','AKA TITLE TYPE CODE','WRITER LAST NAME *','WRITER FIRST NAME','WRITER IPI NUMBER','WRITER ROLE CODE *','MLC PUBLISHER NUMBER','PUBLISHER NAME *','PUBLISHER IPI NUMBER *','ADMINISTRATOR MLC PUBLISHER NUMBER','ADMINISTRATOR NAME','ADMINISTRATOR IPI NUMBER','COLLECTION SHARE *','RECORDING TITLE','RECORDING ARTIST NAME','RECORDING ISRC','RECORDING LABEL'];
+
+  const rows = [header];
+  for (const s of songs) {
+    // Split artist legal name into last/first
+    const parts = (s.artist_legal_name || s.artist_name || '').split(' ');
+    const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+    const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+    rows.push([
+      s.song_title,                    // PRIMARY TITLE
+      '',                              // MLC SONG CODE
+      '',                              // MEMBERS SONG ID
+      '',                              // ISWC
+      '',                              // AKA TITLE
+      '',                              // AKA TITLE TYPE CODE
+      lastName,                        // WRITER LAST NAME
+      firstName,                       // WRITER FIRST NAME
+      s.writer_ipi || '',              // WRITER IPI NUMBER
+      'CA',                            // WRITER ROLE CODE (CA = Composer/Author)
+      '',                              // MLC PUBLISHER NUMBER
+      s.publisher_name || '',          // PUBLISHER NAME
+      s.publisher_ipi || '',           // PUBLISHER IPI NUMBER
+      '',                              // ADMINISTRATOR MLC PUBLISHER NUMBER
+      '',                              // ADMINISTRATOR NAME
+      '',                              // ADMINISTRATOR IPI NUMBER
+      s.dk_split_pct || 100,           // COLLECTION SHARE
+      s.song_title,                    // RECORDING TITLE
+      s.artist_name + (s.featured_artists ? ' ft. ' + s.featured_artists : ''), // RECORDING ARTIST NAME
+      s.isrc || '',                    // RECORDING ISRC
+      s.label || '',                   // RECORDING LABEL
+    ]);
+  }
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Format');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="MLC_BulkWork_Export.xlsx"');
+  res.send(buf);
+});
+
+// --- Manager: Export for SoundExchange (ISRC Ingest Form format) ---
+app.get('/api/manager/registration/export/soundexchange', requireAdmin, (req, res) => {
+  const XLSX = require('xlsx');
+  const songs = dbHelpers.prepare(`
+    SELECT mc.*, ma.artist_name, ma.artist_legal_name, ma.label, ma.publisher_name, ma.writer_ipi
+    FROM manager_catalog mc
+    JOIN manager_artists ma ON mc.artist_id = ma.id
+    WHERE mc.deleted_at IS NULL AND ma.deleted_at IS NULL AND mc.soundexchange_claimed = 0
+    ORDER BY mc.spotify_streams DESC NULLS LAST
+  `).all();
+
+  // SE ISRC Ingest Form header (row 9 in the official form)
+  const header = ['Artist','Recording Title','ISRC','What is the basis of your claim?','Percentage Claimed','Collection Rights Begin Date','Collection Rights End Date','Non-US Territories','Recording Version','Duration','Genre','Recording Date','Country of Recording','Country of Mastering','Copyright Owner Country of Nationality','Date of First Release','Country of First Release','(P) Line','ISWC','Composer(s)','Publisher(s)','Release Artist','Release Title (Album Title)','Release Version','UPC','Catalog #','Release Date','Country of Release','Release Label'];
+
+  const rows = [header];
+  for (const s of songs) {
+    const releaseDate = s.release_date ? new Date(s.release_date).toLocaleDateString('en-US') : '';
+    rows.push([
+      s.artist_name + (s.featured_artists ? ' ft. ' + s.featured_artists : ''), // Artist
+      s.song_title,                    // Recording Title
+      s.isrc || '',                    // ISRC
+      'Copyright Owner',               // Claim basis
+      s.dk_split_pct || 100,           // Percentage Claimed
+      releaseDate,                     // Begin Date (use release date)
+      '',                              // End Date (leave open)
+      '',                              // Non-US Territories
+      '',                              // Recording Version
+      s.duration || '',                // Duration
+      '',                              // Genre
+      '',                              // Recording Date
+      'US',                            // Country of Recording
+      'US',                            // Country of Mastering
+      'US',                            // Copyright Owner Nationality
+      releaseDate,                     // Date of First Release
+      'US',                            // Country of First Release
+      s.label || '',                   // (P) Line
+      '',                              // ISWC
+      s.artist_legal_name || s.artist_name, // Composer(s)
+      s.publisher_name || '',          // Publisher(s)
+      s.artist_name,                   // Release Artist
+      s.album_name || s.song_title,    // Release Title
+      '',                              // Release Version
+      s.upc || '',                     // UPC
+      '',                              // Catalog #
+      releaseDate,                     // Release Date
+      'US',                            // Country of Release
+      s.label || '',                   // Release Label
+    ]);
+  }
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Form');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="SoundExchange_ISRC_Ingest_Export.xlsx"');
+  res.send(buf);
+});
+
 // Static files — only serve safe static assets, NOT the entire project directory
 const publicDir = path.join(__dirname, 'public');
 if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });

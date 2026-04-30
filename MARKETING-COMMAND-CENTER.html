@@ -2367,7 +2367,13 @@
 
     <!-- Registration -->
     <div class="mgr-sub" id="mgr-sub-registration" style="display:none;">
-      <h3 style="color:#00d4ff;margin-bottom:10px;">Registration Gaps</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <h3 style="color:#00d4ff;margin:0;">Registration Gaps</h3>
+        <div style="display:flex;gap:8px;">
+          <a href="/api/manager/registration/export/mlc" class="btn-secondary" style="font-size:11px;padding:6px 12px;text-decoration:none;">Export MLC (.xlsx)</a>
+          <a href="/api/manager/registration/export/soundexchange" class="btn-secondary" style="font-size:11px;padding:6px 12px;text-decoration:none;">Export SoundExchange (.xlsx)</a>
+        </div>
+      </div>
       <div id="mgrRegDash" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px;"></div>
       <div id="mgrRegGaps"></div>
     </div>
