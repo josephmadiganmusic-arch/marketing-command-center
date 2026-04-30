@@ -6061,7 +6061,7 @@ async function fetchSpotifyArtist(artistId, token) {
 }
 
 // Backlog: Fetch full discography from Spotify
-app.post('/api/backlog/fetch-spotify', requireAdmin, async (req, res) => {
+app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) => {
   try {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'Spotify artist URL required' });
@@ -6107,7 +6107,7 @@ app.post('/api/backlog/fetch-spotify', requireAdmin, async (req, res) => {
 });
 
 // Backlog: Search BMI Repertoire for writer/publisher info
-app.post('/api/backlog/search-bmi', requireAdmin, async (req, res) => {
+app.post('/api/backlog/search-bmi', requireAdminOrPartner, async (req, res) => {
   try {
     const { title, artist } = req.body;
     if (!title) return res.status(400).json({ error: 'title required' });
@@ -6132,7 +6132,7 @@ app.post('/api/backlog/search-bmi', requireAdmin, async (req, res) => {
 });
 
 // Backlog: Search ASCAP Repertoire for writer/publisher info
-app.post('/api/backlog/search-ascap', requireAdmin, async (req, res) => {
+app.post('/api/backlog/search-ascap', requireAdminOrPartner, async (req, res) => {
   try {
     const { title, artist } = req.body;
     if (!title) return res.status(400).json({ error: 'title required' });
@@ -6164,7 +6164,7 @@ app.post('/api/backlog/search-ascap', requireAdmin, async (req, res) => {
 });
 
 // Backlog: AI-powered verification — cross-reference all sources
-app.post('/api/backlog/verify', requireAdmin, async (req, res) => {
+app.post('/api/backlog/verify', requireAdminOrPartner, async (req, res) => {
   try {
     const { tracks, artist_name } = req.body;
     if (!tracks || !tracks.length) return res.status(400).json({ error: 'tracks required' });

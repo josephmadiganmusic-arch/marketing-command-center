@@ -10885,7 +10885,7 @@ let BL_TRACKS = [];
 let BL_ARTIST = null;
 
 function backlogInit() {
-  if (USER_ROLE !== 'admin') return;
+  if (USER_ROLE !== 'admin' && USER_TIER !== 'elite_partner') return;
   document.getElementById('backlogTab').style.display = '';
 }
 
