@@ -2852,6 +2852,13 @@ function requireAdmin(req, res, next) {
   req.user = user;
   next();
 }
+function requireAdminOrPartner(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+  const user = dbHelpers.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(req.session.userId);
+  if (!user || (user.role !== 'admin' && user.subscription_tier !== 'elite_partner')) return res.status(403).json({ error: 'Access required' });
+  req.user = user;
+  next();
+}
 
 // --- Admin Impersonation ---
 // Allows admin to log in as any non-admin user to see their view and make
