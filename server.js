@@ -5992,9 +5992,10 @@ app.post('/api/slack/interactions',
 // Spotify anonymous access token (public web player token, no credentials needed)
 async function getSpotifyToken() {
   // First try client credentials if configured
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  const clientId = (process.env.SPOTIFY_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.SPOTIFY_CLIENT_SECRET || '').trim();
   if (clientId && clientSecret) {
+    console.log('[BACKLOG] Trying Spotify client credentials...');
     const resp = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: {
@@ -6003,14 +6004,18 @@ async function getSpotifyToken() {
       },
       body: 'grant_type=client_credentials'
     });
-    if (resp.ok) { const data = await resp.json(); return data.access_token; }
+    if (resp.ok) { const data = await resp.json(); console.log('[BACKLOG] Got client credentials token'); return data.access_token; }
+    console.error('[BACKLOG] Client credentials failed:', resp.status, await resp.text().catch(() => ''));
   }
   // Fallback: get anonymous token from Spotify's public endpoint
+  console.log('[BACKLOG] Trying anonymous Spotify token...');
   const resp = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' }
   });
-  if (!resp.ok) return null;
+  if (!resp.ok) { console.error('[BACKLOG] Anonymous token failed:', resp.status); return null; }
   const data = await resp.json();
+  if (!data.accessToken) { console.error('[BACKLOG] Anonymous token response missing accessToken:', JSON.stringify(data).slice(0, 200)); return null; }
+  console.log('[BACKLOG] Got anonymous token');
   return data.accessToken;
 }
 
@@ -6082,7 +6087,7 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
     if (!token) return res.status(500).json({ error: 'Could not get Spotify access token. Try again.' });
 
     const artist = await fetchSpotifyArtist(artistId, token);
-    if (!artist) return res.status(404).json({ error: 'Artist not found on Spotify. Check the URL and try again.' });
+    if (!artist) return res.status(404).json({ error: 'Artist not found on Spotify (ID: ' + artistId + '). The token may have expired or the URL is invalid. Try again.' });
     const albums = await fetchSpotifyDiscography(artistId, token);
 
     // Fetch tracks with ISRCs for each album
