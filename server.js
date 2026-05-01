@@ -6084,9 +6084,25 @@ async function fetchSpotifyAlbumTracks(albumId, token) {
   const resp = await spotifyApiGet(`https://api.spotify.com/v1/albums/${albumId}?market=US`, token);
   if (!resp.ok) return [];
   const data = await resp.json();
-  return (data.tracks && data.tracks.items || []).map(t => ({
+  const simplifiedTracks = data.tracks && data.tracks.items || [];
+
+  // SimplifiedTrackObject doesn't include ISRCs — batch fetch full track objects
+  const trackIds = simplifiedTracks.map(t => t.id).filter(Boolean);
+  const isrcMap = {};
+  for (let i = 0; i < trackIds.length; i += 50) {
+    const batch = trackIds.slice(i, i + 50);
+    const trResp = await spotifyApiGet(`https://api.spotify.com/v1/tracks?ids=${batch.join(',')}&market=US`, token);
+    if (trResp.ok) {
+      const trData = await trResp.json();
+      for (const ft of (trData.tracks || [])) {
+        if (ft && ft.id) isrcMap[ft.id] = ft.external_ids && ft.external_ids.isrc || null;
+      }
+    }
+  }
+
+  return simplifiedTracks.map(t => ({
     song_title: t.name,
-    isrc: t.external_ids && t.external_ids.isrc || null,
+    isrc: isrcMap[t.id] || null,
     duration_ms: t.duration_ms,
     track_number: t.track_number,
     featured_artists: t.artists.filter((a, i) => i > 0).map(a => a.name).join(', '),
