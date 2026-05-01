@@ -10889,100 +10889,22 @@ function backlogInit() {
   document.getElementById('backlogTab').style.display = '';
 }
 
-// Spotify browser-side helpers (Premium not required from browser)
-async function _blGetSpotifyToken() {
-  // Browser can get anonymous token directly from Spotify (server IPs are blocked)
-  const resp = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', { credentials: 'omit' });
-  if (resp.ok) { const d = await resp.json(); if (d.accessToken) return d.accessToken; }
-  // Fallback: CORS proxy through our server
-  const resp2 = await fetch('/api/backlog/spotify-token', { credentials: 'include' });
-  if (resp2.ok) { const d2 = await resp2.json(); return d2.token; }
-  return null;
-}
-async function _blSpotifyGet(path, token) {
-  const resp = await fetch('https://api.spotify.com/v1' + path, {
-    headers: { 'Authorization': 'Bearer ' + token }, credentials: 'omit'
-  });
-  if (!resp.ok) return null;
-  return resp.json();
-}
-
 async function blFetchCatalog() {
   const spotifyUrl = document.getElementById('bl-spotify').value.trim();
   if (!spotifyUrl) { showToast('Enter a Spotify artist URL'); return; }
-  const artistMatch = spotifyUrl.match(/artist\/([a-zA-Z0-9]+)/);
-  if (!artistMatch) { showToast('Invalid Spotify artist URL'); return; }
-  const artistId = artistMatch[1];
 
   const btn = document.getElementById('blFetchBtn');
   const status = document.getElementById('blStatus');
   btn.disabled = true;
-  status.textContent = 'Getting Spotify access...';
+  status.textContent = 'Fetching from Spotify...';
 
   try {
-    const token = await _blGetSpotifyToken();
-    if (!token) { showToast('Could not get Spotify access token. Try refreshing.'); status.textContent = 'Token failed'; btn.disabled = false; return; }
-
-    status.textContent = 'Fetching artist info...';
-    const artist = await _blSpotifyGet('/artists/' + artistId, token);
-    if (!artist) { showToast('Artist not found on Spotify. Check the URL.'); status.textContent = 'Artist not found'; btn.disabled = false; return; }
-
-    // Fetch all albums/singles
-    status.textContent = 'Fetching discography...';
-    const albums = [];
-    let albumUrl = '/artists/' + artistId + '/albums?include_groups=album,single,compilation&limit=50&market=US';
-    while (albumUrl) {
-      const page = await _blSpotifyGet(albumUrl, token);
-      if (!page) break;
-      albums.push(...page.items);
-      albumUrl = page.next ? page.next.replace('https://api.spotify.com/v1', '') : null;
-    }
-
-    // Fetch tracks with ISRCs for each album
-    status.textContent = 'Fetching tracks (0/' + albums.length + ')...';
-    const allTracks = [];
-    for (let i = 0; i < albums.length; i++) {
-      status.textContent = 'Fetching tracks (' + (i+1) + '/' + albums.length + ')...';
-      const albumData = await _blSpotifyGet('/albums/' + albums[i].id + '?market=US', token);
-      if (!albumData || !albumData.tracks) continue;
-      for (const t of albumData.tracks.items) {
-        allTracks.push({
-          song_title: t.name,
-          isrc: t.external_ids && t.external_ids.isrc || null,
-          duration_ms: t.duration_ms,
-          track_number: t.track_number,
-          featured_artists: t.artists.filter((a, idx) => idx > 0).map(a => a.name).join(', '),
-          album_name: albumData.name,
-          album_type: albumData.album_type,
-          release_date: albumData.release_date,
-          upc: albumData.external_ids && albumData.external_ids.upc || null,
-          label: albumData.label,
-          total_tracks: albumData.total_tracks,
-          album_image: albumData.images && albumData.images[0] && albumData.images[0].url || null,
-          spotify_uri: t.uri,
-        });
-      }
-    }
-
-    // Deduplicate by ISRC
-    const seen = new Set();
-    const unique = [];
-    for (const t of allTracks) {
-      const key = t.isrc || t.song_title;
-      if (!seen.has(key)) { seen.add(key); unique.push(t); }
-    }
-
-    const data = {
-      artist: {
-        name: artist.name,
-        spotify_id: artistId,
-        followers: artist.followers && artist.followers.total,
-        genres: artist.genres,
-        image: artist.images && artist.images[0] && artist.images[0].url,
-      },
-      albums: albums.length,
-      tracks: unique,
-    };
+    const resp = await fetch('/api/backlog/fetch-spotify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ url: spotifyUrl })
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Fetch failed'); status.textContent = data.error || 'Error'; btn.disabled = false; return; }
 
     BL_ARTIST = data.artist;
     BL_TRACKS = data.tracks;

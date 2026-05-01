@@ -5991,23 +5991,7 @@ app.post('/api/slack/interactions',
 
 // Spotify anonymous access token (public web player token, no credentials needed)
 async function getSpotifyToken() {
-  // Strategy 1: Scrape the embed page for the anonymous token Spotify injects into SSR HTML
-  console.log('[BACKLOG] Getting Spotify token via embed page...');
-  try {
-    const embedResp = await fetch('https://open.spotify.com/embed/artist/1YONuiYyTSZiWtE5NJDUsp', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-    });
-    if (embedResp.ok) {
-      const html = await embedResp.text();
-      const tokenMatch = html.match(/"accessToken":"([^"]+)"/);
-      if (tokenMatch) { console.log('[BACKLOG] Got embed token'); return tokenMatch[1]; }
-      console.error('[BACKLOG] Embed page loaded but no accessToken found');
-    } else {
-      console.error('[BACKLOG] Embed page failed:', embedResp.status);
-    }
-  } catch (e) { console.error('[BACKLOG] Embed token error:', e.message); }
-
-  // Strategy 2: Client credentials (requires Premium on app owner -- may not work)
+  // Strategy 1: Client credentials (requires Premium on app owner)
   const clientId = (process.env.SPOTIFY_CLIENT_ID || '').trim();
   const clientSecret = (process.env.SPOTIFY_CLIENT_SECRET || '').trim();
   if (clientId && clientSecret) {
@@ -6023,6 +6007,20 @@ async function getSpotifyToken() {
     if (resp.ok) { const data = await resp.json(); console.log('[BACKLOG] Got client credentials token'); return data.access_token; }
     console.error('[BACKLOG] Client credentials failed:', resp.status);
   }
+
+  // Strategy 2: Scrape embed page for anonymous token (fallback)
+  console.log('[BACKLOG] Trying embed page token...');
+  try {
+    const embedResp = await fetch('https://open.spotify.com/embed/artist/1YONuiYyTSZiWtE5NJDUsp', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+    });
+    if (embedResp.ok) {
+      const html = await embedResp.text();
+      const tokenMatch = html.match(/"accessToken":"([^"]+)"/);
+      if (tokenMatch) { console.log('[BACKLOG] Got embed token'); return tokenMatch[1]; }
+    }
+  } catch (e) { console.error('[BACKLOG] Embed token error:', e.message); }
+
   console.error('[BACKLOG] All token methods failed');
   return null;
 }
