@@ -6109,15 +6109,25 @@ async function fetchSpotifyArtist(artistId, token) {
 // Scrape Spotify artist page for discography data (no API auth needed)
 async function scrapeSpotifyArtistPage(artistId) {
   const url = `https://open.spotify.com/artist/${artistId}`;
+  console.log('[BACKLOG] Scraping:', url);
   const resp = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+    }
   });
+  console.log('[BACKLOG] Scrape response:', resp.status, resp.statusText);
   if (!resp.ok) return null;
   const html = await resp.text();
+  console.log('[BACKLOG] Page HTML length:', html.length, 'has __NEXT_DATA__:', html.includes('__NEXT_DATA__'));
 
   // Extract __NEXT_DATA__ JSON
   const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.+?)<\/script>/);
-  if (!match) return null;
+  if (!match) {
+    console.error('[BACKLOG] No __NEXT_DATA__ found in page');
+    return null;
+  }
 
   try {
     const nextData = JSON.parse(match[1]);
@@ -6204,7 +6214,24 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
     // Fallback: Scrape the artist page directly
     console.log('[BACKLOG] Web API unavailable, scraping artist page...');
     const pageData = await scrapeSpotifyArtistPage(artistId);
-    if (!pageData) return res.status(500).json({ error: 'Could not load Spotify artist page. Try again.' });
+    if (!pageData) {
+      // Last resort: use oEmbed for basic info + return empty tracks for manual entry
+      console.log('[BACKLOG] Scraping failed too, trying oEmbed...');
+      try {
+        const oembedResp = await fetch(`https://open.spotify.com/oembed?url=https://open.spotify.com/artist/${artistId}`);
+        if (oembedResp.ok) {
+          const oembed = await oembedResp.json();
+          return res.json({
+            artist: { name: oembed.title || 'Unknown', spotify_id: artistId, followers: null, genres: [], image: oembed.thumbnail_url || null },
+            albums: 0,
+            tracks: [],
+            source: 'spotify_oembed',
+            note: 'Spotify API and page scraping unavailable. Artist found via oEmbed but tracks could not be loaded. Try again in a few minutes (rate limit may be active).'
+          });
+        }
+      } catch (e) { /* fall through */ }
+      return res.status(500).json({ error: 'Could not load Spotify data. Spotify may be rate-limiting this server. Wait a few minutes and try again.' });
+    }
 
     // Extract data from the deeply nested __NEXT_DATA__ structure
     const allData = JSON.stringify(pageData);
