@@ -6210,7 +6210,7 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
     const allData = JSON.stringify(pageData);
 
     // Extract artist name
-    const nameMatch = allData.match(/"name":"([^"]+)".*?"uri":"spotify:artist:' + artistId + '"/') ||
+    const nameMatch = allData.match(new RegExp('"name":"([^"]+)".*?"uri":"spotify:artist:' + artistId + '"')) ||
                        allData.match(/"profile":\{[^}]*"name":"([^"]+)"/);
     const artistName = nameMatch ? nameMatch[1] : 'Unknown Artist';
 
