@@ -11,6 +11,17 @@ const { Resend } = require('resend');
 // ExcelJS is lazy-loaded inside the soundexchange-xlsx endpoint to avoid
 // adding ~76MB RSS at startup (would OOM small Railway containers).
 
+function autoFitColumns(ws, minWidth = 12) {
+  ws.columns.forEach(col => {
+    let maxLen = minWidth;
+    col.eachCell({ includeEmpty: false }, cell => {
+      const val = cell.value ? String(cell.value).split('\n')[0] : '';
+      if (val.length > maxLen) maxLen = val.length;
+    });
+    col.width = Math.min(maxLen + 2, 40);
+  });
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -823,6 +834,47 @@ function initDb() {
   `);
   db.run('CREATE INDEX IF NOT EXISTS idx_regqueue_status ON registration_queue(status)');
   db.run('CREATE INDEX IF NOT EXISTS idx_regqueue_user ON registration_queue(user_id)');
+
+  // Backlog catalog — persists fetched + enriched release data
+  dbHelpers.exec(`
+    CREATE TABLE IF NOT EXISTS backlog_catalog (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      artist_name TEXT NOT NULL,
+      spotify_id TEXT,
+      primary_artist TEXT,
+      song_title TEXT NOT NULL,
+      album_name TEXT,
+      album_type TEXT,
+      release_date TEXT,
+      isrc TEXT,
+      upc TEXT,
+      label TEXT,
+      featured_artists TEXT,
+      duration_ms INTEGER,
+      track_number INTEGER,
+      spotify_uri TEXT,
+      album_image TEXT,
+      genre TEXT,
+      writer_last_name TEXT,
+      writer_first_name TEXT,
+      writer_ipi TEXT,
+      writer_role_code TEXT DEFAULT 'CA',
+      publisher_name TEXT,
+      publisher_ipi TEXT,
+      iswc TEXT,
+      collection_share REAL DEFAULT 100,
+      p_line TEXT,
+      recording_version TEXT,
+      catalog_number TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      fetched_at TEXT DEFAULT (datetime('now')),
+      saved_at TEXT,
+      UNIQUE(artist_name, isrc),
+      UNIQUE(artist_name, song_title, album_name)
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_backlog_artist ON backlog_catalog(artist_name)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_catalog(status)');
 
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
@@ -5678,15 +5730,7 @@ app.get('/api/admin/registration/soundexchange-xlsx', requireAdmin, async (req, 
       ];
     }
 
-    // Auto-width columns
-    ws.columns.forEach(col => {
-      let maxLen = 12;
-      col.eachCell({ includeEmpty: false }, cell => {
-        const len = cell.value ? String(cell.value).length : 0;
-        if (len > maxLen) maxLen = len;
-      });
-      col.width = Math.min(maxLen + 2, 40);
-    });
+    autoFitColumns(ws);
 
     logOperation(req, 'admin.soundexchange_xlsx_exported', null, null, { count: allSheets.length });
 
@@ -6086,21 +6130,31 @@ async function fetchSpotifyAlbumTracks(albumId, token) {
   const data = await resp.json();
   const simplifiedTracks = data.tracks && data.tracks.items || [];
 
-  return simplifiedTracks.map(t => ({
-    song_title: t.name,
-    isrc: null, // /v1/tracks is 403 in dev mode — ISRCs must come from distributor
-    duration_ms: t.duration_ms,
-    track_number: t.track_number,
-    featured_artists: t.artists.filter((a, i) => i > 0).map(a => a.name).join(', '),
-    album_name: data.name,
-    album_type: data.album_type,
-    release_date: data.release_date,
-    upc: data.external_ids && data.external_ids.upc || null,
-    label: data.label,
-    total_tracks: data.total_tracks,
-    album_image: data.images && data.images[0] && data.images[0].url || null,
-    spotify_uri: t.uri,
-  }));
+  // Album artists are the "main" artists on the album level
+  const albumArtistIds = new Set((data.artists || []).map(a => a.id));
+
+  return simplifiedTracks.map(t => {
+    // Primary artists = all artists listed on the track (the credited performers)
+    const allArtists = t.artists.map(a => a.name);
+    // Featured = artists on the track who aren't on the album (true features)
+    const featured = t.artists.filter(a => !albumArtistIds.has(a.id)).map(a => a.name);
+    return {
+      song_title: t.name,
+      isrc: null, // /v1/tracks is 403 in dev mode — ISRCs must come from distributor
+      duration_ms: t.duration_ms,
+      track_number: t.track_number,
+      primary_artist: allArtists.join(', '),
+      featured_artists: featured.join(', '),
+      album_name: data.name,
+      album_type: data.album_type,
+      release_date: data.release_date,
+      upc: data.external_ids && data.external_ids.upc || null,
+      label: data.label,
+      total_tracks: data.total_tracks,
+      album_image: data.images && data.images[0] && data.images[0].url || null,
+      spotify_uri: t.uri,
+    };
+  });
 }
 
 // Fetch artist info from Spotify
@@ -6525,32 +6579,305 @@ app.post('/api/backlog/search-ascap', requireAdminOrPartner, async (req, res) =>
   }
 });
 
-// Backlog: Export MLC CSV
-app.post('/api/backlog/export/mlc', requireAdminOrPartner, (req, res) => {
+// Backlog: Export MLC Bulk Work XLSX (matches MLCBulkWork_V1.2 template)
+app.post('/api/backlog/export/mlc', requireAdminOrPartner, async (req, res) => {
   const { tracks, artist_name } = req.body || {};
   if (!tracks || !tracks.length) return res.status(400).json({ error: 'No tracks' });
-  const esc = s => { const str = String(s || ''); return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str; };
-  const lines = ['Song Title,Artist/Performer,ISRC,ISWC,Writers,Publishers,Release Date,Album,UPC'];
-  for (const t of tracks) {
-    lines.push([esc(t.song_title), esc(artist_name), esc(t.isrc), esc(t.iswc || ''), esc(t.writer), esc(t.publisher), esc(t.release_date), esc(t.album_name), esc(t.upc)].join(','));
+  try {
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Format');
+
+    // MLC template headers (21 columns, matching MLCBulkWork_V1.2)
+    const headers = [
+      'PRIMARY TITLE *', 'MLC SONG CODE', 'MEMBERS SONG ID', 'ISWC          ',
+      'AKA TITLE †', 'AKA TITLE TYPE CODE †',
+      'WRITER LAST NAME *', 'WRITER FIRST NAME ', 'WRITER IPI NUMBER', 'WRITER ROLE CODE *',
+      'MLC PUBLISHER NUMBER', 'PUBLISHER NAME *', 'PUBLISHER IPI NUMBER *',
+      'ADMINISTRATOR MLC PUBLISHER NUMBER', 'ADMINISTRATOR NAME †', 'ADMINISTRATOR IPI NUMBER †',
+      'COLLECTION SHARE *', 'RECORDING TITLE †', 'RECORDING ARTIST NAME †',
+      'RECORDING ISRC', 'RECORDING LABEL',
+    ];
+
+    const headerRow = ws.getRow(1);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
+      cell.font = { bold: true, size: 10 };
+    });
+
+    // Data rows — supports both raw fetch fields and enriched saved fields
+    for (let i = 0; i < tracks.length; i++) {
+      const t = tracks[i];
+      // Use enriched fields if available, fall back to parsing writer string
+      let wLast = t.writer_last_name || '';
+      let wFirst = t.writer_first_name || '';
+      if (!wLast && t.writer) {
+        const parts = t.writer.split(/\s+/);
+        wLast = parts.length > 1 ? parts.slice(-1)[0] : (parts[0] || '');
+        wFirst = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+      }
+
+      const row = ws.getRow(2 + i);
+      row.values = [
+        t.song_title || '',                           // PRIMARY TITLE
+        '',                                            // MLC SONG CODE
+        '',                                            // MEMBERS SONG ID
+        t.iswc || '',                                  // ISWC
+        '',                                            // AKA TITLE
+        '',                                            // AKA TITLE TYPE CODE
+        wLast,                                         // WRITER LAST NAME
+        wFirst,                                        // WRITER FIRST NAME
+        t.writer_ipi || t.ipi || '',                   // WRITER IPI NUMBER
+        t.writer_role_code || 'CA',                    // WRITER ROLE CODE
+        '',                                            // MLC PUBLISHER NUMBER
+        t.publisher_name || t.publisher || '',          // PUBLISHER NAME
+        t.publisher_ipi || '',                         // PUBLISHER IPI NUMBER
+        '',                                            // ADMINISTRATOR MLC PUBLISHER NUMBER
+        '',                                            // ADMINISTRATOR NAME
+        '',                                            // ADMINISTRATOR IPI NUMBER
+        t.collection_share || 100,                     // COLLECTION SHARE
+        t.song_title || '',                            // RECORDING TITLE
+        t.primary_artist || artist_name || '',          // RECORDING ARTIST NAME
+        t.isrc || '',                                  // RECORDING ISRC
+        t.label || '',                                 // RECORDING LABEL
+      ];
+    }
+
+    autoFitColumns(ws);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${artist_name || 'backlog'}_MLC.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('MLC XLSX export error:', e);
+    res.status(500).json({ error: 'Failed to generate MLC XLSX: ' + e.message });
   }
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${artist_name || 'backlog'}_MLC.csv"`);
-  res.send(lines.join('\n'));
 });
 
-// Backlog: Export SoundExchange CSV
-app.post('/api/backlog/export/soundexchange', requireAdminOrPartner, (req, res) => {
+// Backlog: Export SoundExchange ISRC Ingest Form XLSX (matches official template)
+app.post('/api/backlog/export/soundexchange', requireAdminOrPartner, async (req, res) => {
   const { tracks, artist_name } = req.body || {};
   if (!tracks || !tracks.length) return res.status(400).json({ error: 'No tracks' });
-  const esc = s => { const str = String(s || ''); return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str; };
-  const lines = ['Song Title,Featured Artist,ISRC,Album Title,Release Date,Label,UPC'];
-  for (const t of tracks) {
-    lines.push([esc(t.song_title), esc(t.featured_artists || artist_name), esc(t.isrc), esc(t.album_name), esc(t.release_date), esc(t.label), esc(t.upc)].join(','));
+  try {
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Form');
+
+    // Title rows matching official ISRC Ingest Form
+    ws.getCell('B1').value = 'ISRC Ingest File';
+    ws.getCell('B2').value = new Date().toLocaleDateString('en-US');
+    ws.getCell('D1').value = 'Required Fields Key';
+    ws.getCell('D2').value = '(*1) - All Sound Recording Copyright Owners';
+    ws.getCell('D3').value = 'Required Fields Key';
+    ws.getCell('D4').value = '(2) - Sound Recording Copyright Owners with International Mandates';
+
+    // Section headers (row 9 in template)
+    ws.getCell('A9').value = 'Minimum Recording Information';
+    ws.getCell('A9').font = { bold: true };
+    ws.getCell('D9').value = 'Sound Recording Copyright Owner Claim';
+    ws.getCell('D9').font = { bold: true };
+    ws.getCell('I9').value = 'Additional Recording Information';
+    ws.getCell('I9').font = { bold: true };
+    ws.getCell('V9').value = 'Release Information';
+    ws.getCell('V9').font = { bold: true };
+    // Merges matching template
+    ws.mergeCells('A9:C9');
+    ws.mergeCells('D9:H9');
+    ws.mergeCells('I9:U9');
+    ws.mergeCells('V9:AC9');
+
+    // Column headers (row 10, matching template row 9 with exact labels)
+    const headers = [
+      'Artist\n(*1)', 'Recording Title\n(*1)', 'ISRC\n(*1)',
+      'What is the basis of your claim?\n(Copyright Owner or Collections Designee)\n(*1)',
+      'Percentage Claimed\n(*1)',
+      'Collection Rights Begin Date\n(MM/DD/YYYY)\n(*1)',
+      'Collection Rights End Date\n(MM/DD/YYYY)\n(*1)',
+      'Non-US Territories of Collection Rights\n (America is entered by default)\n(2)',
+      'Recording Version, if applicable\n (Ex., "live", "dance remix", etc)',
+      'Duration (HH:MM:SS)\n(2)', 'Genre', 'Recording Date\n(MM/DD/YYYY)',
+      'Country of Recording/Fixation\n(2)', 'Country of Mastering',
+      'Copyright Owner Country of Nationality\n(2)',
+      'Date of First Release\n(MM/DD/YYYY)',
+      'Country/Countries of First Release/Publication\n(2)',
+      '(P) Line', 'ISWC', 'Composer(s)\n(2)', 'Publisher(s)',
+      'Release Artist\n(*1)', 'Release Title (Album Title)\n(*1)',
+      'Release Version', 'UPC\n(*1)', 'Catalog #',
+      'Release Date\n(MM/DD/YYYY)', 'Country of Release\n(2)', 'Release Label\n(*1)',
+    ];
+
+    const headerRow = ws.getRow(10);
+    headerRow.alignment = { wrapText: true, vertical: 'top' };
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
+      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2D4A7A' } };
+      cell.alignment = { wrapText: true, vertical: 'top' };
+    });
+
+    // Data rows starting at row 11 — supports enriched saved fields
+    for (let i = 0; i < tracks.length; i++) {
+      const t = tracks[i];
+      // Build composer string from enriched fields or fall back
+      const composer = (t.writer_first_name && t.writer_last_name)
+        ? `${t.writer_first_name} ${t.writer_last_name}`.trim()
+        : (t.writer || '');
+      const durationHMS = t.duration_ms ? '00:' + String(Math.floor(t.duration_ms/60000)).padStart(2,'0') + ':' + String(Math.floor((t.duration_ms%60000)/1000)).padStart(2,'0') : (t.duration || '');
+      const row = ws.getRow(11 + i);
+      row.values = [
+        t.primary_artist || t.featured_artists || artist_name || '',  // Artist
+        t.song_title || '',                           // Recording Title
+        t.isrc || '',                                 // ISRC
+        'Copyright Owner',                            // Basis of claim
+        String(t.collection_share || 100),            // Percentage Claimed
+        t.release_date || '',                         // Rights Begin Date
+        '',                                           // Rights End Date
+        '',                                           // Non-US Territories
+        t.recording_version || t.version || '',        // Recording Version
+        durationHMS,                                   // Duration
+        t.genre || '',                                // Genre
+        t.recording_date || t.release_date || '',     // Recording Date
+        'US',                                         // Country of Recording
+        'US',                                         // Country of Mastering
+        'US',                                         // Copyright Owner Nationality
+        t.release_date || '',                         // Date of First Release
+        'US',                                         // Countries of First Release
+        t.p_line || '',                               // (P) Line
+        t.iswc || '',                                 // ISWC
+        composer,                                     // Composer(s)
+        t.publisher_name || t.publisher || '',         // Publisher(s)
+        artist_name || '',                            // Release Artist
+        t.album_name || '',                           // Release Title (Album)
+        '',                                           // Release Version
+        t.upc || '',                                  // UPC
+        t.catalog_number || '',                       // Catalog #
+        t.release_date || '',                         // Release Date
+        'US',                                         // Country of Release
+        t.label || '',                                // Release Label
+      ];
+    }
+
+    autoFitColumns(ws, 14);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${artist_name || 'backlog'}_SoundExchange.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('SoundExchange XLSX export error:', e);
+    res.status(500).json({ error: 'Failed to generate SoundExchange XLSX: ' + e.message });
   }
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${artist_name || 'backlog'}_SoundExchange.csv"`);
-  res.send(lines.join('\n'));
+});
+
+// Backlog: Save tracks to catalog DB
+app.post('/api/backlog/save', requireAdminOrPartner, (req, res) => {
+  const { tracks, artist_name, spotify_id } = req.body || {};
+  if (!tracks || !tracks.length) return res.status(400).json({ error: 'No tracks' });
+
+  const sql = `INSERT OR REPLACE INTO backlog_catalog (
+    artist_name, spotify_id, primary_artist, song_title, album_name, album_type, release_date,
+    isrc, upc, label, featured_artists, duration_ms, track_number, spotify_uri,
+    album_image, genre, writer_last_name, writer_first_name, writer_ipi,
+    writer_role_code, publisher_name, publisher_ipi, iswc, collection_share,
+    p_line, recording_version, catalog_number, status, saved_at
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`;
+
+  let saved = 0;
+  db.run("BEGIN");
+  try {
+    for (const t of tracks) {
+      const writerParts = (t.writer || '').split(/\s+/);
+      const wLast = writerParts.length > 1 ? writerParts.slice(-1)[0] : (writerParts[0] || '');
+      const wFirst = writerParts.length > 1 ? writerParts.slice(0, -1).join(' ') : '';
+      try {
+        db.run(sql, [
+          artist_name, spotify_id || null, t.primary_artist || artist_name, t.song_title, t.album_name || null,
+          t.album_type || null, t.release_date || null, t.isrc || null, t.upc || null,
+          t.label || null, t.featured_artists || null, t.duration_ms || null,
+          t.track_number || null, t.spotify_uri || null, t.album_image || null,
+          t.genre || null, t.writer_last_name || wLast || null, t.writer_first_name || wFirst || null,
+          t.writer_ipi || t.ipi || null, t.writer_role_code || 'CA',
+          t.publisher_name || t.publisher || null, t.publisher_ipi || null,
+          t.iswc || null, t.collection_share || 100, t.p_line || null,
+          t.recording_version || null, t.catalog_number || null,
+          t.status || 'new'
+        ]);
+        saved++;
+      } catch (e) { /* duplicate — skip */ }
+    }
+    db.run("COMMIT");
+  } catch (e) { db.run("ROLLBACK"); throw e; }
+  saveDb();
+
+  // Auto-age: move tracks older than 3 days from 'new' to 'catalog'
+  db.run(`UPDATE backlog_catalog SET status = 'catalog' WHERE status = 'new' AND fetched_at < datetime('now', '-3 days')`);
+
+  res.json({ saved, total: tracks.length });
+});
+
+// Backlog: Load saved catalog for an artist
+app.get('/api/backlog/catalog', requireAdminOrPartner, (req, res) => {
+  const artist = req.query.artist;
+  if (!artist) return res.status(400).json({ error: 'artist query param required' });
+
+  // Auto-age before returning
+  db.run(`UPDATE backlog_catalog SET status = 'catalog' WHERE status = 'new' AND fetched_at < datetime('now', '-3 days')`);
+
+  const rows = dbHelpers.prepare(`
+    SELECT * FROM backlog_catalog WHERE artist_name = ? ORDER BY status ASC, release_date DESC
+  `).all(artist);
+  res.json({ tracks: rows });
+});
+
+// Backlog: Update a single track's enrichment fields
+app.patch('/api/backlog/catalog/:id', requireAdminOrPartner, (req, res) => {
+  const { id } = req.params;
+  const fields = req.body;
+  const allowed = [
+    'primary_artist', 'writer_last_name', 'writer_first_name', 'writer_ipi', 'writer_role_code',
+    'publisher_name', 'publisher_ipi', 'iswc', 'collection_share', 'p_line',
+    'recording_version', 'catalog_number', 'genre', 'label', 'isrc', 'upc',
+    'featured_artists'
+  ];
+  const sets = [];
+  const vals = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (allowed.includes(k)) { sets.push(`${k} = ?`); vals.push(v); }
+  }
+  if (!sets.length) return res.status(400).json({ error: 'No valid fields' });
+  vals.push(id);
+  db.run(`UPDATE backlog_catalog SET ${sets.join(', ')} WHERE id = ?`, vals);
+  saveDb();
+  res.json({ ok: true });
+});
+
+// Backlog: Bulk update field across multiple tracks
+app.post('/api/backlog/catalog/bulk-update', requireAdminOrPartner, (req, res) => {
+  const { ids, field, value } = req.body || {};
+  const allowed = [
+    'writer_last_name', 'writer_first_name', 'writer_ipi', 'writer_role_code',
+    'publisher_name', 'publisher_ipi', 'collection_share', 'p_line', 'genre', 'label'
+  ];
+  if (!ids?.length || !allowed.includes(field)) return res.status(400).json({ error: 'Invalid' });
+  const placeholders = ids.map(() => '?').join(',');
+  db.run(`UPDATE backlog_catalog SET ${field} = ? WHERE id IN (${placeholders})`, [value, ...ids]);
+  saveDb();
+  res.json({ updated: ids.length });
+});
+
+// Backlog: Get list of saved artists
+app.get('/api/backlog/artists', requireAdminOrPartner, (req, res) => {
+  const rows = dbHelpers.prepare(`
+    SELECT artist_name, spotify_id, COUNT(*) as track_count,
+      SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) as new_count,
+      SUM(CASE WHEN status = 'catalog' THEN 1 ELSE 0 END) as catalog_count,
+      MAX(fetched_at) as last_fetched
+    FROM backlog_catalog GROUP BY artist_name ORDER BY last_fetched DESC
+  `).all();
+  res.json({ artists: rows });
 });
 
 // Backlog: AI-powered verification — cross-reference all sources

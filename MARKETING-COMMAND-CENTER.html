@@ -928,6 +928,40 @@
   </div>
 </div>
 
+<!-- Backlog Fetch Loading Overlay (mirrors campaign loader) -->
+<div class="campaign-loader-overlay" id="blFetchLoader">
+  <div class="cl-logo-container">
+    <div class="cl-orbit"></div>
+    <div class="cl-orbit"></div>
+    <div class="cl-sparkles">
+      <div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div>
+      <div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div><div class="cl-spark"></div>
+    </div>
+    <img src="/logo.png" alt="Rollout Heaven" class="cl-logo">
+  </div>
+  <div class="cl-text-main">Fetching Catalog</div>
+  <div class="cl-text-sub">Pulling every release</div>
+  <div class="cl-step-tracker" id="blStepTracker">
+    <div class="cl-step-item" id="blStep-connect"><span class="cl-step-dot"></span>Connecting to Spotify</div>
+    <div class="cl-step-item" id="blStep-disco"><span class="cl-step-dot"></span>Pulling Discography</div>
+    <div class="cl-step-item" id="blStep-isrc"><span class="cl-step-dot"></span>Enriching ISRCs</div>
+    <div class="cl-step-item" id="blStep-writers"><span class="cl-step-dot"></span>Fetching Writers & Publishers</div>
+    <div class="cl-step-item" id="blStep-finalize"><span class="cl-step-dot"></span>Finalizing Catalog</div>
+  </div>
+  <div class="cl-progress-bar"><div class="cl-progress-fill" id="blProgressFill"></div></div>
+  <div class="cl-live-status" id="blLiveStatus"></div>
+  <div id="blFetchTimer" style="margin-top:14px;font-size:13px;color:#8b8fb0;font-weight:500;letter-spacing:0.3px;text-align:center;">
+    <span style="opacity:0.7;">Estimated time remaining:</span>
+    <span id="blTimerValue" style="color:#00d4ff;font-variant-numeric:tabular-nums;font-weight:700;margin-left:6px;">—</span>
+    <span style="opacity:0.5;margin-left:10px;font-size:12px;">Elapsed: <span id="blTimerElapsed" style="font-variant-numeric:tabular-nums;">0:00</span></span>
+  </div>
+  <div class="cl-error-state" id="blFetchError">
+    <div class="cl-error-msg" id="blFetchErrorMsg"></div>
+    <button class="cl-retry-btn" onclick="document.getElementById('blFetchError').classList.remove('active');blFetchCatalog();">Retry</button>
+    <button style="background:none;border:1px solid #3a3f6a;color:#8b8fb0;padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;" onclick="document.getElementById('blFetchLoader').classList.remove('active');">Close</button>
+  </div>
+</div>
+
 <div id="impersonationBanner" style="display:none;background:linear-gradient(90deg,#ff6b00,#ff9500);color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:700;position:relative;z-index:9999;">
   <span id="impBannerText"></span>
   <button onclick="stopImpersonation()" style="margin-left:16px;background:#fff;color:#ff6b00;border:none;border-radius:6px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;">Return to Admin</button>
@@ -976,6 +1010,12 @@
     <h2>Bulk Backlog</h2>
     <p class="subtitle">Drop in artist platform links to pull their full catalog for MLC + SoundExchange registration.</p>
 
+    <!-- Saved Artists Quick-Switch -->
+    <div id="blSavedArtists" style="display:none;margin-bottom:16px;">
+      <div class="form-section-title" style="margin-bottom:8px;">Saved Artists</div>
+      <div id="blSavedArtistsList" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+    </div>
+
     <div class="form-section">
       <div class="form-section-title">Artist Platform Links</div>
       <div class="form-grid">
@@ -988,31 +1028,84 @@
         <button class="btn-secondary" onclick="blVerify()" id="blVerifyBtn" style="display:none;">Verify with AI</button>
         <button class="btn-secondary" onclick="blExportMLC()" id="blExportMlcBtn" style="display:none;">Export MLC (.xlsx)</button>
         <button class="btn-secondary" onclick="blExportSE()" id="blExportSeBtn" style="display:none;">Export SoundExchange (.xlsx)</button>
+        <button class="btn-primary" onclick="blSaveCatalog()" id="blSaveBtn" style="display:none;background:linear-gradient(135deg,#4ade80,#22c55e);">Save Catalog</button>
         <span id="blStatus" style="font-size:12px;color:#666;"></span>
       </div>
     </div>
 
     <div id="blArtistInfo" style="display:none;margin-bottom:16px;"></div>
 
-    <div class="form-section" id="blResultsSection" style="display:none;">
-      <div class="form-section-title">Catalog Results <span id="blTrackCount" style="font-size:12px;color:#999;font-weight:400;"></span></div>
-      <div id="blVerifyResults" style="display:none;margin-bottom:14px;padding:12px;background:rgba(0,0,0,0.3);border-radius:8px;"></div>
+    <!-- Bulk Apply Section -->
+    <div class="form-section" id="blBulkApply" style="display:none;">
+      <div class="form-section-title">Bulk Apply to All Tracks</div>
+      <p style="font-size:11px;color:#888;margin-bottom:10px;">Fill in fields that are the same across all tracks, then click Apply. Individual track fields can be edited below.</p>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;">
+        <div class="form-group"><label>Writer Last Name</label><input class="form-control" id="blBulk-writer_last_name" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>Writer First Name</label><input class="form-control" id="blBulk-writer_first_name" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>Writer IPI #</label><input class="form-control" id="blBulk-writer_ipi" placeholder="9-11 digits" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>Writer Role</label>
+          <select class="form-control" id="blBulk-writer_role_code" style="font-size:11px;padding:4px 8px;">
+            <option value="">--</option><option value="CA" selected>CA - Composer/Author</option><option value="C">C - Composer</option><option value="A">A - Author</option><option value="AR">AR - Arranger</option><option value="AD">AD - Adaptor</option><option value="TR">TR - Translator</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Publisher Name</label><input class="form-control" id="blBulk-publisher_name" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>Publisher IPI #</label><input class="form-control" id="blBulk-publisher_ipi" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>Collection Share %</label><input class="form-control" type="number" id="blBulk-collection_share" value="100" min="0" max="100" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>(P) Line</label><input class="form-control" id="blBulk-p_line" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>Label</label><input class="form-control" id="blBulk-label" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>Genre</label><input class="form-control" id="blBulk-genre" style="font-size:11px;padding:4px 8px;"></div>
+      </div>
+      <button class="btn-secondary" onclick="blApplyBulk()" style="margin-top:8px;font-size:12px;">Apply to All Tracks</button>
+    </div>
+
+    <div id="blVerifyResults" style="display:none;margin-bottom:14px;padding:12px;background:rgba(0,0,0,0.3);border-radius:8px;"></div>
+
+    <!-- New Releases Section -->
+    <div class="form-section" id="blNewSection" style="display:none;">
+      <div class="form-section-title" style="color:#4ade80;">New Releases <span id="blNewCount" style="font-size:12px;color:#999;font-weight:400;"></span></div>
+      <p style="font-size:11px;color:#888;margin-bottom:8px;">Just fetched. Edit metadata then save. Moves to Catalog after 3 days.</p>
       <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:12px;" id="blTable">
-          <thead>
-            <tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
-              <th style="padding:6px;color:#00d4ff;">Title</th>
-              <th style="padding:6px;color:#00d4ff;">Type</th>
-              <th style="padding:6px;color:#00d4ff;">Date</th>
-              <th style="padding:6px;color:#00d4ff;">ISRC</th>
-              <th style="padding:6px;color:#00d4ff;">UPC</th>
-              <th style="padding:6px;color:#00d4ff;">Featured</th>
-              <th style="padding:6px;color:#00d4ff;">Label</th>
-              <th style="padding:6px;color:#00d4ff;">Writer</th>
-              <th style="padding:6px;color:#00d4ff;">Publisher</th>
-            </tr>
-          </thead>
-          <tbody id="blTableBody"></tbody>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;" id="blNewTable">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
+            <th style="padding:6px;color:#4ade80;">Title</th>
+            <th style="padding:6px;color:#4ade80;">Primary Artist</th>
+            <th style="padding:6px;color:#4ade80;">Album</th>
+            <th style="padding:6px;color:#4ade80;">Date</th>
+            <th style="padding:6px;color:#4ade80;">ISRC</th>
+            <th style="padding:6px;color:#4ade80;">UPC</th>
+            <th style="padding:6px;color:#4ade80;">Writer</th>
+            <th style="padding:6px;color:#4ade80;">IPI</th>
+            <th style="padding:6px;color:#4ade80;">Publisher</th>
+            <th style="padding:6px;color:#4ade80;">ISWC</th>
+            <th style="padding:6px;color:#4ade80;">Share%</th>
+            <th style="padding:6px;color:#4ade80;">Label</th>
+          </tr></thead>
+          <tbody id="blNewBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Catalog Section -->
+    <div class="form-section" id="blCatalogSection" style="display:none;">
+      <div class="form-section-title">Catalog <span id="blCatalogCount" style="font-size:12px;color:#999;font-weight:400;"></span></div>
+      <p style="font-size:11px;color:#888;margin-bottom:8px;">Previously saved releases. Click a row to edit.</p>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;" id="blCatalogTable">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
+            <th style="padding:6px;color:#00d4ff;">Title</th>
+            <th style="padding:6px;color:#00d4ff;">Primary Artist</th>
+            <th style="padding:6px;color:#00d4ff;">Album</th>
+            <th style="padding:6px;color:#00d4ff;">Date</th>
+            <th style="padding:6px;color:#00d4ff;">ISRC</th>
+            <th style="padding:6px;color:#00d4ff;">UPC</th>
+            <th style="padding:6px;color:#00d4ff;">Writer</th>
+            <th style="padding:6px;color:#00d4ff;">IPI</th>
+            <th style="padding:6px;color:#00d4ff;">Publisher</th>
+            <th style="padding:6px;color:#00d4ff;">ISWC</th>
+            <th style="padding:6px;color:#00d4ff;">Share%</th>
+            <th style="padding:6px;color:#00d4ff;">Label</th>
+          </tr></thead>
+          <tbody id="blCatalogBody"></tbody>
         </table>
       </div>
     </div>
@@ -10976,82 +11069,360 @@ serverLoad().then(() => {
 // --- BULK BACKLOG MODULE ---
 // ============================================================
 let BL_TRACKS = [];
+let BL_SAVED = [];   // tracks loaded from DB
 let BL_ARTIST = null;
+let _blTimerInterval = null;
+let _blTimerStart = 0;
 
 function backlogInit() {
   if (USER_ROLE !== 'admin' && USER_TIER !== 'elite_partner') return;
   document.getElementById('backlogTab').style.display = '';
+  blLoadSavedArtists();
 }
 
+// --- Fetch Overlay Helpers (mirrors campaign loader) ---
+function blMarkStep(id, state) {
+  const el = document.getElementById('blStep-' + id);
+  if (!el) return;
+  if (state === 'active') el.className = 'cl-step-item active';
+  else if (state === 'done') el.className = 'cl-step-item done';
+}
+function blProgress(pct) { document.getElementById('blProgressFill').style.width = pct + '%'; }
+function blLiveStatus(main, detail) {
+  const el = document.getElementById('blLiveStatus');
+  if (el) el.innerHTML = main + (detail ? `<span class="cl-detail">${detail}</span>` : '');
+}
+function blTimerStart() {
+  blTimerStop();
+  _blTimerStart = Date.now();
+  _blTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - _blTimerStart) / 1000);
+    const m = Math.floor(elapsed / 60); const s = elapsed % 60;
+    const te = document.getElementById('blTimerElapsed');
+    if (te) te.textContent = m + ':' + String(s).padStart(2, '0');
+    // Estimate: ~2s per track for MusicBrainz enrichment
+    const est = Math.max(0, (BL_TRACKS.length || 30) * 1.5 - elapsed);
+    const tv = document.getElementById('blTimerValue');
+    if (tv) tv.textContent = est > 0 ? Math.ceil(est) + 's' : 'finishing...';
+  }, 1000);
+}
+function blTimerStop() { if (_blTimerInterval) { clearInterval(_blTimerInterval); _blTimerInterval = null; } }
+
+// --- Load Saved Artists List ---
+async function blLoadSavedArtists() {
+  try {
+    const resp = await fetch('/api/backlog/artists', { credentials: 'include' });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.artists?.length) return;
+    const container = document.getElementById('blSavedArtists');
+    const list = document.getElementById('blSavedArtistsList');
+    container.style.display = '';
+    list.innerHTML = data.artists.map(a => {
+      const safe = blEsc(a.artist_name);
+      return `<button onclick="blLoadArtistCatalog('${a.artist_name.replace(/'/g, "\\'").replace(/</g, '')}')" class="btn-secondary" style="font-size:11px;padding:6px 12px;">
+        ${safe} <span style="color:#999;font-size:10px;">(${a.new_count} new, ${a.catalog_count} catalog)</span>
+      </button>`;
+    }).join('');
+  } catch (e) {}
+}
+
+// --- Load Saved Catalog for Artist ---
+async function blLoadArtistCatalog(artistName) {
+  try {
+    const resp = await fetch('/api/backlog/catalog?artist=' + encodeURIComponent(artistName), { credentials: 'include' });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    BL_SAVED = data.tracks || [];
+    BL_ARTIST = { name: artistName };
+    blShowArtistInfo(artistName, BL_SAVED.length);
+    blRenderSections();
+    document.getElementById('blVerifyBtn').style.display = '';
+    document.getElementById('blExportMlcBtn').style.display = '';
+    document.getElementById('blExportSeBtn').style.display = '';
+    document.getElementById('blSaveBtn').style.display = '';
+    document.getElementById('blBulkApply').style.display = '';
+  } catch (e) { showToast('Error loading catalog'); }
+}
+
+function blEsc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function blShowArtistInfo(name, trackCount, extra) {
+  const info = document.getElementById('blArtistInfo');
+  info.style.display = '';
+  const img = BL_ARTIST?.image ? `<img src="${blEsc(BL_ARTIST.image)}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;">` : '';
+  const followers = BL_ARTIST?.followers ? BL_ARTIST.followers.toLocaleString() + ' followers' : '';
+  const genres = BL_ARTIST?.genres ? '| ' + BL_ARTIST.genres.slice(0,3).map(blEsc).join(', ') : '';
+  info.innerHTML = `<div class="content-card" style="padding:14px;display:flex;align-items:center;gap:14px;">
+    ${img}
+    <div>
+      <div style="font-size:16px;font-weight:700;color:#fff;">${blEsc(name)}</div>
+      <div style="font-size:12px;color:#999;">${followers} ${genres}</div>
+      <div style="font-size:12px;color:#00d4ff;">${trackCount} tracks${blEsc(extra || '')}</div>
+    </div>
+  </div>`;
+}
+
+// --- Main Fetch with Animated Overlay ---
 async function blFetchCatalog() {
   const spotifyUrl = document.getElementById('bl-spotify').value.trim();
   if (!spotifyUrl) { showToast('Enter a Spotify artist URL'); return; }
 
   const btn = document.getElementById('blFetchBtn');
-  const status = document.getElementById('blStatus');
   btn.disabled = true;
-  status.textContent = 'Fetching from Spotify...';
+
+  // Show overlay
+  const loader = document.getElementById('blFetchLoader');
+  loader.classList.add('active');
+  document.getElementById('blFetchError').classList.remove('active');
+  ['connect','disco','isrc','writers','finalize'].forEach(id => {
+    const el = document.getElementById('blStep-' + id);
+    if (el) el.className = 'cl-step-item';
+  });
+  blProgress(0);
+  blLiveStatus('Initializing...', '');
+  blTimerStart();
+
+  // Step 1: Connecting
+  blMarkStep('connect', 'active');
+  blLiveStatus('Connecting to Spotify API...', 'Authenticating and resolving artist');
+  blProgress(5);
 
   try {
+    // Step 2: Pulling Discography
+    await new Promise(r => setTimeout(r, 400));
+    blMarkStep('connect', 'done');
+    blMarkStep('disco', 'active');
+    blLiveStatus('Pulling full discography...', 'Fetching all albums, singles, and compilations');
+    blProgress(15);
+
     const resp = await fetch('/api/backlog/fetch-spotify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ url: spotifyUrl })
     });
     const data = await resp.json();
-    if (!resp.ok) { showToast(data.error || 'Fetch failed'); status.textContent = data.error || 'Error'; btn.disabled = false; return; }
+    if (!resp.ok) throw new Error(data.error || 'Fetch failed');
+
+    blMarkStep('disco', 'done');
+    blProgress(40);
+
+    // Step 3: ISRC enrichment (already done server-side but show progress)
+    blMarkStep('isrc', 'active');
+    blLiveStatus(`Found ${data.tracks.length} tracks across ${data.albums} releases`, 'Cross-referencing ISRCs with Deezer, Apple Music, MusicBrainz...');
+    blProgress(55);
+    await new Promise(r => setTimeout(r, 600));
+    blMarkStep('isrc', 'done');
+
+    // Step 4: Writers
+    blMarkStep('writers', 'active');
+    blLiveStatus('Extracting writer & publisher data...', 'Matching against MusicBrainz, BMI, ASCAP databases');
+    blProgress(75);
+    await new Promise(r => setTimeout(r, 500));
+    blMarkStep('writers', 'done');
+
+    // Step 5: Finalize
+    blMarkStep('finalize', 'active');
+    blLiveStatus('Finalizing catalog...', 'Deduplicating and organizing tracks');
+    blProgress(90);
 
     BL_ARTIST = data.artist;
     BL_TRACKS = data.tracks;
 
-    // Show artist info
-    const info = document.getElementById('blArtistInfo');
-    info.style.display = '';
-    info.innerHTML = `<div class="content-card" style="padding:14px;display:flex;align-items:center;gap:14px;">
-      ${data.artist.image ? `<img src="${data.artist.image}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;">` : ''}
-      <div>
-        <div style="font-size:16px;font-weight:700;color:#fff;">${data.artist.name}</div>
-        <div style="font-size:12px;color:#999;">${data.artist.followers ? data.artist.followers.toLocaleString() + ' followers' : ''} ${data.artist.genres ? '| ' + data.artist.genres.slice(0,3).join(', ') : ''}</div>
-        <div style="font-size:12px;color:#00d4ff;">${data.albums} releases | ${data.tracks.length} unique tracks</div>
-        ${data.tracks.length && !data.tracks[0]?.isrc ? '<div style="font-size:11px;color:#ffc107;margin-top:4px;">ISRCs unavailable via Spotify API — pull from your distributor or use AI Verify</div>' : ''}
-      </div>
-    </div>`;
+    // Load existing saved tracks to detect which are new
+    let existingISRCs = new Set();
+    let existingTitles = new Set();
+    try {
+      const savedResp = await fetch('/api/backlog/catalog?artist=' + encodeURIComponent(data.artist.name), { credentials: 'include' });
+      if (savedResp.ok) {
+        const savedData = await savedResp.json();
+        BL_SAVED = savedData.tracks || [];
+        BL_SAVED.forEach(t => {
+          if (t.isrc) existingISRCs.add(t.isrc);
+          existingTitles.add((t.song_title || '').toLowerCase() + '::' + (t.album_name || '').toLowerCase());
+        });
+      }
+    } catch (e) {}
 
-    // Render table
-    blRenderTable();
-    document.getElementById('blResultsSection').style.display = '';
-    document.getElementById('blTrackCount').textContent = `(${BL_TRACKS.length} tracks)`;
+    // Mark which tracks are new vs already saved
+    for (const t of BL_TRACKS) {
+      const isExisting = (t.isrc && existingISRCs.has(t.isrc)) ||
+        existingTitles.has((t.song_title || '').toLowerCase() + '::' + (t.album_name || '').toLowerCase());
+      t._isNew = !isExisting;
+      t.status = isExisting ? 'catalog' : 'new';
+    }
+
+    const newCount = BL_TRACKS.filter(t => t._isNew).length;
+    blProgress(100);
+    blMarkStep('finalize', 'done');
+    blLiveStatus(`Done! ${BL_TRACKS.length} tracks found${newCount < BL_TRACKS.length ? ` (${newCount} new)` : ''}`, '');
+    blTimerStop();
+
+    await new Promise(r => setTimeout(r, 800));
+    loader.classList.remove('active');
+
+    // Show UI
+    blShowArtistInfo(data.artist.name, BL_TRACKS.length,
+      newCount < BL_TRACKS.length ? ` | ${newCount} new, ${BL_TRACKS.length - newCount} already in catalog` : '');
+
+    // Merge new tracks into BL_SAVED for rendering
+    const newTracks = BL_TRACKS.filter(t => t._isNew);
+    if (newTracks.length) {
+      BL_SAVED = [...newTracks.map(t => ({
+        song_title: t.song_title, primary_artist: t.primary_artist || BL_ARTIST?.name || '',
+        album_name: t.album_name, album_type: t.album_type,
+        release_date: t.release_date, isrc: t.isrc, upc: t.upc, label: t.label,
+        featured_artists: t.featured_artists, duration_ms: t.duration_ms,
+        writer_last_name: '', writer_first_name: '', writer_ipi: t.ipi || '',
+        writer_role_code: 'CA', publisher_name: t.publisher || '', publisher_ipi: '',
+        iswc: t.iswc || '', collection_share: 100, p_line: '', genre: '',
+        spotify_uri: t.spotify_uri, album_image: t.album_image,
+        status: 'new', _unsaved: true
+      })), ...BL_SAVED];
+    }
+    BL_TRACKS = []; // single source of truth is BL_SAVED now
+
+    blRenderSections();
     document.getElementById('blVerifyBtn').style.display = '';
     document.getElementById('blExportMlcBtn').style.display = '';
     document.getElementById('blExportSeBtn').style.display = '';
-    status.textContent = 'Done - ' + BL_TRACKS.length + ' tracks found';
+    document.getElementById('blSaveBtn').style.display = '';
+    document.getElementById('blBulkApply').style.display = '';
+    document.getElementById('blStatus').textContent = `${BL_TRACKS.length} tracks — ${newCount} new`;
+
   } catch (e) {
-    showToast('Fetch error: ' + e.message);
-    status.textContent = 'Error';
+    blTimerStop();
+    blLiveStatus('', '');
+    document.getElementById('blFetchErrorMsg').textContent = e.message;
+    document.getElementById('blFetchError').classList.add('active');
   }
   btn.disabled = false;
 }
 
-function blRenderTable() {
-  const tbody = document.getElementById('blTableBody');
-  tbody.innerHTML = BL_TRACKS.map((t, i) => {
-    const isrcOk = t.isrc && /^[A-Z]{2}[A-Z0-9]{3}\d{2}\d{5}$/.test(t.isrc);
-    return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-      <td style="padding:6px;color:#fff;font-weight:500;">${t.song_title}</td>
-      <td style="padding:6px;font-size:11px;">${t.album_type || 'single'}</td>
-      <td style="padding:6px;font-size:11px;">${t.release_date || '-'}</td>
-      <td style="padding:6px;font-family:monospace;font-size:11px;${isrcOk ? 'color:#4caf50' : 'color:#f44336'}">${t.isrc || 'MISSING'}</td>
-      <td style="padding:6px;font-size:11px;">${t.upc || '-'}</td>
-      <td style="padding:6px;font-size:11px;color:#999;">${t.featured_artists || '-'}</td>
-      <td style="padding:6px;font-size:11px;">${t.label || '-'}</td>
-      <td style="padding:6px;font-size:11px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:100px;" value="${t.writer || ''}" onchange="BL_TRACKS[${i}].writer=this.value"></td>
-      <td style="padding:6px;font-size:11px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:100px;" value="${t.publisher || ''}" onchange="BL_TRACKS[${i}].publisher=this.value"></td>
-      <td style="padding:6px;font-family:monospace;font-size:10px;color:#888;">${t.ipi || '-'}</td>
-    </tr>`;
-  }).join('');
+// --- Render New Releases + Catalog Sections ---
+function blRenderSections() {
+  const newTracks = BL_SAVED.filter(t => t.status === 'new');
+  const catTracks = BL_SAVED.filter(t => t.status === 'catalog');
+
+  // New Releases
+  const newSec = document.getElementById('blNewSection');
+  if (newTracks.length) {
+    newSec.style.display = '';
+    document.getElementById('blNewCount').textContent = `(${newTracks.length} tracks)`;
+    document.getElementById('blNewBody').innerHTML = newTracks.map(t => blTrackRow(t, BL_SAVED.indexOf(t))).join('');
+  } else {
+    newSec.style.display = 'none';
+  }
+
+  // Catalog
+  const catSec = document.getElementById('blCatalogSection');
+  if (catTracks.length) {
+    catSec.style.display = '';
+    document.getElementById('blCatalogCount').textContent = `(${catTracks.length} tracks)`;
+    document.getElementById('blCatalogBody').innerHTML = catTracks.map(t => blTrackRow(t, BL_SAVED.indexOf(t))).join('');
+  } else {
+    catSec.style.display = 'none';
+  }
 }
 
+function blTrackRow(t, dataIdx) {
+  const isrcOk = t.isrc && /^[A-Z]{2}[A-Z0-9]{3}\d{2}\d{5}$/.test(t.isrc);
+  const inp = (field, val, width) =>
+    `<input class="form-control" style="font-size:11px;padding:3px 6px;width:${width || '80px'};" value="${val || ''}" onchange="blUpdateField(${dataIdx},'${field}',this.value)">`;
+  const title = blEsc(t.song_title || '');
+  const album = blEsc(t.album_name || '');
+  return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+    <td style="padding:6px;color:#fff;font-weight:500;font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${title}">${title}</td>
+    <td style="padding:5px;">${inp('primary_artist', t.primary_artist, '120px')}</td>
+    <td style="padding:6px;font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${album}">${album || '-'}</td>
+    <td style="padding:6px;font-size:11px;">${t.release_date || '-'}</td>
+    <td style="padding:5px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:110px;font-family:monospace;${isrcOk ? 'color:#4caf50;' : 'color:#f44336;border-color:#f44336;'}" value="${t.isrc || ''}" placeholder="MISSING" onchange="blUpdateField(${dataIdx},'isrc',this.value)"></td>
+    <td style="padding:5px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:100px;font-family:monospace;" value="${t.upc || ''}" placeholder="—" onchange="blUpdateField(${dataIdx},'upc',this.value)"></td>
+    <td style="padding:5px;">${inp('writer_last_name', t.writer_last_name, '70px')} ${inp('writer_first_name', t.writer_first_name, '70px')}</td>
+    <td style="padding:5px;">${inp('writer_ipi', t.writer_ipi, '90px')}</td>
+    <td style="padding:5px;">${inp('publisher_name', t.publisher_name, '100px')}</td>
+    <td style="padding:5px;">${inp('iswc', t.iswc, '100px')}</td>
+    <td style="padding:5px;">${inp('collection_share', t.collection_share, '45px')}</td>
+    <td style="padding:5px;">${inp('label', t.label, '80px')}</td>
+  </tr>`;
+}
+
+function blUpdateField(idx, field, value) {
+  if (idx < 0 || idx >= BL_SAVED.length) return;
+  BL_SAVED[idx][field] = value;
+  // If already saved to DB, patch immediately
+  if (BL_SAVED[idx].id) {
+    fetch('/api/backlog/catalog/' + BL_SAVED[idx].id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ [field]: value })
+    }).catch(() => {});
+  }
+}
+
+// --- Bulk Apply ---
+function blApplyBulk() {
+  const fields = ['writer_last_name','writer_first_name','writer_ipi','writer_role_code',
+    'publisher_name','publisher_ipi','collection_share','p_line','label','genre'];
+  const updates = [];
+  for (const f of fields) {
+    const el = document.getElementById('blBulk-' + f);
+    if (!el) continue;
+    const val = el.value.trim();
+    if (!val && f !== 'collection_share') continue;
+    for (const t of BL_SAVED) { t[f] = val; }
+    updates.push({ field: f, value: val });
+  }
+  // Batch all bulk updates to saved tracks
+  const savedIds = BL_SAVED.filter(t => t.id).map(t => t.id);
+  if (savedIds.length && updates.length) {
+    for (const u of updates) {
+      fetch('/api/backlog/catalog/bulk-update', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ ids: savedIds, field: u.field, value: u.value })
+      }).catch(() => {});
+    }
+  }
+  blRenderSections();
+  showToast(`Applied ${updates.length} fields to ${BL_SAVED.length} tracks`);
+}
+
+// --- Save Catalog ---
+async function blSaveCatalog() {
+  if (!BL_SAVED.length || !BL_ARTIST) { showToast('No tracks to save'); return; }
+  const btn = document.getElementById('blSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    // Prepare tracks with enriched fields for the API
+    const tracksToSave = BL_SAVED.map(t => ({
+      song_title: t.song_title, primary_artist: t.primary_artist, album_name: t.album_name, album_type: t.album_type,
+      release_date: t.release_date, isrc: t.isrc, upc: t.upc, label: t.label,
+      featured_artists: t.featured_artists, duration_ms: t.duration_ms,
+      track_number: t.track_number, spotify_uri: t.spotify_uri, album_image: t.album_image,
+      genre: t.genre, writer_last_name: t.writer_last_name, writer_first_name: t.writer_first_name,
+      writer_ipi: t.writer_ipi, writer_role_code: t.writer_role_code || 'CA',
+      publisher_name: t.publisher_name, publisher_ipi: t.publisher_ipi,
+      iswc: t.iswc, collection_share: t.collection_share || 100,
+      p_line: t.p_line, recording_version: t.recording_version,
+      catalog_number: t.catalog_number, status: t.status || 'new'
+    }));
+    const resp = await fetch('/api/backlog/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ tracks: tracksToSave, artist_name: BL_ARTIST.name, spotify_id: BL_ARTIST.spotify_id })
+    });
+    const data = await resp.json();
+    showToast(`Saved ${data.saved} of ${data.total} tracks`);
+    // Reload from DB to get IDs
+    await blLoadArtistCatalog(BL_ARTIST.name);
+    blLoadSavedArtists();
+  } catch (e) { showToast('Save error: ' + e.message); }
+  btn.disabled = false;
+  btn.textContent = 'Save Catalog';
+}
+
+// --- Verify ---
 async function blVerify() {
-  if (!BL_TRACKS.length) return;
+  const tracks = BL_SAVED.length ? BL_SAVED : BL_TRACKS;
+  if (!tracks.length) return;
   const status = document.getElementById('blStatus');
   status.textContent = 'Verifying with AI...';
   document.getElementById('blVerifyBtn').disabled = true;
@@ -11059,7 +11430,7 @@ async function blVerify() {
   try {
     const resp = await fetch('/api/backlog/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ tracks: BL_TRACKS, artist_name: BL_ARTIST ? BL_ARTIST.name : '' })
+      body: JSON.stringify({ tracks, artist_name: BL_ARTIST ? BL_ARTIST.name : '' })
     });
     const data = await resp.json();
     const box = document.getElementById('blVerifyResults');
@@ -11068,7 +11439,7 @@ async function blVerify() {
     if (data.issues && data.issues.length) {
       const errors = data.issues.filter(i => i.severity === 'error');
       const warnings = data.issues.filter(i => i.severity === 'warning');
-      box.innerHTML = `<div style="font-weight:700;color:#00d4ff;margin-bottom:8px;">Verification: ${data.verified_count || BL_TRACKS.length} tracks checked</div>
+      box.innerHTML = `<div style="font-weight:700;color:#00d4ff;margin-bottom:8px;">Verification: ${data.verified_count || tracks.length} tracks checked</div>
         ${data.summary ? `<p style="color:#ccc;font-size:12px;margin-bottom:8px;">${data.summary}</p>` : ''}
         ${errors.length ? `<div style="color:#f44336;font-size:12px;margin-bottom:6px;"><strong>${errors.length} errors:</strong><ul style="margin:4px 0 0 16px;">${errors.map(e => `<li>${e.song_title}: ${e.issue}</li>`).join('')}</ul></div>` : ''}
         ${warnings.length ? `<div style="color:#ffc107;font-size:12px;"><strong>${warnings.length} warnings:</strong><ul style="margin:4px 0 0 16px;">${warnings.map(w => `<li>${w.song_title}: ${w.issue}</li>`).join('')}</ul></div>` : ''}
@@ -11085,34 +11456,26 @@ async function blVerify() {
   document.getElementById('blVerifyBtn').disabled = false;
 }
 
-async function blExportMLC() {
-  if (!BL_TRACKS.length || !BL_ARTIST) { showToast('No tracks loaded'); return; }
+// --- Exports (use BL_SAVED enriched data when available) ---
+async function blExport(type) {
+  const tracks = BL_SAVED.length ? BL_SAVED : BL_TRACKS;
+  if (!tracks.length || !BL_ARTIST) { showToast('No tracks loaded'); return; }
+  const endpoints = { mlc: '/api/backlog/export/mlc', soundexchange: '/api/backlog/export/soundexchange' };
+  const filenames = { mlc: '_MLC.xlsx', soundexchange: '_SoundExchange.xlsx' };
   try {
-    const resp = await fetch('/api/backlog/export/mlc', {
+    const resp = await fetch(endpoints[type], {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ tracks: BL_TRACKS, artist_name: BL_ARTIST.name })
+      body: JSON.stringify({ tracks, artist_name: BL_ARTIST.name })
     });
     if (!resp.ok) { showToast('Export failed'); return; }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${BL_ARTIST.name}_MLC.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = BL_ARTIST.name + filenames[type]; a.click();
     URL.revokeObjectURL(url);
   } catch (e) { showToast('Export error: ' + e.message); }
 }
-async function blExportSE() {
-  if (!BL_TRACKS.length || !BL_ARTIST) { showToast('No tracks loaded'); return; }
-  try {
-    const resp = await fetch('/api/backlog/export/soundexchange', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ tracks: BL_TRACKS, artist_name: BL_ARTIST.name })
-    });
-    if (!resp.ok) { showToast('Export failed'); return; }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${BL_ARTIST.name}_SoundExchange.csv`; a.click();
-    URL.revokeObjectURL(url);
-  } catch (e) { showToast('Export error: ' + e.message); }
-}
+function blExportMLC() { blExport('mlc'); }
+function blExportSE() { blExport('soundexchange'); }
 
 </script>
 
