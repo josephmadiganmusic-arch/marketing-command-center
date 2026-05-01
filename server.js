@@ -6106,7 +6106,67 @@ async function fetchSpotifyArtist(artistId, token) {
   return resp.json();
 }
 
-// Backlog: Fetch full discography from Spotify
+// Scrape Spotify artist page for discography data (no API auth needed)
+async function scrapeSpotifyArtistPage(artistId) {
+  const url = `https://open.spotify.com/artist/${artistId}`;
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+  });
+  if (!resp.ok) return null;
+  const html = await resp.text();
+
+  // Extract __NEXT_DATA__ JSON
+  const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.+?)<\/script>/);
+  if (!match) return null;
+
+  try {
+    const nextData = JSON.parse(match[1]);
+    return nextData;
+  } catch (e) {
+    console.error('[BACKLOG] Failed to parse __NEXT_DATA__:', e.message);
+    return null;
+  }
+}
+
+// Extract artist info + discography from scraped page data
+function extractArtistFromPageData(pageData, artistId) {
+  try {
+    const props = pageData.props?.pageProps;
+    if (!props) return null;
+
+    // Navigate the data structure to find artist entity
+    const entities = props.entities || {};
+    const artistKey = `spotify:artist:${artistId}`;
+
+    // Try to find artist in entities
+    let artistInfo = null;
+    if (entities.items && entities.items[artistKey]) {
+      artistInfo = entities.items[artistKey];
+    }
+
+    // Extract from state if available
+    const state = pageData.props?.pageProps?.state;
+
+    return { props, entities, artistInfo, state };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Scrape a Spotify album page for track details including ISRCs
+async function scrapeSpotifyAlbumPage(albumId) {
+  const url = `https://open.spotify.com/album/${albumId}`;
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+  });
+  if (!resp.ok) return null;
+  const html = await resp.text();
+  const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.+?)<\/script>/);
+  if (!match) return null;
+  try { return JSON.parse(match[1]); } catch (e) { return null; }
+}
+
+// Backlog: Fetch full discography from Spotify (scraping approach - no API auth needed)
 app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) => {
   try {
     const { url } = req.body;
@@ -6114,38 +6174,132 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
     const artistId = extractSpotifyArtistId(url);
     if (!artistId) return res.status(400).json({ error: 'Could not extract artist ID from URL' });
 
+    // First try Web API with token (best data quality - includes ISRCs)
     const token = await getSpotifyToken();
-    if (!token) return res.status(500).json({ error: 'Could not get Spotify access token. Try again.' });
-
-    const artist = await fetchSpotifyArtist(artistId, token);
-    if (!artist) return res.status(404).json({ error: 'Artist not found on Spotify (ID: ' + artistId + '). The token may have expired or the URL is invalid. Try again.' });
-    const albums = await fetchSpotifyDiscography(artistId, token);
-
-    // Fetch tracks with ISRCs for each album
-    const allTracks = [];
-    for (const album of albums) {
-      const tracks = await fetchSpotifyAlbumTracks(album.id, token);
-      allTracks.push(...tracks);
+    if (token) {
+      const artist = await fetchSpotifyArtist(artistId, token);
+      if (artist) {
+        console.log('[BACKLOG] Using Spotify Web API (has ISRCs)');
+        const albums = await fetchSpotifyDiscography(artistId, token);
+        const allTracks = [];
+        for (const album of albums) {
+          const tracks = await fetchSpotifyAlbumTracks(album.id, token);
+          allTracks.push(...tracks);
+        }
+        const seen = new Set();
+        const unique = [];
+        for (const t of allTracks) {
+          const key = t.isrc || t.song_title;
+          if (!seen.has(key)) { seen.add(key); unique.push(t); }
+        }
+        return res.json({
+          artist: { name: artist.name, spotify_id: artistId, followers: artist.followers?.total, genres: artist.genres, image: artist.images?.[0]?.url },
+          albums: albums.length,
+          tracks: unique,
+          source: 'spotify_api'
+        });
+      }
     }
 
-    // Deduplicate by ISRC (same song can appear on album + single)
+    // Fallback: Scrape the artist page directly
+    console.log('[BACKLOG] Web API unavailable, scraping artist page...');
+    const pageData = await scrapeSpotifyArtistPage(artistId);
+    if (!pageData) return res.status(500).json({ error: 'Could not load Spotify artist page. Try again.' });
+
+    // Extract data from the deeply nested __NEXT_DATA__ structure
+    const allData = JSON.stringify(pageData);
+
+    // Extract artist name
+    const nameMatch = allData.match(/"name":"([^"]+)".*?"uri":"spotify:artist:' + artistId + '"/') ||
+                       allData.match(/"profile":\{[^}]*"name":"([^"]+)"/);
+    const artistName = nameMatch ? nameMatch[1] : 'Unknown Artist';
+
+    // Extract artist image
+    const imgMatch = allData.match(/"visuals":\{[^}]*"avatarImage":\{[^}]*"sources":\[\{[^}]*"url":"([^"]+)"/);
+    const artistImage = imgMatch ? imgMatch[1] : null;
+
+    // Extract followers
+    const followMatch = allData.match(/"followers":(\d+)/);
+    const followers = followMatch ? parseInt(followMatch[1]) : null;
+
+    // Extract all album URIs and names from discography
+    const albumRegex = /"uri":"spotify:album:([a-zA-Z0-9]+)"[^}]*?"name":"([^"]+)"[^}]*?"date":\{"year":(\d+)(?:,"month":(\d+))?(?:,"day":(\d+))?/g;
+    const albumsFound = [];
+    const seenAlbums = new Set();
+    let albumMatch;
+    while ((albumMatch = albumRegex.exec(allData)) !== null) {
+      const albumId = albumMatch[1];
+      if (seenAlbums.has(albumId)) continue;
+      seenAlbums.add(albumId);
+      const year = albumMatch[3];
+      const month = albumMatch[4] ? albumMatch[4].padStart(2, '0') : '01';
+      const day = albumMatch[5] ? albumMatch[5].padStart(2, '0') : '01';
+      albumsFound.push({ id: albumId, name: albumMatch[2], date: `${year}-${month}-${day}` });
+    }
+
+    // Extract tracks from each album's page data
+    const allTracks = [];
+    for (let i = 0; i < albumsFound.length; i++) {
+      const album = albumsFound[i];
+      // Small delay to avoid rate limiting on scraping
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
+      const albumPage = await scrapeSpotifyAlbumPage(album.id);
+      if (!albumPage) continue;
+      const albumStr = JSON.stringify(albumPage);
+
+      // Extract label
+      const labelMatch = albumStr.match(/"label":"([^"]+)"/);
+      const label = labelMatch ? labelMatch[1] : '';
+
+      // Extract album type
+      const typeMatch = albumStr.match(/"type":"(album|single|compilation)"/i);
+      const albumType = typeMatch ? typeMatch[1] : 'single';
+
+      // Extract copyright
+      const copyrightMatch = albumStr.match(/"\u2117 \d{4} ([^"]+)"/);
+
+      // Extract tracks from tracksV2 or similar structure
+      const trackRegex = /"name":"([^"]+)"[^}]*?"uri":"spotify:track:([a-zA-Z0-9]+)"[^}]*?"duration":\{"totalMilliseconds":(\d+)/g;
+      let trackMatch;
+      let trackNum = 0;
+      while ((trackMatch = trackRegex.exec(albumStr)) !== null) {
+        trackNum++;
+        // Extract featured artists for this track
+        const trackName = trackMatch[1];
+        const featMatch = trackName.match(/(?:feat\.|ft\.) (.+)/i);
+
+        allTracks.push({
+          song_title: trackName.replace(/ \(feat\..*?\)| - feat\..*$/gi, '').trim(),
+          isrc: null, // Not available from page scraping
+          duration_ms: parseInt(trackMatch[3]),
+          track_number: trackNum,
+          featured_artists: featMatch ? featMatch[1] : '',
+          album_name: album.name,
+          album_type: albumType,
+          release_date: album.date,
+          upc: null, // Not available from page scraping
+          label: label,
+          total_tracks: trackNum,
+          album_image: null,
+          spotify_uri: 'spotify:track:' + trackMatch[2],
+        });
+      }
+    }
+
+    // Deduplicate by title+album
     const seen = new Set();
     const unique = [];
     for (const t of allTracks) {
-      const key = t.isrc || t.song_title;
+      const key = t.song_title + '|' + t.album_name;
       if (!seen.has(key)) { seen.add(key); unique.push(t); }
     }
 
     res.json({
-      artist: {
-        name: artist.name,
-        spotify_id: artistId,
-        followers: artist.followers && artist.followers.total,
-        genres: artist.genres,
-        image: artist.images && artist.images[0] && artist.images[0].url,
-      },
-      albums: albums.length,
+      artist: { name: artistName, spotify_id: artistId, followers, genres: [], image: artistImage },
+      albums: albumsFound.length,
       tracks: unique,
+      source: 'spotify_scrape',
+      note: 'ISRCs not available via scraping. Use AI Verify to cross-reference or add manually.'
     });
   } catch (e) {
     console.error('[BACKLOG] Spotify fetch error:', e.message);
