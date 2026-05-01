@@ -6062,7 +6062,7 @@ function extractSpotifyArtistId(url) {
 // Fetch all albums/singles from Spotify artist
 async function fetchSpotifyDiscography(artistId, token) {
   const albums = [];
-  let url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&limit=50&market=US`;
+  let url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album%2Csingle%2Ccompilation&limit=20&market=US`;
   while (url) {
     const resp = await spotifyApiGet(url, token);
     if (!resp.ok) {
