@@ -11012,6 +11012,7 @@ async function blFetchCatalog() {
         <div style="font-size:16px;font-weight:700;color:#fff;">${data.artist.name}</div>
         <div style="font-size:12px;color:#999;">${data.artist.followers ? data.artist.followers.toLocaleString() + ' followers' : ''} ${data.artist.genres ? '| ' + data.artist.genres.slice(0,3).join(', ') : ''}</div>
         <div style="font-size:12px;color:#00d4ff;">${data.albums} releases | ${data.tracks.length} unique tracks</div>
+        ${data.tracks.length && !data.tracks[0]?.isrc ? '<div style="font-size:11px;color:#ffc107;margin-top:4px;">ISRCs unavailable via Spotify API — pull from your distributor or use AI Verify</div>' : ''}
       </div>
     </div>`;
 

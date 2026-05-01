@@ -6086,27 +6086,9 @@ async function fetchSpotifyAlbumTracks(albumId, token) {
   const data = await resp.json();
   const simplifiedTracks = data.tracks && data.tracks.items || [];
 
-  // SimplifiedTrackObject doesn't include ISRCs — batch fetch full track objects
-  const trackIds = simplifiedTracks.map(t => t.id).filter(Boolean);
-  const isrcMap = {};
-  for (let i = 0; i < trackIds.length; i += 50) {
-    const batch = trackIds.slice(i, i + 50);
-    const trResp = await spotifyApiGet(`https://api.spotify.com/v1/tracks?ids=${batch.join(',')}&market=US`, token);
-    if (trResp.ok) {
-      const trData = await trResp.json();
-      console.log(`[BACKLOG] Tracks batch: ${batch.length} requested, ${(trData.tracks||[]).length} returned, sample ISRC: ${trData.tracks?.[0]?.external_ids?.isrc || 'NONE'}`);
-      for (const ft of (trData.tracks || [])) {
-        if (ft && ft.id) isrcMap[ft.id] = ft.external_ids && ft.external_ids.isrc || null;
-      }
-    } else {
-      const body = await trResp.text().catch(() => '');
-      console.error(`[BACKLOG] Tracks batch failed: ${trResp.status}: ${body.substring(0, 300)}`);
-    }
-  }
-
   return simplifiedTracks.map(t => ({
     song_title: t.name,
-    isrc: isrcMap[t.id] || null,
+    isrc: null, // /v1/tracks is 403 in dev mode — ISRCs must come from distributor
     duration_ms: t.duration_ms,
     track_number: t.track_number,
     featured_artists: t.artists.filter((a, i) => i > 0).map(a => a.name).join(', '),
