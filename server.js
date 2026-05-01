@@ -863,6 +863,8 @@ function initDb() {
       publisher_ipi TEXT,
       iswc TEXT,
       collection_share REAL DEFAULT 100,
+      writers_json TEXT,
+      publishers_json TEXT,
       p_line TEXT,
       recording_version TEXT,
       catalog_number TEXT,
@@ -875,6 +877,9 @@ function initDb() {
   `);
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_artist ON backlog_catalog(artist_name)');
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_catalog(status)');
+  try { db.run("ALTER TABLE backlog_catalog ADD COLUMN writers_json TEXT"); } catch(e) {}
+  try { db.run("ALTER TABLE backlog_catalog ADD COLUMN publishers_json TEXT"); } catch(e) {}
+  try { db.run("ALTER TABLE backlog_catalog ADD COLUMN primary_artist TEXT"); } catch(e) {}
 
   // --- Seed Admin Accounts ---
   // ADMIN_PASSWORD must come from env. No fallback — failing closed prevents
@@ -6130,20 +6135,21 @@ async function fetchSpotifyAlbumTracks(albumId, token) {
   const data = await resp.json();
   const simplifiedTracks = data.tracks && data.tracks.items || [];
 
-  // Album artists are the "main" artists on the album level
+  // Album-level artists are the "primary" — anyone else on a track is featured
   const albumArtistIds = new Set((data.artists || []).map(a => a.id));
+  const albumArtistNames = (data.artists || []).map(a => a.name);
 
   return simplifiedTracks.map(t => {
-    // Primary artists = all artists listed on the track (the credited performers)
-    const allArtists = t.artists.map(a => a.name);
-    // Featured = artists on the track who aren't on the album (true features)
+    const primary = t.artists.filter(a => albumArtistIds.has(a.id)).map(a => a.name);
     const featured = t.artists.filter(a => !albumArtistIds.has(a.id)).map(a => a.name);
+    // If no album-level match (compilation), first artist is primary
+    if (!primary.length && t.artists.length) primary.push(t.artists[0].name);
     return {
       song_title: t.name,
-      isrc: null, // /v1/tracks is 403 in dev mode — ISRCs must come from distributor
+      isrc: null,
       duration_ms: t.duration_ms,
       track_number: t.track_number,
-      primary_artist: allArtists.join(', '),
+      primary_artist: primary.join(', '),
       featured_artists: featured.join(', '),
       album_name: data.name,
       album_type: data.album_type,
@@ -6606,42 +6612,55 @@ app.post('/api/backlog/export/mlc', requireAdminOrPartner, async (req, res) => {
       cell.font = { bold: true, size: 10 };
     });
 
-    // Data rows — supports both raw fetch fields and enriched saved fields
+    // Data rows — multiple writers per track each get their own row (MLC format)
+    let rowNum = 2;
     for (let i = 0; i < tracks.length; i++) {
       const t = tracks[i];
-      // Use enriched fields if available, fall back to parsing writer string
-      let wLast = t.writer_last_name || '';
-      let wFirst = t.writer_first_name || '';
-      if (!wLast && t.writer) {
-        const parts = t.writer.split(/\s+/);
-        wLast = parts.length > 1 ? parts.slice(-1)[0] : (parts[0] || '');
-        wFirst = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+      // Parse writers_json if available, otherwise fall back to single writer fields
+      let writers = [];
+      try { if (t.writers_json) writers = JSON.parse(t.writers_json); } catch(e) {}
+      if (!writers.length) {
+        let wLast = t.writer_last_name || '';
+        let wFirst = t.writer_first_name || '';
+        if (!wLast && t.writer) {
+          const parts = t.writer.split(/\s+/);
+          wLast = parts.length > 1 ? parts.slice(-1)[0] : (parts[0] || '');
+          wFirst = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+        }
+        writers = [{ last: wLast, first: wFirst, ipi: t.writer_ipi || t.ipi || '', role: t.writer_role_code || 'CA', share: t.collection_share || 100 }];
+      }
+      let publishers = [];
+      try { if (t.publishers_json) publishers = JSON.parse(t.publishers_json); } catch(e) {}
+      if (!publishers.length) {
+        publishers = [{ name: t.publisher_name || t.publisher || '', ipi: t.publisher_ipi || '' }];
       }
 
-      const row = ws.getRow(2 + i);
-      row.values = [
-        t.song_title || '',                           // PRIMARY TITLE
-        '',                                            // MLC SONG CODE
-        '',                                            // MEMBERS SONG ID
-        t.iswc || '',                                  // ISWC
-        '',                                            // AKA TITLE
-        '',                                            // AKA TITLE TYPE CODE
-        wLast,                                         // WRITER LAST NAME
-        wFirst,                                        // WRITER FIRST NAME
-        t.writer_ipi || t.ipi || '',                   // WRITER IPI NUMBER
-        t.writer_role_code || 'CA',                    // WRITER ROLE CODE
-        '',                                            // MLC PUBLISHER NUMBER
-        t.publisher_name || t.publisher || '',          // PUBLISHER NAME
-        t.publisher_ipi || '',                         // PUBLISHER IPI NUMBER
-        '',                                            // ADMINISTRATOR MLC PUBLISHER NUMBER
-        '',                                            // ADMINISTRATOR NAME
-        '',                                            // ADMINISTRATOR IPI NUMBER
-        t.collection_share || 100,                     // COLLECTION SHARE
-        t.song_title || '',                            // RECORDING TITLE
-        t.primary_artist || artist_name || '',          // RECORDING ARTIST NAME
-        t.isrc || '',                                  // RECORDING ISRC
-        t.label || '',                                 // RECORDING LABEL
-      ];
+      // First row has the title + recording info; additional rows are blank title
+      const maxRows = Math.max(writers.length, publishers.length);
+      for (let j = 0; j < maxRows; j++) {
+        const w = writers[j] || {};
+        const p = publishers[j] || {};
+        const row = ws.getRow(rowNum++);
+        row.values = [
+          j === 0 ? (t.song_title || '') : '',          // PRIMARY TITLE (blank for extra writers)
+          '', '',                                        // MLC SONG CODE, MEMBERS SONG ID
+          j === 0 ? (t.iswc || '') : '',                 // ISWC
+          '', '',                                        // AKA TITLE, AKA TITLE TYPE CODE
+          w.last || '',                                  // WRITER LAST NAME
+          w.first || '',                                 // WRITER FIRST NAME
+          w.ipi || '',                                   // WRITER IPI NUMBER
+          w.role || 'CA',                                // WRITER ROLE CODE
+          '',                                            // MLC PUBLISHER NUMBER
+          p.name || '',                                  // PUBLISHER NAME
+          p.ipi || '',                                   // PUBLISHER IPI NUMBER
+          '', '', '',                                    // ADMIN MLC PUB #, ADMIN NAME, ADMIN IPI
+          w.share || '',                                 // COLLECTION SHARE
+          j === 0 ? (t.song_title || '') : '',           // RECORDING TITLE
+          j === 0 ? (t.primary_artist || artist_name || '') : '', // RECORDING ARTIST NAME
+          j === 0 ? (t.isrc || '') : '',                 // RECORDING ISRC
+          j === 0 ? (t.label || '') : '',                // RECORDING LABEL
+        ];
+      }
     }
 
     autoFitColumns(ws);
@@ -6721,10 +6740,16 @@ app.post('/api/backlog/export/soundexchange', requireAdminOrPartner, async (req,
     // Data rows starting at row 11 — supports enriched saved fields
     for (let i = 0; i < tracks.length; i++) {
       const t = tracks[i];
-      // Build composer string from enriched fields or fall back
-      const composer = (t.writer_first_name && t.writer_last_name)
-        ? `${t.writer_first_name} ${t.writer_last_name}`.trim()
-        : (t.writer || '');
+      // Build composer/publisher strings — concat all from JSON arrays
+      let composers = [];
+      try { if (t.writers_json) composers = JSON.parse(t.writers_json).map(w => `${w.first || ''} ${w.last || ''}`.trim()).filter(Boolean); } catch(e) {}
+      if (!composers.length && (t.writer_first_name || t.writer_last_name)) composers = [`${t.writer_first_name || ''} ${t.writer_last_name || ''}`.trim()];
+      if (!composers.length && t.writer) composers = [t.writer];
+      const composer = composers.join(', ');
+      let pubNames = [];
+      try { if (t.publishers_json) pubNames = JSON.parse(t.publishers_json).map(p => p.name).filter(Boolean); } catch(e) {}
+      if (!pubNames.length) pubNames = [t.publisher_name || t.publisher || ''];
+      const publisherStr = pubNames.join(', ');
       const durationHMS = t.duration_ms ? '00:' + String(Math.floor(t.duration_ms/60000)).padStart(2,'0') + ':' + String(Math.floor((t.duration_ms%60000)/1000)).padStart(2,'0') : (t.duration || '');
       const row = ws.getRow(11 + i);
       row.values = [
@@ -6748,7 +6773,7 @@ app.post('/api/backlog/export/soundexchange', requireAdminOrPartner, async (req,
         t.p_line || '',                               // (P) Line
         t.iswc || '',                                 // ISWC
         composer,                                     // Composer(s)
-        t.publisher_name || t.publisher || '',         // Publisher(s)
+        publisherStr,                                 // Publisher(s)
         artist_name || '',                            // Release Artist
         t.album_name || '',                           // Release Title (Album)
         '',                                           // Release Version
@@ -6782,8 +6807,8 @@ app.post('/api/backlog/save', requireAdminOrPartner, (req, res) => {
     isrc, upc, label, featured_artists, duration_ms, track_number, spotify_uri,
     album_image, genre, writer_last_name, writer_first_name, writer_ipi,
     writer_role_code, publisher_name, publisher_ipi, iswc, collection_share,
-    p_line, recording_version, catalog_number, status, saved_at
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`;
+    writers_json, publishers_json, p_line, recording_version, catalog_number, status, saved_at
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`;
 
   let saved = 0;
   db.run("BEGIN");
@@ -6801,7 +6826,8 @@ app.post('/api/backlog/save', requireAdminOrPartner, (req, res) => {
           t.genre || null, t.writer_last_name || wLast || null, t.writer_first_name || wFirst || null,
           t.writer_ipi || t.ipi || null, t.writer_role_code || 'CA',
           t.publisher_name || t.publisher || null, t.publisher_ipi || null,
-          t.iswc || null, t.collection_share || 100, t.p_line || null,
+          t.iswc || null, t.collection_share || 100,
+        t.writers_json || null, t.publishers_json || null, t.p_line || null,
           t.recording_version || null, t.catalog_number || null,
           t.status || 'new'
         ]);
@@ -6840,7 +6866,7 @@ app.patch('/api/backlog/catalog/:id', requireAdminOrPartner, (req, res) => {
     'primary_artist', 'writer_last_name', 'writer_first_name', 'writer_ipi', 'writer_role_code',
     'publisher_name', 'publisher_ipi', 'iswc', 'collection_share', 'p_line',
     'recording_version', 'catalog_number', 'genre', 'label', 'isrc', 'upc',
-    'featured_artists'
+    'featured_artists', 'writers_json', 'publishers_json'
   ];
   const sets = [];
   const vals = [];

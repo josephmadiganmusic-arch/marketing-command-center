@@ -1069,15 +1069,13 @@
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
             <th style="padding:6px;color:#4ade80;">Title</th>
             <th style="padding:6px;color:#4ade80;">Primary Artist</th>
+            <th style="padding:6px;color:#4ade80;">Featured</th>
             <th style="padding:6px;color:#4ade80;">Album</th>
             <th style="padding:6px;color:#4ade80;">Date</th>
             <th style="padding:6px;color:#4ade80;">ISRC</th>
-            <th style="padding:6px;color:#4ade80;">UPC</th>
-            <th style="padding:6px;color:#4ade80;">Writer</th>
-            <th style="padding:6px;color:#4ade80;">IPI</th>
-            <th style="padding:6px;color:#4ade80;">Publisher</th>
+            <th style="padding:6px;color:#4ade80;">Writers (Last, First, IPI, Role, %)</th>
+            <th style="padding:6px;color:#4ade80;">Publishers (Name, IPI)</th>
             <th style="padding:6px;color:#4ade80;">ISWC</th>
-            <th style="padding:6px;color:#4ade80;">Share%</th>
             <th style="padding:6px;color:#4ade80;">Label</th>
           </tr></thead>
           <tbody id="blNewBody"></tbody>
@@ -1094,15 +1092,13 @@
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
             <th style="padding:6px;color:#00d4ff;">Title</th>
             <th style="padding:6px;color:#00d4ff;">Primary Artist</th>
+            <th style="padding:6px;color:#00d4ff;">Featured</th>
             <th style="padding:6px;color:#00d4ff;">Album</th>
             <th style="padding:6px;color:#00d4ff;">Date</th>
             <th style="padding:6px;color:#00d4ff;">ISRC</th>
-            <th style="padding:6px;color:#00d4ff;">UPC</th>
-            <th style="padding:6px;color:#00d4ff;">Writer</th>
-            <th style="padding:6px;color:#00d4ff;">IPI</th>
-            <th style="padding:6px;color:#00d4ff;">Publisher</th>
+            <th style="padding:6px;color:#00d4ff;">Writers (Last, First, IPI, Role, %)</th>
+            <th style="padding:6px;color:#00d4ff;">Publishers (Name, IPI)</th>
             <th style="padding:6px;color:#00d4ff;">ISWC</th>
-            <th style="padding:6px;color:#00d4ff;">Share%</th>
             <th style="padding:6px;color:#00d4ff;">Label</th>
           </tr></thead>
           <tbody id="blCatalogBody"></tbody>
@@ -11324,24 +11320,105 @@ function blRenderSections() {
   }
 }
 
+function blGetWriters(t) {
+  try { if (t.writers_json) return JSON.parse(t.writers_json); } catch(e) {}
+  if (t.writer_last_name || t.writer_first_name) return [{ last: t.writer_last_name||'', first: t.writer_first_name||'', ipi: t.writer_ipi||'', role: t.writer_role_code||'CA', share: t.collection_share||100 }];
+  return [{ last:'', first:'', ipi:'', role:'CA', share:100 }];
+}
+function blGetPubs(t) {
+  try { if (t.publishers_json) return JSON.parse(t.publishers_json); } catch(e) {}
+  if (t.publisher_name) return [{ name: t.publisher_name, ipi: t.publisher_ipi||'' }];
+  return [{ name:'', ipi:'' }];
+}
+function blAddWriter(idx) {
+  const t = BL_SAVED[idx]; if (!t) return;
+  const w = blGetWriters(t); w.push({ last:'', first:'', ipi:'', role:'CA', share:'' });
+  t.writers_json = JSON.stringify(w);
+  blSyncField(idx, 'writers_json', t.writers_json);
+  blRenderSections();
+}
+function blRemoveWriter(idx, wi) {
+  const t = BL_SAVED[idx]; if (!t) return;
+  const w = blGetWriters(t); w.splice(wi, 1);
+  t.writers_json = JSON.stringify(w);
+  blSyncField(idx, 'writers_json', t.writers_json);
+  blRenderSections();
+}
+function blAddPub(idx) {
+  const t = BL_SAVED[idx]; if (!t) return;
+  const p = blGetPubs(t); p.push({ name:'', ipi:'' });
+  t.publishers_json = JSON.stringify(p);
+  blSyncField(idx, 'publishers_json', t.publishers_json);
+  blRenderSections();
+}
+function blRemovePub(idx, pi) {
+  const t = BL_SAVED[idx]; if (!t) return;
+  const p = blGetPubs(t); p.splice(pi, 1);
+  t.publishers_json = JSON.stringify(p);
+  blSyncField(idx, 'publishers_json', t.publishers_json);
+  blRenderSections();
+}
+function blUpdateWriter(idx, wi, field, val) {
+  const t = BL_SAVED[idx]; if (!t) return;
+  const w = blGetWriters(t); if (w[wi]) w[wi][field] = val;
+  t.writers_json = JSON.stringify(w);
+  blSyncField(idx, 'writers_json', t.writers_json);
+}
+function blUpdatePub(idx, pi, field, val) {
+  const t = BL_SAVED[idx]; if (!t) return;
+  const p = blGetPubs(t); if (p[pi]) p[pi][field] = val;
+  t.publishers_json = JSON.stringify(p);
+  blSyncField(idx, 'publishers_json', t.publishers_json);
+}
+function blSyncField(idx, field, val) {
+  if (BL_SAVED[idx]?.id) {
+    fetch('/api/backlog/catalog/' + BL_SAVED[idx].id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ [field]: val })
+    }).catch(() => {});
+  }
+}
+
 function blTrackRow(t, dataIdx) {
   const isrcOk = t.isrc && /^[A-Z]{2}[A-Z0-9]{3}\d{2}\d{5}$/.test(t.isrc);
   const inp = (field, val, width) =>
     `<input class="form-control" style="font-size:11px;padding:3px 6px;width:${width || '80px'};" value="${val || ''}" onchange="blUpdateField(${dataIdx},'${field}',this.value)">`;
   const title = blEsc(t.song_title || '');
   const album = blEsc(t.album_name || '');
+  const writers = blGetWriters(t);
+  const pubs = blGetPubs(t);
+  const si = (v, w) => `style="font-size:11px;padding:3px 6px;width:${w};"`;
+  const writersHtml = writers.map((w, wi) =>
+    `<div style="display:flex;gap:3px;align-items:center;margin-bottom:2px;">
+      <input class="form-control" ${si(0,'55px')} value="${blEsc(w.last||'')}" placeholder="Last" onchange="blUpdateWriter(${dataIdx},${wi},'last',this.value)">
+      <input class="form-control" ${si(0,'55px')} value="${blEsc(w.first||'')}" placeholder="First" onchange="blUpdateWriter(${dataIdx},${wi},'first',this.value)">
+      <input class="form-control" ${si(0,'75px')} value="${blEsc(w.ipi||'')}" placeholder="IPI" onchange="blUpdateWriter(${dataIdx},${wi},'ipi',this.value)">
+      <select class="form-control" ${si(0,'50px')} onchange="blUpdateWriter(${dataIdx},${wi},'role',this.value)">
+        <option value="CA"${w.role==='CA'?' selected':''}>CA</option><option value="C"${w.role==='C'?' selected':''}>C</option><option value="A"${w.role==='A'?' selected':''}>A</option><option value="AR"${w.role==='AR'?' selected':''}>AR</option>
+      </select>
+      <input class="form-control" ${si(0,'35px')} value="${w.share||''}" placeholder="%" onchange="blUpdateWriter(${dataIdx},${wi},'share',this.value)">
+      ${writers.length > 1 ? `<span onclick="blRemoveWriter(${dataIdx},${wi})" style="color:#f44;cursor:pointer;font-size:14px;" title="Remove">×</span>` : ''}
+    </div>`
+  ).join('') + `<span onclick="blAddWriter(${dataIdx})" style="color:#4ade80;cursor:pointer;font-size:11px;">+ Writer</span>`;
+
+  const pubsHtml = pubs.map((p, pi) =>
+    `<div style="display:flex;gap:3px;align-items:center;margin-bottom:2px;">
+      <input class="form-control" ${si(0,'80px')} value="${blEsc(p.name||'')}" placeholder="Name" onchange="blUpdatePub(${dataIdx},${pi},'name',this.value)">
+      <input class="form-control" ${si(0,'75px')} value="${blEsc(p.ipi||'')}" placeholder="IPI" onchange="blUpdatePub(${dataIdx},${pi},'ipi',this.value)">
+      ${pubs.length > 1 ? `<span onclick="blRemovePub(${dataIdx},${pi})" style="color:#f44;cursor:pointer;font-size:14px;" title="Remove">×</span>` : ''}
+    </div>`
+  ).join('') + `<span onclick="blAddPub(${dataIdx})" style="color:#4ade80;cursor:pointer;font-size:11px;">+ Publisher</span>`;
+
   return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
     <td style="padding:6px;color:#fff;font-weight:500;font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${title}">${title}</td>
     <td style="padding:5px;">${inp('primary_artist', t.primary_artist, '120px')}</td>
+    <td style="padding:5px;font-size:11px;color:#ffc107;">${blEsc(t.featured_artists || '')}</td>
     <td style="padding:6px;font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${album}">${album || '-'}</td>
     <td style="padding:6px;font-size:11px;">${t.release_date || '-'}</td>
     <td style="padding:5px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:110px;font-family:monospace;${isrcOk ? 'color:#4caf50;' : 'color:#f44336;border-color:#f44336;'}" value="${t.isrc || ''}" placeholder="MISSING" onchange="blUpdateField(${dataIdx},'isrc',this.value)"></td>
-    <td style="padding:5px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:100px;font-family:monospace;" value="${t.upc || ''}" placeholder="—" onchange="blUpdateField(${dataIdx},'upc',this.value)"></td>
-    <td style="padding:5px;">${inp('writer_last_name', t.writer_last_name, '70px')} ${inp('writer_first_name', t.writer_first_name, '70px')}</td>
-    <td style="padding:5px;">${inp('writer_ipi', t.writer_ipi, '90px')}</td>
-    <td style="padding:5px;">${inp('publisher_name', t.publisher_name, '100px')}</td>
+    <td style="padding:5px;">${writersHtml}</td>
+    <td style="padding:5px;">${pubsHtml}</td>
     <td style="padding:5px;">${inp('iswc', t.iswc, '100px')}</td>
-    <td style="padding:5px;">${inp('collection_share', t.collection_share, '45px')}</td>
     <td style="padding:5px;">${inp('label', t.label, '80px')}</td>
   </tr>`;
 }
