@@ -6094,9 +6094,13 @@ async function fetchSpotifyAlbumTracks(albumId, token) {
     const trResp = await spotifyApiGet(`https://api.spotify.com/v1/tracks?ids=${batch.join(',')}&market=US`, token);
     if (trResp.ok) {
       const trData = await trResp.json();
+      console.log(`[BACKLOG] Tracks batch: ${batch.length} requested, ${(trData.tracks||[]).length} returned, sample ISRC: ${trData.tracks?.[0]?.external_ids?.isrc || 'NONE'}`);
       for (const ft of (trData.tracks || [])) {
         if (ft && ft.id) isrcMap[ft.id] = ft.external_ids && ft.external_ids.isrc || null;
       }
+    } else {
+      const body = await trResp.text().catch(() => '');
+      console.error(`[BACKLOG] Tracks batch failed: ${trResp.status}: ${body.substring(0, 300)}`);
     }
   }
 
