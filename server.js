@@ -6525,6 +6525,34 @@ app.post('/api/backlog/search-ascap', requireAdminOrPartner, async (req, res) =>
   }
 });
 
+// Backlog: Export MLC CSV
+app.post('/api/backlog/export/mlc', requireAdminOrPartner, (req, res) => {
+  const { tracks, artist_name } = req.body || {};
+  if (!tracks || !tracks.length) return res.status(400).json({ error: 'No tracks' });
+  const esc = s => { const str = String(s || ''); return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str; };
+  const lines = ['Song Title,Artist/Performer,ISRC,ISWC,Writers,Publishers,Release Date,Album,UPC'];
+  for (const t of tracks) {
+    lines.push([esc(t.song_title), esc(artist_name), esc(t.isrc), esc(t.iswc || ''), esc(t.writer), esc(t.publisher), esc(t.release_date), esc(t.album_name), esc(t.upc)].join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${artist_name || 'backlog'}_MLC.csv"`);
+  res.send(lines.join('\n'));
+});
+
+// Backlog: Export SoundExchange CSV
+app.post('/api/backlog/export/soundexchange', requireAdminOrPartner, (req, res) => {
+  const { tracks, artist_name } = req.body || {};
+  if (!tracks || !tracks.length) return res.status(400).json({ error: 'No tracks' });
+  const esc = s => { const str = String(s || ''); return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str; };
+  const lines = ['Song Title,Featured Artist,ISRC,Album Title,Release Date,Label,UPC'];
+  for (const t of tracks) {
+    lines.push([esc(t.song_title), esc(t.featured_artists || artist_name), esc(t.isrc), esc(t.album_name), esc(t.release_date), esc(t.label), esc(t.upc)].join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${artist_name || 'backlog'}_SoundExchange.csv"`);
+  res.send(lines.join('\n'));
+});
+
 // Backlog: AI-powered verification — cross-reference all sources
 app.post('/api/backlog/verify', requireAdminOrPartner, async (req, res) => {
   try {

@@ -11085,11 +11085,33 @@ async function blVerify() {
   document.getElementById('blVerifyBtn').disabled = false;
 }
 
-function blExportMLC() {
-  window.open('/api/manager/registration/export/mlc', '_blank');
+async function blExportMLC() {
+  if (!BL_TRACKS.length || !BL_ARTIST) { showToast('No tracks loaded'); return; }
+  try {
+    const resp = await fetch('/api/backlog/export/mlc', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ tracks: BL_TRACKS, artist_name: BL_ARTIST.name })
+    });
+    if (!resp.ok) { showToast('Export failed'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${BL_ARTIST.name}_MLC.csv`; a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { showToast('Export error: ' + e.message); }
 }
-function blExportSE() {
-  window.open('/api/manager/registration/export/soundexchange', '_blank');
+async function blExportSE() {
+  if (!BL_TRACKS.length || !BL_ARTIST) { showToast('No tracks loaded'); return; }
+  try {
+    const resp = await fetch('/api/backlog/export/soundexchange', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ tracks: BL_TRACKS, artist_name: BL_ARTIST.name })
+    });
+    if (!resp.ok) { showToast('Export failed'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${BL_ARTIST.name}_SoundExchange.csv`; a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { showToast('Export error: ' + e.message); }
 }
 
 </script>
