@@ -11045,6 +11045,7 @@ function blRenderTable() {
       <td style="padding:6px;font-size:11px;">${t.label || '-'}</td>
       <td style="padding:6px;font-size:11px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:100px;" value="${t.writer || ''}" onchange="BL_TRACKS[${i}].writer=this.value"></td>
       <td style="padding:6px;font-size:11px;"><input class="form-control" style="font-size:11px;padding:3px 6px;width:100px;" value="${t.publisher || ''}" onchange="BL_TRACKS[${i}].publisher=this.value"></td>
+      <td style="padding:6px;font-family:monospace;font-size:10px;color:#888;">${t.ipi || '-'}</td>
     </tr>`;
   }).join('');
 }

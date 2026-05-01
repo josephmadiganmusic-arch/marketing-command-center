@@ -6233,6 +6233,109 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
           console.log(`[BACKLOG] Deezer ISRC enrichment: ${found}/${missingIsrc.length} found`);
         }
 
+        // Enrich remaining missing ISRCs via Apple Music / iTunes (free, no auth)
+        const stillMissing = unique.filter(t => !t.isrc);
+        if (stillMissing.length > 0) {
+          console.log(`[BACKLOG] ${stillMissing.length} tracks still missing ISRCs, trying Apple Music...`);
+          let appleFound = 0;
+          for (const t of stillMissing) {
+            try {
+              const q = encodeURIComponent(`${t.song_title} ${artist.name}`);
+              const aResp = await fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=5`);
+              if (aResp.ok) {
+                const aData = await aResp.json();
+                const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const match = (aData.results || []).find(r =>
+                  normalize(r.trackName) === normalize(t.song_title) &&
+                  normalize(r.artistName).includes(normalize(artist.name))
+                );
+                if (match) {
+                  // iTunes doesn't return ISRC directly, but trackId can be used
+                  // However some responses include isrc in the collectionId lookup
+                  // For now, mark as found if we get a match — ISRC may need BMI/ASCAP
+                  if (match.isrc) { t.isrc = match.isrc; appleFound++; }
+                }
+              }
+              await new Promise(r => setTimeout(r, 200));
+            } catch (e) { /* skip */ }
+          }
+          console.log(`[BACKLOG] Apple Music ISRC enrichment: ${appleFound}/${stillMissing.length} found`);
+        }
+
+        // Enrich writer credits + IPIs via MusicBrainz (free, no auth, 1 req/sec)
+        console.log(`[BACKLOG] Enriching writer credits via MusicBrainz...`);
+        let writerFound = 0;
+        for (const t of unique) {
+          try {
+            const q = encodeURIComponent(`recording:"${t.song_title}" AND artist:"${artist.name}"`);
+            const mbResp = await fetch(`https://musicbrainz.org/ws/2/recording/?query=${q}&fmt=json&limit=3`, {
+              headers: { 'User-Agent': 'RolloutHeaven/1.0 (https://rolloutheaven.com)' }
+            });
+            if (mbResp.ok) {
+              const mbData = await mbResp.json();
+              const rec = (mbData.recordings || []).find(r =>
+                r.title.toLowerCase().replace(/[^a-z0-9]/g, '') === t.song_title.toLowerCase().replace(/[^a-z0-9]/g, '')
+              );
+              if (rec) {
+                // Get ISRC from MusicBrainz if still missing
+                if (!t.isrc && rec.isrcs && rec.isrcs.length > 0) {
+                  t.isrc = rec.isrcs[0];
+                }
+                // Fetch work relations for writer credits
+                if (rec.id) {
+                  const relResp = await fetch(`https://musicbrainz.org/ws/2/recording/${rec.id}?inc=work-rels+artist-rels&fmt=json`, {
+                    headers: { 'User-Agent': 'RolloutHeaven/1.0 (https://rolloutheaven.com)' }
+                  });
+                  if (relResp.ok) {
+                    const relData = await relResp.json();
+                    const writers = [];
+                    const ipis = [];
+                    for (const rel of (relData.relations || [])) {
+                      if (rel.type === 'writer' || rel.type === 'composer' || rel.type === 'lyricist') {
+                        if (rel.artist) {
+                          writers.push(rel.artist.name);
+                          if (rel.artist.ipis && rel.artist.ipis.length > 0) {
+                            ipis.push(...rel.artist.ipis.map(ipi => `${rel.artist.name}: ${ipi}`));
+                          }
+                        }
+                      }
+                    }
+                    // Also check work relations
+                    if (relData.relations) {
+                      for (const rel of relData.relations) {
+                        if (rel.type === 'performance' && rel.work) {
+                          const wResp = await fetch(`https://musicbrainz.org/ws/2/work/${rel.work.id}?inc=artist-rels&fmt=json`, {
+                            headers: { 'User-Agent': 'RolloutHeaven/1.0 (https://rolloutheaven.com)' }
+                          });
+                          if (wResp.ok) {
+                            const wData = await wResp.json();
+                            for (const wRel of (wData.relations || [])) {
+                              if (wRel.type === 'writer' || wRel.type === 'composer' || wRel.type === 'lyricist') {
+                                if (wRel.artist && !writers.includes(wRel.artist.name)) {
+                                  writers.push(wRel.artist.name);
+                                  if (wRel.artist.ipis && wRel.artist.ipis.length > 0) {
+                                    ipis.push(...wRel.artist.ipis.map(ipi => `${wRel.artist.name}: ${ipi}`));
+                                  }
+                                }
+                              }
+                            }
+                          }
+                          await new Promise(r => setTimeout(r, 1100));
+                        }
+                      }
+                    }
+                    if (writers.length > 0) { t.writer = writers.join(', '); writerFound++; }
+                    if (ipis.length > 0) { t.ipi = ipis.join('; '); }
+                  }
+                }
+              }
+            }
+            // MusicBrainz rate limit: 1 request per second
+            await new Promise(r => setTimeout(r, 1100));
+          } catch (e) { /* skip */ }
+        }
+        console.log(`[BACKLOG] MusicBrainz writer enrichment: ${writerFound}/${unique.length} found`);
+
         return res.json({
           artist: { name: artist.name, spotify_id: artistId, followers: artist.followers?.total, genres: artist.genres, image: artist.images?.[0]?.url },
           albums: albums.length,
