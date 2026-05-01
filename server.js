@@ -5989,22 +5989,16 @@ app.post('/api/slack/interactions',
 // --- BULK BACKLOG: Platform scraping + registration prep ---
 // ============================================================
 
-// Spotify anonymous access token (public web player token, no credentials needed)
-async function getSpotifyToken() {
-  // Strategy 1: Scrape embed page for anonymous token (works without Premium)
-  console.log('[BACKLOG] Trying embed page token...');
-  try {
-    const embedResp = await fetch('https://open.spotify.com/embed/artist/1YONuiYyTSZiWtE5NJDUsp', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-    });
-    if (embedResp.ok) {
-      const html = await embedResp.text();
-      const tokenMatch = html.match(/"accessToken":"([^"]+)"/);
-      if (tokenMatch) { console.log('[BACKLOG] Got embed token'); return tokenMatch[1]; }
-    }
-  } catch (e) { console.error('[BACKLOG] Embed token error:', e.message); }
+// Spotify token cache (avoid re-fetching on every request)
+let _spotifyTokenCache = { token: null, expiresAt: 0 };
 
-  // Strategy 2: Client credentials (requires Premium propagation)
+async function getSpotifyToken() {
+  // Return cached token if still valid (with 5 min buffer)
+  if (_spotifyTokenCache.token && Date.now() < _spotifyTokenCache.expiresAt - 300000) {
+    return _spotifyTokenCache.token;
+  }
+
+  // Strategy 1: Client credentials (fastest, most reliable with Premium)
   const clientId = (process.env.SPOTIFY_CLIENT_ID || '').trim();
   const clientSecret = (process.env.SPOTIFY_CLIENT_SECRET || '').trim();
   if (clientId && clientSecret) {
@@ -6017,12 +6011,46 @@ async function getSpotifyToken() {
       },
       body: 'grant_type=client_credentials'
     });
-    if (resp.ok) { const data = await resp.json(); console.log('[BACKLOG] Got client credentials token'); return data.access_token; }
+    if (resp.ok) {
+      const data = await resp.json();
+      console.log('[BACKLOG] Got client credentials token');
+      _spotifyTokenCache = { token: data.access_token, expiresAt: Date.now() + (data.expires_in * 1000) };
+      return data.access_token;
+    }
     console.error('[BACKLOG] Client credentials failed:', resp.status);
   }
 
+  // Strategy 2: Scrape embed page for anonymous token (fallback)
+  console.log('[BACKLOG] Trying embed page token...');
+  try {
+    const embedResp = await fetch('https://open.spotify.com/embed/artist/1YONuiYyTSZiWtE5NJDUsp', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+    });
+    if (embedResp.ok) {
+      const html = await embedResp.text();
+      const tokenMatch = html.match(/"accessToken":"([^"]+)"/);
+      if (tokenMatch) {
+        console.log('[BACKLOG] Got embed token');
+        _spotifyTokenCache = { token: tokenMatch[1], expiresAt: Date.now() + 3600000 };
+        return tokenMatch[1];
+      }
+    }
+  } catch (e) { console.error('[BACKLOG] Embed token error:', e.message); }
+
   console.error('[BACKLOG] All token methods failed');
   return null;
+}
+
+// Rate-limit-aware Spotify fetch helper
+async function spotifyApiGet(url, token, retries = 2) {
+  const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+  if (resp.status === 429 && retries > 0) {
+    const retryAfter = parseInt(resp.headers.get('retry-after') || '3', 10);
+    console.log(`[BACKLOG] Spotify 429, waiting ${retryAfter}s...`);
+    await new Promise(r => setTimeout(r, retryAfter * 1000));
+    return spotifyApiGet(url, token, retries - 1);
+  }
+  return resp;
 }
 
 // Extract Spotify artist ID from URL
@@ -6036,7 +6064,7 @@ async function fetchSpotifyDiscography(artistId, token) {
   const albums = [];
   let url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&limit=50&market=US`;
   while (url) {
-    const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+    const resp = await spotifyApiGet(url, token);
     if (!resp.ok) break;
     const data = await resp.json();
     albums.push(...data.items);
@@ -6047,9 +6075,7 @@ async function fetchSpotifyDiscography(artistId, token) {
 
 // Fetch album tracks with ISRCs
 async function fetchSpotifyAlbumTracks(albumId, token) {
-  const resp = await fetch(`https://api.spotify.com/v1/albums/${albumId}?market=US`, {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
+  const resp = await spotifyApiGet(`https://api.spotify.com/v1/albums/${albumId}?market=US`, token);
   if (!resp.ok) return [];
   const data = await resp.json();
   return (data.tracks && data.tracks.items || []).map(t => ({
@@ -6071,53 +6097,16 @@ async function fetchSpotifyAlbumTracks(albumId, token) {
 
 // Fetch artist info from Spotify
 async function fetchSpotifyArtist(artistId, token) {
-  const resp = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
+  const resp = await spotifyApiGet(`https://api.spotify.com/v1/artists/${artistId}`, token);
   if (!resp.ok) {
-    console.error(`[BACKLOG] Spotify artist fetch failed: ${resp.status} ${resp.statusText} for ID ${artistId}`);
+    const body = await resp.text().catch(() => '');
+    console.error(`[BACKLOG] Spotify artist fetch failed: ${resp.status} for ID ${artistId}: ${body.substring(0, 200)}`);
     return null;
   }
   return resp.json();
 }
 
-// Backlog: Debug Spotify token (temporary)
-app.get('/api/backlog/spotify-debug', requireAdminOrPartner, async (req, res) => {
-  const results = {};
-  // Test embed token (primary strategy)
-  try {
-    const embedResp = await fetch('https://open.spotify.com/embed/artist/1YONuiYyTSZiWtE5NJDUsp', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-    });
-    results.embedStatus = embedResp.status;
-    if (embedResp.ok) {
-      const html = await embedResp.text();
-      const tokenMatch = html.match(/"accessToken":"([^"]+)"/);
-      results.embedTokenFound = !!tokenMatch;
-      if (tokenMatch) {
-        results.embedTokenLen = tokenMatch[1].length;
-        // Test artist fetch with embed token
-        const artistResp = await fetch('https://api.spotify.com/v1/artists/1YONuiYyTSZiWtE5NJDUsp', {
-          headers: { 'Authorization': 'Bearer ' + tokenMatch[1] }
-        });
-        results.artistFetchStatus = artistResp.status;
-        results.artistFetchBody = (await artistResp.text()).substring(0, 300);
-      }
-    }
-  } catch (e) { results.embedError = e.message; }
-  res.json(results);
-});
-
-// Backlog: Provide Spotify token to client (client makes API calls directly to avoid Premium requirement)
-app.get('/api/backlog/spotify-token', requireAdminOrPartner, async (req, res) => {
-  try {
-    const token = await getSpotifyToken();
-    if (!token) return res.status(500).json({ error: 'Could not get Spotify token' });
-    res.json({ token });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Backlog: Fetch full discography from Spotify (legacy server-side, kept as fallback)
+// Backlog: Fetch full discography from Spotify
 app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) => {
   try {
     const { url } = req.body;
