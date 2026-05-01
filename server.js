@@ -6197,7 +6197,7 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
     if (token) {
       const artist = await fetchSpotifyArtist(artistId, token);
       if (artist) {
-        console.log(`[BACKLOG] Using Spotify Web API (has ISRCs) — artist: "${artist.name}" id: ${artistId} followers: ${artist.followers?.total}`);
+        console.log(`[BACKLOG] Using Spotify Web API + Deezer ISRC — artist: "${artist.name}" id: ${artistId}`);
         const albums = await fetchSpotifyDiscography(artistId, token);
         const allTracks = [];
         for (const album of albums) {
@@ -6210,6 +6210,29 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
           const key = t.isrc || t.song_title;
           if (!seen.has(key)) { seen.add(key); unique.push(t); }
         }
+        // Enrich ISRCs via Deezer (free, no auth)
+        const missingIsrc = unique.filter(t => !t.isrc);
+        if (missingIsrc.length > 0) {
+          console.log(`[BACKLOG] ${missingIsrc.length} tracks missing ISRCs, enriching via Deezer...`);
+          let found = 0;
+          for (const t of missingIsrc) {
+            try {
+              const q = encodeURIComponent(`artist:"${artist.name}" track:"${t.song_title}"`);
+              const dResp = await fetch(`https://api.deezer.com/search?q=${q}&limit=5`);
+              if (dResp.ok) {
+                const dData = await dResp.json();
+                const match = (dData.data || []).find(d =>
+                  d.isrc && d.title.toLowerCase().replace(/[^a-z0-9]/g, '') === t.song_title.toLowerCase().replace(/[^a-z0-9]/g, '')
+                );
+                if (match) { t.isrc = match.isrc; found++; }
+              }
+              // Small delay to avoid Deezer rate limits
+              await new Promise(r => setTimeout(r, 150));
+            } catch (e) { /* skip */ }
+          }
+          console.log(`[BACKLOG] Deezer ISRC enrichment: ${found}/${missingIsrc.length} found`);
+        }
+
         return res.json({
           artist: { name: artist.name, spotify_id: artistId, followers: artist.followers?.total, genres: artist.genres, image: artist.images?.[0]?.url },
           albums: albums.length,
