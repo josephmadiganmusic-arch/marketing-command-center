@@ -6065,11 +6065,17 @@ async function fetchSpotifyDiscography(artistId, token) {
   let url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&limit=50&market=US`;
   while (url) {
     const resp = await spotifyApiGet(url, token);
-    if (!resp.ok) break;
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      console.error(`[BACKLOG] Discography fetch failed: ${resp.status} for ${artistId}: ${body.substring(0, 300)}`);
+      break;
+    }
     const data = await resp.json();
+    console.log(`[BACKLOG] Discography page: ${data.items?.length || 0} items, total: ${data.total}, next: ${!!data.next}`);
     albums.push(...data.items);
     url = data.next;
   }
+  console.log(`[BACKLOG] Total albums/singles found: ${albums.length}`);
   return albums;
 }
 
@@ -6189,7 +6195,7 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
     if (token) {
       const artist = await fetchSpotifyArtist(artistId, token);
       if (artist) {
-        console.log('[BACKLOG] Using Spotify Web API (has ISRCs)');
+        console.log(`[BACKLOG] Using Spotify Web API (has ISRCs) — artist: "${artist.name}" id: ${artistId} followers: ${artist.followers?.total}`);
         const albums = await fetchSpotifyDiscography(artistId, token);
         const allTracks = [];
         for (const album of albums) {

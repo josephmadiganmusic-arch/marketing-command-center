@@ -1431,22 +1431,11 @@
             </div>
           </div>
           <div class="form-section">
-            <div class="form-section-title">Artist Photo</div>
-            <div class="upload-zone" id="egArtistPhotoZone">
-              <input type="file" id="egArtistPhotoInput" accept="image/*" onchange="egHandleArtistPhoto(this)">
-              <div class="upload-icon">&#9728;</div>
-              <div class="upload-label">Drop artist photo here or click to upload</div>
-              <div class="upload-hint">JPG, PNG, or WEBP (recommended 1200x1500 portrait)</div>
-              <div class="upload-filename" id="egArtistPhotoName"></div>
-              <div class="upload-size" id="egArtistPhotoSize"></div>
-              <div class="cover-preview" id="egArtistPhotoPreview"><img id="egArtistPhotoPreviewImg" alt="Artist Photo"></div>
-            </div>
-            <button type="button" class="upload-clear" id="egArtistPhotoClearBtn" style="display:none;" onclick="egClearArtistPhoto(event)">Remove Artist Photo</button>
-            <div class="form-grid" style="margin-top:16px;">
-              <div class="form-group full-width">
-                <label>Or paste hosted image URL</label>
-                <input type="text" id="egArtistPhotoUrl" placeholder="https://yoursite.com/artist.jpg" oninput="egHandleArtistPhotoUrl(this.value)">
-              </div>
+            <div class="form-section-title">Artist Photos</div>
+            <div id="egArtistPhotosContainer"></div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <button type="button" class="btn-add-link" onclick="egAddArtistPhotoSlot('file')">+ Upload Photo</button>
+              <button type="button" class="btn-add-link" onclick="egAddArtistPhotoSlot('url')">+ Add URL</button>
             </div>
           </div>
           <div class="form-section">
@@ -3198,6 +3187,8 @@ function intakeForceFlush() {
       artistPhoto: existingRel.artistPhotoUrl || null,
       coverArtUrl: existingRel.coverArtUrl || null,
       artistPhotoUrl: existingRel.artistPhotoUrl || null,
+      artistPhotos: existingRel.artistPhotoUrls || existingRel.artistPhotos || [],
+      artistPhotoUrls: existingRel.artistPhotoUrls || existingRel.artistPhotos || [],
     });
     localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
     saveArtistProfile();
@@ -3865,6 +3856,8 @@ function intakeUpdate() {
       coverArtUrl: prevRelease.coverArtUrl || null,
       artistPhoto: prevRelease.artistPhotoUrl || null,
       artistPhotoUrl: prevRelease.artistPhotoUrl || null,
+      artistPhotos: prevRelease.artistPhotoUrls || prevRelease.artistPhotos || [],
+      artistPhotoUrls: prevRelease.artistPhotoUrls || prevRelease.artistPhotos || [],
     });
     try { localStorage.setItem(ukey('release_data'), JSON.stringify(slim)); } catch(e) {}
     // Also update artist profile with sticky fields
@@ -3886,6 +3879,8 @@ function intakeUpdate() {
       coverArtUrl: existing.coverArtUrl || null,
       artistPhoto: existing.artistPhotoUrl || null,
       artistPhotoUrl: existing.artistPhotoUrl || null,
+      artistPhotos: existing.artistPhotoUrls || existing.artistPhotos || [],
+      artistPhotoUrls: existing.artistPhotoUrls || existing.artistPhotos || [],
       // Preserve campaign bundle so autosave never wipes a generated campaign
       _campaign: existing._campaign,
       _campaignGenerated: existing._campaignGenerated,
@@ -3989,8 +3984,24 @@ async function intakeSave() {
       if (url) { artistPhotoUrl = url; showToast('Artist photo uploaded!'); }
     }
 
+    // Upload multiple artist photos
+    const artistPhotoUrls = existingRelease.artistPhotoUrls || [];
+    if (d.artistPhotos && d.artistPhotos.length > 0) {
+      const uploadedUrls = [];
+      for (const src of d.artistPhotos) {
+        if (src.startsWith('data:')) {
+          const url = await uploadReleaseImage(src, 'artist');
+          uploadedUrls.push(url || src);
+        } else {
+          uploadedUrls.push(src);
+        }
+      }
+      artistPhotoUrls.length = 0;
+      artistPhotoUrls.push(...uploadedUrls);
+    }
+
     // Slim version: no base64 blobs, store URLs instead
-    const slim = Object.assign({}, d, { coverArt: coverArtUrl, artistPhoto: artistPhotoUrl, coverArtUrl, artistPhotoUrl });
+    const slim = Object.assign({}, d, { coverArt: coverArtUrl, artistPhoto: artistPhotoUrl, coverArtUrl, artistPhotoUrl, artistPhotos: artistPhotoUrls, artistPhotoUrls });
     localStorage.setItem(ukey('release_data'), JSON.stringify(slim));
     // Save to named releases — preserve any existing campaign bundle
     const saved = JSON.parse(localStorage.getItem(ukey('release_data_all')) || '{}');
@@ -5052,7 +5063,8 @@ function renderChecklist(elId, items) {
 let egCurrentTheme = 'dark';
 let egGeneratedHTML = '';
 let egCoverArtData = null;
-let egArtistPhotoData = null;
+let egArtistPhotoData = null; // kept for backward compat (first photo)
+let egArtistPhotos = []; // array of {src, name, size} objects
 // egMp3Data/egWavData removed — audio now shared via Google Drive links
 
 const egThemes = {
@@ -5096,49 +5108,97 @@ function egHandleCoverArt(input) {
   reader.readAsDataURL(file);
 }
 
-function egHandleArtistPhoto(input) {
-  const file = input.files[0]; if(!file) return;
+function egAddArtistPhotoSlot(mode) {
+  const idx = egArtistPhotos.length;
+  egArtistPhotos.push({ src: null, name: '', size: '' });
+  const container = document.getElementById('egArtistPhotosContainer');
+  const slot = document.createElement('div');
+  slot.id = 'egArtistPhotoSlot-' + idx;
+  slot.style.cssText = 'position:relative;margin-bottom:10px;';
+  if (mode === 'url') {
+    slot.innerHTML = `<div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" class="form-control" placeholder="https://yoursite.com/artist.jpg" style="flex:1;" oninput="egSetArtistPhotoUrl(${idx},this.value)">
+      <button type="button" onclick="egRemoveArtistPhoto(${idx})" style="padding:6px 10px;background:rgba(244,67,54,0.15);border:1px solid rgba(244,67,54,0.3);color:#f44336;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700;line-height:1;">&times;</button>
+    </div>
+    <div class="cover-preview" id="egArtistPhotoPreview-${idx}" style="display:none;margin-top:8px;"><img id="egArtistPhotoImg-${idx}" alt="Artist Photo" style="max-width:120px;max-height:120px;border-radius:8px;object-fit:cover;"></div>`;
+  } else {
+    slot.innerHTML = `<div class="upload-zone" style="padding:14px;" onclick="this.querySelector('input[type=file]').click()">
+      <input type="file" accept="image/*" style="display:none;" onchange="egSetArtistPhotoFile(${idx},this)">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="cover-preview" id="egArtistPhotoPreview-${idx}" style="display:none;margin:0;"><img id="egArtistPhotoImg-${idx}" alt="Artist Photo" style="width:60px;height:60px;border-radius:8px;object-fit:cover;"></div>
+        <div style="flex:1;">
+          <div style="font-size:12px;color:#888;" id="egArtistPhotoLabel-${idx}">Click to upload artist photo</div>
+          <div style="font-size:11px;color:#555;" id="egArtistPhotoMeta-${idx}"></div>
+        </div>
+        <button type="button" onclick="event.stopPropagation();egRemoveArtistPhoto(${idx})" style="padding:6px 10px;background:rgba(244,67,54,0.15);border:1px solid rgba(244,67,54,0.3);color:#f44336;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700;line-height:1;">&times;</button>
+      </div>
+    </div>`;
+  }
+  container.appendChild(slot);
+}
+
+function egSetArtistPhotoFile(idx, input) {
+  const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    egArtistPhotoData = e.target.result;
-    document.getElementById('egArtistPhotoName').textContent = file.name;
-    document.getElementById('egArtistPhotoSize').textContent = egFormatBytes(file.size);
-    document.getElementById('egArtistPhotoPreviewImg').src = egArtistPhotoData;
-    document.getElementById('egArtistPhotoPreview').style.display = 'block';
-    document.getElementById('egArtistPhotoZone').classList.add('has-file');
-    document.getElementById('egArtistPhotoClearBtn').style.display = 'inline-block';
-    document.getElementById('egArtistPhotoUrl').value = '';
+    egArtistPhotos[idx] = { src: e.target.result, name: file.name, size: egFormatBytes(file.size) };
+    egArtistPhotoData = egArtistPhotos[0]?.src || null;
+    const img = document.getElementById('egArtistPhotoImg-' + idx);
+    const prev = document.getElementById('egArtistPhotoPreview-' + idx);
+    img.src = e.target.result; prev.style.display = 'block';
+    const lbl = document.getElementById('egArtistPhotoLabel-' + idx);
+    const meta = document.getElementById('egArtistPhotoMeta-' + idx);
+    if (lbl) lbl.textContent = file.name;
+    if (meta) meta.textContent = egFormatBytes(file.size);
     if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
   };
   reader.readAsDataURL(file);
 }
 
-function egHandleArtistPhotoUrl(url) {
-  if(url.trim()) {
-    egArtistPhotoData = url.trim();
-    document.getElementById('egArtistPhotoPreviewImg').src = url.trim();
-    document.getElementById('egArtistPhotoPreview').style.display = 'block';
-    document.getElementById('egArtistPhotoZone').classList.add('has-file');
-    document.getElementById('egArtistPhotoName').textContent = 'External URL';
-    document.getElementById('egArtistPhotoSize').textContent = '';
-    document.getElementById('egArtistPhotoClearBtn').style.display = 'inline-block';
-    document.getElementById('egArtistPhotoInput').value = '';
+function egSetArtistPhotoUrl(idx, url) {
+  if (url.trim()) {
+    egArtistPhotos[idx] = { src: url.trim(), name: 'URL', size: '' };
+    egArtistPhotoData = egArtistPhotos[0]?.src || null;
+    const img = document.getElementById('egArtistPhotoImg-' + idx);
+    const prev = document.getElementById('egArtistPhotoPreview-' + idx);
+    img.src = url.trim(); prev.style.display = 'block';
     if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
   }
 }
 
-function egClearArtistPhoto(e) {
-  e.stopPropagation();
-  egArtistPhotoData = null;
-  document.getElementById('egArtistPhotoInput').value = '';
-  document.getElementById('egArtistPhotoUrl').value = '';
-  document.getElementById('egArtistPhotoName').textContent = '';
-  document.getElementById('egArtistPhotoSize').textContent = '';
-  document.getElementById('egArtistPhotoPreview').style.display = 'none';
-  document.getElementById('egArtistPhotoZone').classList.remove('has-file');
-  document.getElementById('egArtistPhotoClearBtn').style.display = 'none';
+function egRemoveArtistPhoto(idx) {
+  egArtistPhotos.splice(idx, 1);
+  egArtistPhotoData = egArtistPhotos[0]?.src || null;
+  egRebuildArtistPhotoSlots();
   if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} }
 }
+
+function egRebuildArtistPhotoSlots() {
+  const container = document.getElementById('egArtistPhotosContainer');
+  container.innerHTML = '';
+  const photos = [...egArtistPhotos];
+  egArtistPhotos = [];
+  photos.forEach(p => {
+    if (!p.src) return;
+    const idx = egArtistPhotos.length;
+    egArtistPhotos.push(p);
+    const slot = document.createElement('div');
+    slot.id = 'egArtistPhotoSlot-' + idx;
+    slot.style.cssText = 'position:relative;margin-bottom:10px;';
+    const isUrl = !p.src.startsWith('data:');
+    slot.innerHTML = `<div style="display:flex;align-items:center;gap:12px;padding:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;">
+      <img src="${p.src}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;">
+      <div style="flex:1;font-size:12px;color:#aaa;">${p.name || (isUrl ? 'URL' : 'Photo')}</div>
+      <button type="button" onclick="egRemoveArtistPhoto(${idx})" style="padding:6px 10px;background:rgba(244,67,54,0.15);border:1px solid rgba(244,67,54,0.3);color:#f44336;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700;line-height:1;">&times;</button>
+    </div>`;
+    container.appendChild(slot);
+  });
+}
+
+// Legacy compat
+function egHandleArtistPhoto(input) { egAddArtistPhotoSlot('file'); const lastIdx = egArtistPhotos.length - 1; egSetArtistPhotoFile(lastIdx, input); }
+function egHandleArtistPhotoUrl(url) { egAddArtistPhotoSlot('url'); const lastIdx = egArtistPhotos.length - 1; egSetArtistPhotoUrl(lastIdx, url); }
+function egClearArtistPhoto(e) { if(e) e.stopPropagation(); egArtistPhotos = []; egArtistPhotoData = null; document.getElementById('egArtistPhotosContainer').innerHTML = ''; if (typeof window.__egRefreshListener === 'function') { try { egGenerateEmail(); } catch(_) {} } }
 
 function egHandleCoverArtUrl(url) {
   if(url.trim()) {
@@ -7061,6 +7121,7 @@ function egGatherFormData() {
     dlPressKit: document.getElementById('egDlPressKit').value.trim(),
     coverArt: egCoverArtData,
     artistPhoto: egArtistPhotoData,
+    artistPhotos: egArtistPhotos.filter(p => p && p.src).map(p => p.src),
     musicVideo: document.getElementById('egLinkMusicVideo').value.trim(),
     iswc: (JSON.parse(localStorage.getItem(ukey('release_data')) || '{}')).iswc || '',
     hasMp3: false, hasWav: false
@@ -7112,13 +7173,26 @@ function egLoadFromIntake(silent) {
     document.getElementById('egCoverArtZone').classList.add('has-file');
     document.getElementById('egCoverClearBtn').style.display = 'inline-block';
   }
-  if (d.artistPhoto) {
-    egArtistPhotoData = d.artistPhoto;
-    document.getElementById('egArtistPhotoPreviewImg').src = d.artistPhoto;
-    document.getElementById('egArtistPhotoPreview').style.display = 'block';
-    document.getElementById('egArtistPhotoZone').classList.add('has-file');
-    document.getElementById('egArtistPhotoClearBtn').style.display = 'inline-block';
-  }
+  // Load artist photos (supports array or single)
+  egArtistPhotos = [];
+  egArtistPhotoData = null;
+  document.getElementById('egArtistPhotosContainer').innerHTML = '';
+  const savedPhotos = d.artistPhotos || (d.artistPhoto ? [d.artistPhoto] : []);
+  savedPhotos.forEach(src => {
+    if (!src) return;
+    const idx = egArtistPhotos.length;
+    egArtistPhotos.push({ src, name: src.startsWith('data:') ? 'Uploaded' : 'URL', size: '' });
+    const slot = document.createElement('div');
+    slot.id = 'egArtistPhotoSlot-' + idx;
+    slot.style.cssText = 'position:relative;margin-bottom:10px;';
+    slot.innerHTML = `<div style="display:flex;align-items:center;gap:12px;padding:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;">
+      <img src="${src}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;">
+      <div style="flex:1;font-size:12px;color:#aaa;">${src.startsWith('data:') ? 'Uploaded' : 'URL'}</div>
+      <button type="button" onclick="egRemoveArtistPhoto(${idx})" style="padding:6px 10px;background:rgba(244,67,54,0.15);border:1px solid rgba(244,67,54,0.3);color:#f44336;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700;line-height:1;">&times;</button>
+    </div>`;
+    document.getElementById('egArtistPhotosContainer').appendChild(slot);
+  });
+  egArtistPhotoData = egArtistPhotos[0]?.src || null;
   if (!silent) showToast('Loaded from Intake!');
 }
 
@@ -7171,9 +7245,29 @@ function egGenerateEmail() {
   let introHTML = '';
   if(data.intro) { data.intro.split('\n').filter(p=>p.trim()).forEach(p => { introHTML += `<p style="margin:16px 0 0 0;font-size:15px;color:${t.textSecondary};line-height:1.75;">${egEscHtml(p)}</p>`; }); }
   let artistPhotoHTML = '';
-  if(data.artistPhoto) {
-    const apSrc = data.artistPhoto.startsWith('data:') ? data.artistPhoto : egEscHtml(data.artistPhoto);
+  const photos = (data.artistPhotos && data.artistPhotos.length > 0) ? data.artistPhotos : (data.artistPhoto ? [data.artistPhoto] : []);
+  if (photos.length === 1) {
+    const apSrc = photos[0].startsWith('data:') ? photos[0] : egEscHtml(photos[0]);
     artistPhotoHTML = `<tr><td align="center" style="padding:28px 40px 0 40px;"><img src="${apSrc}" alt="${egEscHtml(data.artistName || data.artists)}" width="260" style="width:260px;max-width:100%;height:auto;border-radius:12px;display:block;box-shadow:0 8px 28px rgba(0,0,0,0.4);"></td></tr>`;
+  } else if (photos.length === 2) {
+    const imgs = photos.map(p => { const s = p.startsWith('data:') ? p : egEscHtml(p); return `<td width="50%" style="padding:0 6px;"><img src="${s}" alt="${egEscHtml(data.artistName || data.artists)}" width="260" style="width:100%;max-width:260px;height:auto;border-radius:12px;display:block;box-shadow:0 8px 28px rgba(0,0,0,0.4);"></td>`; }).join('');
+    artistPhotoHTML = `<tr><td style="padding:28px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${imgs}</tr></table></td></tr>`;
+  } else if (photos.length === 3) {
+    const topImg = photos[0].startsWith('data:') ? photos[0] : egEscHtml(photos[0]);
+    const btmImgs = photos.slice(1).map(p => { const s = p.startsWith('data:') ? p : egEscHtml(p); return `<td width="50%" style="padding:0 6px;"><img src="${s}" alt="${egEscHtml(data.artistName || data.artists)}" width="260" style="width:100%;max-width:260px;height:auto;border-radius:12px;display:block;box-shadow:0 8px 28px rgba(0,0,0,0.4);"></td>`; }).join('');
+    artistPhotoHTML = `<tr><td align="center" style="padding:28px 40px 0 40px;"><img src="${topImg}" alt="${egEscHtml(data.artistName || data.artists)}" width="360" style="width:360px;max-width:100%;height:auto;border-radius:12px;display:block;box-shadow:0 8px 28px rgba(0,0,0,0.4);"></td></tr><tr><td style="padding:14px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${btmImgs}</tr></table></td></tr>`;
+  } else if (photos.length >= 4) {
+    const rows = [];
+    for (let i = 0; i < photos.length; i += 2) {
+      const pair = photos.slice(i, i + 2);
+      const imgs = pair.map(p => { const s = p.startsWith('data:') ? p : egEscHtml(p); return `<td width="50%" style="padding:0 6px;"><img src="${s}" alt="${egEscHtml(data.artistName || data.artists)}" width="260" style="width:100%;max-width:260px;height:auto;border-radius:12px;display:block;box-shadow:0 8px 28px rgba(0,0,0,0.4);"></td>`; }).join('');
+      if (pair.length === 1) {
+        rows.push(`<tr><td align="center" colspan="2" style="padding:0 6px;"><img src="${pair[0].startsWith('data:') ? pair[0] : egEscHtml(pair[0])}" alt="${egEscHtml(data.artistName || data.artists)}" width="260" style="width:260px;max-width:100%;height:auto;border-radius:12px;display:block;box-shadow:0 8px 28px rgba(0,0,0,0.4);"></td></tr>`);
+      } else {
+        rows.push(`<tr>${imgs}</tr>`);
+      }
+    }
+    artistPhotoHTML = `<tr><td style="padding:28px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-spacing:0 12px;">${rows.join('')}</table></td></tr>`;
   }
   let bioHTML = '';
   if(data.bio) bioHTML = `<tr><td style="padding:28px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${t.cardBg};border:1px solid ${t.cardBorder};border-radius:10px;"><tr><td style="padding:24px 28px;"><p style="margin:0 0 4px 0;font-size:11px;letter-spacing:2.5px;color:${t.accent};text-transform:uppercase;font-weight:600;">About The Artist</p><p style="margin:12px 0 0 0;font-size:14px;color:${t.textSecondary};line-height:1.75;">${egEscHtml(data.bio)}</p></td></tr></table></td></tr><tr><td style="padding:28px 40px 0 40px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:linear-gradient(90deg,transparent,${t.divider},${t.divider},transparent);"></td></tr></table></td></tr>`;
