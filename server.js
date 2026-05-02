@@ -2956,6 +2956,183 @@ app.get('/api/research/status', requireAccess, (req, res) => {
   });
 });
 
+// ─── Music Agent Pro: Spotify Playlist Search + Curator Contact Finder ───
+const rlMusicAgent = rateLimit({ name: 'music_agent', windowMs: 60 * 60 * 1000, max: 30 });
+
+app.post('/api/music-agent/search', requireAccess, rlMusicAgent, async (req, res) => {
+  const { songTitle, artistName, featArtist, genre, genre2, songDescription, mood, similarArtists } = req.body;
+  if (!genre && !songTitle && !artistName) return res.status(400).json({ error: 'Release metadata required (genre, song title, or artist name)' });
+
+  // Build multiple targeted Spotify search queries from the release metadata
+  const genreTag = [genre, genre2].filter(Boolean).join(' ');
+  const artistTag = [artistName, featArtist].filter(Boolean).join(' ');
+  const queries = [];
+
+  // Genre-based searches (primary discovery)
+  if (genreTag) {
+    queries.push({ q: genreTag, label: 'genre' });
+    queries.push({ q: `${genreTag} new music`, label: 'genre-new' });
+    queries.push({ q: `${genreTag} independent`, label: 'genre-indie' });
+  }
+  // Mood/description-based searches (vibe matching)
+  if (songDescription) {
+    // Extract mood keywords from description (first 80 chars to stay concise)
+    const moodSnippet = songDescription.slice(0, 80).replace(/[^\w\s]/g, '');
+    queries.push({ q: moodSnippet, label: 'mood' });
+  }
+  // Song-title-based (find playlists already featuring similar titles)
+  if (songTitle && genreTag) {
+    queries.push({ q: `${genreTag} ${songTitle}`, label: 'title-match' });
+  }
+  // Similar artist crossover playlists
+  if (similarArtists && similarArtists.length) {
+    for (const sa of similarArtists.slice(0, 2)) {
+      queries.push({ q: sa, label: `similar-${sa}` });
+    }
+  }
+
+  // Dedupe and cap at 6 queries to respect rate limits
+  const finalQueries = queries.slice(0, 6);
+
+  try {
+    // Phase 1: Search Spotify for playlists using multiple metadata-driven queries
+    const token = await getSpotifyToken();
+    let spotifyPlaylists = [];
+    const seenPlaylistIds = new Set();
+
+    if (token) {
+      const searchPromises = finalQueries.map(async (qObj) => {
+        const searchUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(qObj.q)}&type=playlist&limit=10&market=US`;
+        const spResp = await spotifyApiGet(searchUrl, token);
+        if (!spResp.ok) return [];
+        const spData = await spResp.json();
+        return (spData.playlists?.items || []).filter(Boolean).map(pl => ({
+          id: pl.id,
+          name: pl.name,
+          description: (pl.description || '').replace(/<[^>]*>/g, ''),
+          url: pl.external_urls?.spotify || `https://open.spotify.com/playlist/${pl.id}`,
+          image: pl.images?.[0]?.url || null,
+          owner: {
+            name: pl.owner?.display_name || 'Unknown',
+            id: pl.owner?.id || null,
+            url: pl.owner?.external_urls?.spotify || null
+          },
+          tracks: pl.tracks?.total || 0,
+          followers: null,
+          matchedQuery: qObj.label
+        }));
+      });
+
+      const allResults = await Promise.all(searchPromises);
+      for (const batch of allResults) {
+        for (const pl of batch) {
+          if (!seenPlaylistIds.has(pl.id)) {
+            seenPlaylistIds.add(pl.id);
+            spotifyPlaylists.push(pl);
+          }
+        }
+      }
+      console.log(`[MUSIC-AGENT] ${spotifyPlaylists.length} unique playlists from ${finalQueries.length} queries`);
+    }
+
+    // Phase 1b: Enrich top playlists with follower counts (batch of 8)
+    if (token && spotifyPlaylists.length) {
+      const toEnrich = spotifyPlaylists.slice(0, 8);
+      const enrichResults = await Promise.all(
+        toEnrich.map(pl => spotifyApiGet(`https://api.spotify.com/v1/playlists/${pl.id}?fields=followers`, token).then(r => r.ok ? r.json() : null).catch(() => null))
+      );
+      for (let i = 0; i < enrichResults.length; i++) {
+        if (enrichResults[i]?.followers) {
+          spotifyPlaylists[i].followers = enrichResults[i].followers.total;
+        }
+      }
+    }
+
+    // Phase 2: Use Serper to find curator contacts for discovered playlists
+    let curatorContacts = [];
+    if (SERPER_API_KEY && spotifyPlaylists.length) {
+      const uniqueOwners = [...new Set(spotifyPlaylists.map(p => p.owner.name).filter(n => n && n !== 'Unknown' && n !== 'Spotify'))].slice(0, 4);
+      const contactSearches = [];
+
+      for (const owner of uniqueOwners) {
+        contactSearches.push(serperSearch(`"${owner}" spotify playlist curator contact email`, 5));
+      }
+      // Genre + artist targeted contact searches
+      contactSearches.push(serperSearch(`${genreTag} spotify playlist curator email contact submission`, 8));
+      contactSearches.push(serperSearch(`${genreTag} spotify playlist curator instagram linktree`, 8));
+      if (artistTag) {
+        contactSearches.push(serperSearch(`${genreTag} "${artistTag}" playlist submission contact`, 5));
+      }
+
+      const allContactResults = await Promise.all(contactSearches.map(p => p.catch(() => ({ organic: [] }))));
+
+      const seenLinks = new Set();
+      for (const result of allContactResults) {
+        if (result.organic) {
+          for (const r of result.organic) {
+            if (!seenLinks.has(r.link)) {
+              seenLinks.add(r.link);
+              const emailMatch = (r.snippet || '').match(/[\w.+-]+@[\w-]+\.[\w.]+/);
+              const isInstagram = /instagram\.com/.test(r.link);
+              const isTwitter = /twitter\.com|x\.com/.test(r.link);
+              const isLinktree = /linktr\.ee/.test(r.link);
+              curatorContacts.push({
+                title: r.title,
+                link: r.link,
+                snippet: r.snippet || '',
+                email: emailMatch ? emailMatch[0] : null,
+                type: isInstagram ? 'instagram' : isTwitter ? 'twitter' : isLinktree ? 'linktree' : 'web'
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Phase 3: Serper web search for submission platforms + playlist blogs
+    let webPlaylists = [];
+    if (SERPER_API_KEY) {
+      const webSearches = await Promise.all([
+        serperSearch(`${genreTag} spotify playlist accepting submissions 2026`, 8).catch(() => ({ organic: [] })),
+        serperSearch(`${genreTag} independent artist playlist submit song`, 8).catch(() => ({ organic: [] })),
+        serperSearch(`submit "${artistTag || genreTag}" to playlists curator`, 8).catch(() => ({ organic: [] }))
+      ]);
+      const seenWeb = new Set();
+      for (const s of webSearches) {
+        if (s.organic) {
+          for (const r of s.organic) {
+            if (!seenWeb.has(r.link)) {
+              seenWeb.add(r.link);
+              webPlaylists.push({ title: r.title, link: r.link, snippet: r.snippet || '' });
+            }
+          }
+        }
+      }
+    }
+
+    const cacheKey = `music-agent:${genreTag}:${songTitle}:${artistTag}`;
+    const result = {
+      searchedQueries: finalQueries.map(q => q.q),
+      spotifyPlaylists,
+      curatorContacts,
+      webPlaylists,
+      meta: {
+        spotifyCount: spotifyPlaylists.length,
+        contactsCount: curatorContacts.length,
+        webCount: webPlaylists.length,
+        hasSpotifyToken: !!token,
+        hasSerper: !!SERPER_API_KEY
+      }
+    };
+    cacheSet(cacheKey, result);
+    res.json(result);
+
+  } catch (err) {
+    console.error('[MUSIC-AGENT] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Admin Middleware ---
 function requireAdmin(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });

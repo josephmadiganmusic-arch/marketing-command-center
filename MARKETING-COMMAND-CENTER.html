@@ -2204,7 +2204,8 @@
       <div class="section-title">Research & Discovery <span style="font-size:11px;color:#00d4ff;font-weight:normal;">(Live Data)</span></div>
       <div id="researchStatus" style="font-size:12px;color:#888;margin-bottom:12px;"></div>
       <div class="ai-actions">
-        <button class="ai-action-btn" onclick="runResearch('findPlaylists')"><span class="ai-icon">&#9835;</span>Find Playlists in My Niche<span class="ai-desc">Search Spotify for real playlists matching your genre — ranked by fit</span></button>
+        <button class="ai-action-btn" onclick="runPlaylistScout()" style="border-color:#1DB954;"><span class="ai-icon">&#127911;</span>Playlist Scout<span class="ai-desc">Spotify Web API playlist search + auto-find curator contacts via web — the full pipeline</span></button>
+        <button class="ai-action-btn" onclick="runResearch('findPlaylists')"><span class="ai-icon">&#9835;</span>Find Playlists in My Niche<span class="ai-desc">Search the web for playlists matching your genre — ranked by fit</span></button>
         <button class="ai-action-btn" onclick="runResearch('findContacts')"><span class="ai-icon">&#128269;</span>Find Curator Contacts<span class="ai-desc">Search for real emails, IG handles, and contact info for curators</span></button>
         <button class="ai-action-btn" onclick="runResearch('findBlogs')"><span class="ai-icon">&#128196;</span>Find Blogs Accepting Submissions<span class="ai-desc">Real blog names, submission URLs, and editor contacts</span></button>
         <button class="ai-action-btn" onclick="runResearch('findPodcasts')"><span class="ai-icon">&#127908;</span>Find Podcasts to Pitch<span class="ai-desc">Podcast names, host names, booking links for your genre</span></button>
@@ -7982,6 +7983,156 @@ let researchApis = { search: false };
     }
   } catch(e) { /* running locally without server */ }
 })();
+
+// ─── Playlist Scout: Spotify Web API + Serper Curator Contact Finder ───
+// Uses full release metadata (title, artist, genre, description, similar artists)
+// to build smart Spotify search queries and find curator contacts.
+async function runPlaylistScout() {
+  const d = intakeGetData();
+  const genre = d.genrePrimary || 'Christian Hip Hop';
+  const genre2 = d.genreSecondary || '';
+  const artistName = d.primaryArtist || 'Madigan';
+  const songTitle = d.songTitle || '';
+  const featArtist = d.featArtist || '';
+  const songDescription = d.songDescription || '';
+  const genreDisplay = [genre, genre2].filter(Boolean).join(' / ');
+
+  // Show what metadata we're using and let user add similar artists
+  const similarInput = prompt(
+    `Playlist Scout — searching based on your release:\n\n` +
+    `Song: "${songTitle || '(untitled)'}"\n` +
+    `Artist: ${artistName}${featArtist ? ' ft ' + featArtist : ''}\n` +
+    `Genre: ${genreDisplay}\n` +
+    `${songDescription ? 'Vibe: ' + songDescription.slice(0, 60) + '...' : ''}\n\n` +
+    `Enter similar artists (comma-separated) for crossover playlist discovery:\n` +
+    `(or leave blank to search by genre + song metadata only)`
+  );
+  if (similarInput === null) return; // cancelled
+
+  const similarArtists = similarInput ? similarInput.split(',').map(a => a.trim()).filter(Boolean) : [];
+
+  const section = document.getElementById('mapResultsSection');
+  const loading = document.getElementById('mapLoading');
+  const loadingText = document.getElementById('mapLoadingText');
+  const results = document.getElementById('mapResults');
+
+  section.style.display = 'block';
+  loading.style.display = 'block';
+  loadingText.textContent = `Searching Spotify for playlists matching "${songTitle || genreDisplay}" + hunting curator contacts...`;
+  results.innerHTML = '';
+  section.scrollIntoView({ behavior: 'smooth' });
+
+  try {
+    const resp = await fetch('/api/music-agent/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        songTitle,
+        artistName,
+        featArtist,
+        genre,
+        genre2,
+        songDescription,
+        similarArtists
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || 'Playlist Scout failed');
+    }
+
+    const data = await resp.json();
+
+    // Build rich data for Claude analysis
+    loadingText.textContent = 'Music Agent Pro is analyzing playlists and contacts...';
+
+    const queriesUsed = data.searchedQueries.join(', ');
+
+    const spotifySection = data.spotifyPlaylists.length
+      ? data.spotifyPlaylists.map((pl, i) =>
+          `${i+1}. "${pl.name}" by ${pl.owner.name} [matched: ${pl.matchedQuery}]\n   URL: ${pl.url}\n   Tracks: ${pl.tracks}${pl.followers !== null ? ' | Followers: ' + pl.followers.toLocaleString() : ''}\n   ${pl.description || '(no description)'}`
+        ).join('\n')
+      : '(No Spotify API results — check SPOTIFY_CLIENT_ID/SECRET)';
+
+    const contactSection = data.curatorContacts.length
+      ? data.curatorContacts.map((c, i) =>
+          `${i+1}. ${c.title}\n   URL: ${c.link}\n   ${c.snippet}${c.email ? '\n   EMAIL FOUND: ' + c.email : ''}\n   Type: ${c.type}`
+        ).join('\n')
+      : '(No curator contacts found)';
+
+    const webSection = data.webPlaylists.length
+      ? data.webPlaylists.map((w, i) =>
+          `${i+1}. ${w.title}\n   URL: ${w.link}\n   ${w.snippet}`
+        ).join('\n')
+      : '';
+
+    const ctx = `ARTIST: ${artistName}${featArtist ? ' ft ' + featArtist : ''}\nSONG: "${songTitle || 'Untitled'}"\nGENRE: ${genreDisplay}\nDESCRIPTION: ${songDescription || 'N/A'}\nSPOTIFY: ${d.linkSpotify || 'N/A'}${similarArtists.length ? '\nSIMILAR ARTISTS: ' + similarArtists.join(', ') : ''}`;
+
+    const claudePrompt = `${ctx}\n\nPlaylist Scout searched Spotify using these metadata-driven queries: ${queriesUsed}\nFound ${data.meta.spotifyCount} unique Spotify playlists, ${data.meta.contactsCount} curator contact leads, and ${data.meta.webCount} web results.\n\n## ALL SPOTIFY PLAYLISTS FOUND (from Spotify Web API — matched by release metadata)\n${spotifySection}\n\n## ALL CURATOR CONTACTS FOUND (from web search)\n${contactSection}\n\n${webSection ? '## ALL SUBMISSION PLATFORMS & WEB PLAYLISTS\n' + webSection + '\n\n' : ''}Analyze EVERY result relative to THIS SPECIFIC RELEASE. Do NOT limit to a top 10 — include the FULL LIST of all playlists and contacts found.\n\n1. **ALL PLAYLISTS — RANKED** — Every single playlist found, ranked by fit for "${songTitle}". For each:\n   - Playlist name + Spotify URL\n   - Why it fits or doesn't fit "${songTitle}" (reference the song description/genre)\n   - Follower count / track count if available\n   - Estimated difficulty (Easy / Medium / Hard)\n   - Which search query matched it\n\n2. **FULL CURATOR CONTACT SHEET** — Every contact found:\n   - Owner name\n   - Any email, Instagram, Twitter, or Linktree found\n   - Best way to reach them\n   - Priority level (High / Medium / Low)\n\n3. **OUTREACH PLAN** — Ordered list of who to contact first, with:\n   - A personalized one-line pitch for "${songTitle}" tailored to each curator\n   - Recommended channel (DM vs email)\n\n4. **SUBMISSION PLATFORMS** — Any playlist submission sites found (SubmitHub, Groover, etc.) with direct links\n\n5. **NEXT STEPS** — 5 specific actions to take today to get "${songTitle}" placed\n\nInclude ALL real URLs. Every recommendation must tie back to why it fits THIS release. Do NOT truncate or summarize — list everything.`;
+
+    const analysis = await callClaude(claudePrompt);
+
+    // Build CSV from raw data
+    const csvRows = [['Type','Name','Owner','URL','Tracks','Followers','Description','Matched Query','Contact Email','Contact Type','Contact Link'].join(',')];
+    for (const pl of data.spotifyPlaylists) {
+      csvRows.push([
+        'Spotify Playlist',
+        '"' + (pl.name || '').replace(/"/g, '""') + '"',
+        '"' + (pl.owner.name || '').replace(/"/g, '""') + '"',
+        pl.url,
+        pl.tracks || '',
+        pl.followers !== null ? pl.followers : '',
+        '"' + (pl.description || '').replace(/"/g, '""').replace(/\n/g, ' ') + '"',
+        pl.matchedQuery || '',
+        '', '', ''
+      ].join(','));
+    }
+    for (const c of data.curatorContacts) {
+      csvRows.push([
+        'Curator Contact',
+        '"' + (c.title || '').replace(/"/g, '""') + '"',
+        '',
+        '',
+        '', '', '',
+        '',
+        c.email || '',
+        c.type || '',
+        c.link || ''
+      ].join(','));
+    }
+    for (const w of data.webPlaylists) {
+      csvRows.push([
+        'Web/Submission',
+        '"' + (w.title || '').replace(/"/g, '""') + '"',
+        '',
+        w.link || '',
+        '', '', '"' + (w.snippet || '').replace(/"/g, '""').replace(/\n/g, ' ') + '"',
+        '', '', '', ''
+      ].join(','));
+    }
+    const csvContent = csvRows.join('\n');
+    const csvBlob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const csvUrl = URL.createObjectURL(csvBlob);
+    const csvFilename = `playlist-scout-${(songTitle || genre).replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}-${new Date().toISOString().slice(0,10)}.csv`;
+
+    results.innerHTML =
+      `<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">` +
+        `<a href="${csvUrl}" download="${csvFilename}" class="copy-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#1DB954;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;">&#11015; Download CSV (${data.meta.spotifyCount + data.meta.contactsCount + data.meta.webCount} results)</a>` +
+        `<button class="copy-btn" style="position:relative;" onclick="copyText(document.getElementById('mapResults').textContent,this)">Copy All</button>` +
+      `</div>` +
+      `<div style="font-size:12px;color:#888;margin-bottom:16px;">Found: ${data.meta.spotifyCount} Spotify playlists | ${data.meta.contactsCount} curator contacts | ${data.meta.webCount} web results</div>` +
+      mdSafe(analysis, {newlines:true});
+    awardXP('research_run');
+  } catch(err) {
+    results.innerHTML = `<div style="color:#ff6b6b;">Error: ${esc(err.message)}</div>`;
+    if (err.message.includes('not configured')) {
+      results.innerHTML += `<div style="color:#888;margin-top:8px;font-size:13px;">Add SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, and SERPER_API_KEY to your Railway environment variables.</div>`;
+    }
+  } finally {
+    loading.style.display = 'none';
+  }
+}
 
 async function runResearch(action) {
   const d = intakeGetData();
