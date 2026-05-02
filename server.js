@@ -6322,135 +6322,81 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
           console.log(`[BACKLOG] Apple Music ISRC enrichment: ${appleFound}/${stillMissing.length} found`);
         }
 
-        // Enrich writer credits + IPIs via BMI Song View (Serper Google search)
-        console.log(`[BACKLOG] Enriching writer credits via BMI Song View...`);
+        // Enrich writer credits + IPIs via Google search (Serper) for BMI/ASCAP/Genius/etc
+        console.log(`[BACKLOG] Enriching writer credits via Serper search...`);
         let writerFound = 0;
         if (SERPER_API_KEY) {
-          // Batch tracks in groups of 5 to reduce Serper API calls
+          // Search in batches — one Serper call per unique song to find writer/IPI data
           for (let i = 0; i < unique.length; i++) {
             const t = unique[i];
             try {
+              // Broad search: look for songwriter/writer credits across BMI, ASCAP, Genius, Wikipedia, etc.
+              const searchQuery = `"${t.song_title}" "${artist.name}" songwriter writer credits IPI`;
               const serperResp = await fetch('https://google.serper.dev/search', {
                 method: 'POST',
                 headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ q: `site:repertoire.bmi.com "${t.song_title}" ${artist.name}`, num: 3 })
+                body: JSON.stringify({ q: searchQuery, num: 5 })
               });
               if (serperResp.ok) {
                 const serperData = await serperResp.json();
                 const results = serperData.organic || [];
                 if (results.length > 0) {
-                  // Parse writer/IPI info from snippets and titles
                   const allText = results.map(r => `${r.title || ''} ${r.snippet || ''}`).join(' ');
-                  // IPI numbers are 9-11 digit numbers, often preceded by "IPI" or a name
-                  const ipiMatches = allText.match(/\b\d{9,11}\b/g);
-                  // Writer names often appear in "Written by: Name" or "WRITER: Name" patterns
-                  const writerPatterns = allText.match(/(?:writer|composer|author)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi);
 
-                  // Try to fetch the actual BMI result page for detailed data
-                  const bmiUrl = results[0].link;
-                  if (bmiUrl && bmiUrl.includes('repertoire.bmi.com')) {
-                    try {
-                      // Set disclaimer cookie and fetch result page
-                      const bmiResp = await fetch(bmiUrl, {
-                        headers: {
-                          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                          'Cookie': 'disc=' + encodeURIComponent(new Date().toISOString())
-                        }
-                      });
-                      if (bmiResp.ok) {
-                        const bmiHtml = await bmiResp.text();
-                        // Parse writer names: BMI shows them in pink links or specific spans
-                        const writerNameMatches = bmiHtml.match(/class="[^"]*writer[^"]*"[^>]*>([^<]+)/gi);
-                        const pubNameMatches = bmiHtml.match(/class="[^"]*publisher[^"]*"[^>]*>([^<]+)/gi);
-                        const ipiInPage = bmiHtml.match(/IPI[#:\s]*(\d{9,11})/gi);
+                  // Extract IPI numbers (9-11 digits, often near "IPI" label)
+                  const ipiMatches = allText.match(/IPI[#:\s]*(\d{9,11})/gi);
+                  // Also catch standalone 9-11 digit numbers in IPI context
+                  const ipiNums = ipiMatches ? ipiMatches.map(m => m.replace(/IPI[#:\s]*/i, '').trim()) : [];
 
-                        const writers = [];
-                        if (writerNameMatches) {
-                          for (const m of writerNameMatches) {
-                            const name = m.replace(/^[^>]+>/, '').trim();
-                            if (name && name.length > 2 && !name.includes('<')) writers.push(name);
-                          }
-                        }
-                        if (writers.length > 0) {
-                          t.writer = writers.join(', ');
-                          writerFound++;
-                        }
-                        if (ipiInPage) {
-                          t.ipi = ipiInPage.map(m => m.replace(/IPI[#:\s]*/i, '').trim()).join('; ');
-                        }
-                        if (pubNameMatches) {
-                          const pubs = pubNameMatches.map(m => m.replace(/^[^>]+>/, '').trim()).filter(n => n.length > 2 && !n.includes('<'));
-                          if (pubs.length > 0) t.publisher = pubs[0];
-                        }
-                      }
-                    } catch (e) { /* BMI page fetch failed, use snippet data */ }
+                  // Extract writer names from common patterns:
+                  // "Written by X, Y, Z" / "Songwriter(s): X" / "Writer: X" / "Composed by X"
+                  const writerPatterns = allText.match(/(?:written|songwriter|composed|writer|lyricist|author)(?:s|\(s\))?[:\s]+([A-Z][^.;()\[\]]{2,80}?)(?:\.|;|\(|$)/gi);
+                  const writerNames = [];
+                  if (writerPatterns) {
+                    for (const p of writerPatterns) {
+                      const nameStr = p.replace(/^(?:written|songwriter|composed|writer|lyricist|author)(?:s|\(s\))?[:\s]+/i, '').trim();
+                      // Split by comma or " and " to get individual names
+                      const names = nameStr.split(/,\s*|\s+and\s+|\s+&\s+/).map(n => n.trim()).filter(n => n.length > 2 && /^[A-Z]/.test(n));
+                      writerNames.push(...names);
+                    }
                   }
 
-                  // Fallback: use snippet data if page scrape didn't find writers
-                  if (!t.writer && writerPatterns) {
-                    const names = writerPatterns.map(p => p.replace(/^(?:writer|composer|author)[:\s]+/i, '').trim());
-                    if (names.length > 0) { t.writer = names.join(', '); writerFound++; }
+                  // Extract publisher names
+                  const pubPatterns = allText.match(/(?:publisher|publishing|label)[:\s]+([A-Z][^.;()\[\]]{2,60}?)(?:\.|;|\(|$)/gi);
+                  const pubNames = [];
+                  if (pubPatterns) {
+                    for (const p of pubPatterns) {
+                      const name = p.replace(/^(?:publisher|publishing|label)[:\s]+/i, '').trim();
+                      if (name.length > 2 && /^[A-Z]/.test(name)) pubNames.push(name);
+                    }
                   }
-                  if (!t.ipi && ipiMatches) {
-                    t.ipi = ipiMatches.join('; ');
+
+                  if (writerNames.length > 0) {
+                    t.writer = [...new Set(writerNames)].join(', ');
+                    writerFound++;
+                    console.log(`[BACKLOG]   "${t.song_title}" writers: ${t.writer}`);
                   }
+                  if (ipiNums.length > 0) {
+                    t.ipi = [...new Set(ipiNums)].join('; ');
+                    console.log(`[BACKLOG]   "${t.song_title}" IPIs: ${t.ipi}`);
+                  }
+                  if (pubNames.length > 0) {
+                    t.publisher = pubNames[0];
+                  }
+                } else {
+                  console.log(`[BACKLOG]   "${t.song_title}" — no Serper results`);
                 }
               }
               // Small delay between Serper calls
-              await new Promise(r => setTimeout(r, 200));
-            } catch (e) { /* skip */ }
-          }
-        } else {
-          // Fallback: direct BMI Song View search (no Serper needed)
-          console.log('[BACKLOG] No SERPER_API_KEY — trying direct BMI Song View search...');
-          // First, get session cookies from BMI
-          let bmiCookies = '';
-          try {
-            const initResp = await fetch('https://repertoire.bmi.com/', {
-              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-            });
-            const setCookies = initResp.headers.getSetCookie?.() || [];
-            bmiCookies = setCookies.map(c => c.split(';')[0]).join('; ') + '; disc=' + encodeURIComponent(new Date().toISOString());
-          } catch (e) { console.log('[BACKLOG] BMI session init failed:', e.message); }
-
-          if (bmiCookies) {
-            for (const t of unique) {
-              try {
-                const q = encodeURIComponent(t.song_title);
-                const bmiResp = await fetch(`https://repertoire.bmi.com/Search/Search?Main_Search_Text=${q}&Main_Search_Type=Title&Search_Type=all&View_Count=5&Page_Number=1`, {
-                  method: 'POST',
-                  headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Cookie': bmiCookies,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Referer': 'https://repertoire.bmi.com/'
-                  },
-                  body: `Main_Search_Text=${q}&Main_Search_Type=Title&Search_Type=all&View_Count=5&Page_Number=1`
-                });
-                if (bmiResp.ok) {
-                  const html = await bmiResp.text();
-                  // Parse IPI numbers (9-11 digits near "IPI" label)
-                  const ipiMatches = html.match(/\b\d{9,11}\b/g);
-                  // Parse writer/publisher from common BMI HTML patterns
-                  const writerMatches = html.match(/(?:writer|composer)[^<]*<[^>]*>([^<]{2,50})/gi);
-                  const pubMatches = html.match(/publisher[^<]*<[^>]*>([^<]{2,50})/gi);
-
-                  if (writerMatches) {
-                    const names = writerMatches.map(m => m.replace(/^[^>]+>/, '').trim()).filter(n => n.length > 2);
-                    if (names.length > 0) { t.writer = names.join(', '); writerFound++; }
-                  }
-                  if (ipiMatches) t.ipi = ipiMatches.join('; ');
-                  if (pubMatches) {
-                    const pubs = pubMatches.map(m => m.replace(/^[^>]+>/, '').trim()).filter(n => n.length > 2);
-                    if (pubs.length > 0) t.publisher = pubs[0];
-                  }
-                }
-                await new Promise(r => setTimeout(r, 500));
-              } catch (e) { /* skip */ }
+              await new Promise(r => setTimeout(r, 150));
+            } catch (e) {
+              console.log(`[BACKLOG]   "${t.song_title}" search error: ${e.message}`);
             }
           }
+        } else {
+          console.log('[BACKLOG] No SERPER_API_KEY — skipping writer enrichment');
         }
-        console.log(`[BACKLOG] BMI Song View writer enrichment: ${writerFound}/${unique.length} found`);
+        console.log(`[BACKLOG] Writer enrichment: ${writerFound}/${unique.length} found`);
 
         return res.json({
           artist: { name: artist.name, spotify_id: artistId, followers: artist.followers?.total, genres: artist.genres, image: artist.images?.[0]?.url },
