@@ -2383,7 +2383,7 @@
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
           <button class="btn-action" onclick="scoutSelectAll()" style="font-size:11px;padding:4px 12px;">Select All</button>
           <button class="btn-action" onclick="scoutDeselectAll()" style="font-size:11px;padding:4px 12px;">Deselect All</button>
-          <button class="btn-action" onclick="scoutAddToList()" style="font-size:11px;padding:6px 16px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-weight:700;">Add Selected to Outreach List</button>
+          <button class="btn-action" onclick="scoutOpenReview()" style="font-size:11px;padding:6px 16px;background:linear-gradient(135deg,#7b2ff7,#00d4ff);color:#fff;font-weight:700;">Review Selected for Outreach List</button>
           <a id="scoutCsvLink" download="" class="btn-action" style="font-size:11px;padding:6px 16px;text-decoration:none;background:#1DB954;color:#080b1e;font-weight:700;border-radius:6px;">Download CSV</a>
         </div>
         <div id="scoutAddResult" style="font-size:12px;margin-bottom:8px;"></div>
@@ -2393,6 +2393,25 @@
             <thead><tr><th style="width:30px;"><input type="checkbox" onchange="scoutToggleAll(this.checked)" id="scoutCheckAll"></th><th>Playlist</th><th>Owner</th><th>Tracks</th><th>Followers</th><th>Emails</th><th>Contact</th><th>Matched</th></tr></thead>
             <tbody id="scoutResultsBody"></tbody>
           </table>
+        </div>
+        <!-- Review Panel (hidden until Review Selected clicked) -->
+        <div id="scoutReviewPanel" style="display:none;margin-top:16px;border:1px solid #7b2ff7;border-radius:10px;padding:16px;background:#12152a;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div class="section-title" style="margin:0;">Review Before Adding to Outreach List</div>
+            <button class="btn-action" onclick="document.getElementById('scoutReviewPanel').style.display='none'" style="font-size:11px;padding:4px 10px;background:#333;">Close</button>
+          </div>
+          <p style="font-size:11px;color:#888;margin-bottom:12px;">Edit name, email, submission type, or notes. Remove rows you don't want. Then confirm.</p>
+          <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
+            <table class="calendar-table" style="width:100%;font-size:11px;" id="scoutReviewTable">
+              <thead><tr><th style="width:24px;"></th><th>Name (for outreach list)</th><th>Category</th><th>Submission Type</th><th>Email / Contact</th><th>Website</th><th>Notes</th></tr></thead>
+              <tbody id="scoutReviewBody"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px;align-items:center;">
+            <button class="btn-action" onclick="scoutConfirmAdd()" style="font-size:12px;padding:8px 20px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#080b1e;font-weight:700;">Confirm &amp; Add to Outreach List</button>
+            <span id="scoutReviewCount" style="font-size:12px;color:#888;"></span>
+            <div id="scoutConfirmResult" style="font-size:12px;margin-left:8px;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -10391,24 +10410,70 @@ function scoutSelectAll() { if(!_scoutData?._rows) return; _scoutData._rows.forE
 function scoutDeselectAll() { if(!_scoutData?._rows) return; _scoutData._rows.forEach(r=>r.selected=false); document.querySelectorAll('#scoutResultsBody input[type=checkbox]').forEach(cb=>cb.checked=false); document.getElementById('scoutCheckAll').checked=false; }
 function scoutToggleAll(checked) { if(!_scoutData?._rows) return; _scoutData._rows.forEach(r=>r.selected=checked); document.querySelectorAll('#scoutResultsBody input[type=checkbox]').forEach(cb=>cb.checked=checked); }
 
-async function scoutAddToList() {
+let _scoutReviewRows = []; // editable review data
+
+function scoutOpenReview() {
   if (!_scoutData?._rows) return;
   const selected = _scoutData._rows.filter(r => r.selected);
-  if (!selected.length) { alert('Select at least one result.'); return; }
-  if (!confirm(`Add ${selected.length} contacts to the Outreach List (spotify_playlist category)?`)) return;
+  if (!selected.length) { alert('Select at least one result to review.'); return; }
 
-  const resultDiv = document.getElementById('scoutAddResult');
+  // Build editable review rows from selected results
+  _scoutReviewRows = selected.map((r, i) => ({ ...r._outreach, _idx: i, _removed: false }));
+
+  const tbody = document.getElementById('scoutReviewBody');
+  tbody.innerHTML = _scoutReviewRows.map((r, i) => `<tr id="scoutReviewRow-${i}">
+    <td><button onclick="scoutRemoveReviewRow(${i})" style="background:none;border:none;color:#ff4444;cursor:pointer;font-size:14px;" title="Remove">&times;</button></td>
+    <td><input type="text" value="${esc(r.name)}" onchange="_scoutReviewRows[${i}].name=this.value" style="width:100%;min-width:200px;padding:4px 6px;background:#181c3a;border:1px solid #2d325a;border-radius:4px;color:#fff;font-size:11px;"></td>
+    <td><select onchange="_scoutReviewRows[${i}].category=this.value" style="padding:4px;background:#181c3a;border:1px solid #2d325a;border-radius:4px;color:#fff;font-size:11px;">
+      <option value="spotify_playlist"${r.category==='spotify_playlist'?' selected':''}>Spotify Playlist</option>
+      <option value="blog"${r.category==='blog'?' selected':''}>Blog</option>
+      <option value="podcast"${r.category==='podcast'?' selected':''}>Podcast</option>
+      <option value="online_radio"${r.category==='online_radio'?' selected':''}>Online Radio</option>
+      <option value="press"${r.category==='press'?' selected':''}>Press</option>
+    </select></td>
+    <td><select onchange="_scoutReviewRows[${i}].submission_type=this.value" style="padding:4px;background:#181c3a;border:1px solid #2d325a;border-radius:4px;color:#fff;font-size:11px;">
+      <option value="email"${r.submission_type==='email'?' selected':''}>Email</option>
+      <option value="instagram"${r.submission_type==='instagram'?' selected':''}>Instagram</option>
+      <option value="twitter"${r.submission_type==='twitter'?' selected':''}>Twitter</option>
+      <option value="linktree"${r.submission_type==='linktree'?' selected':''}>Linktree</option>
+      <option value="web"${r.submission_type==='web'?' selected':''}>Web Form</option>
+      <option value="unknown"${r.submission_type==='unknown'?' selected':''}>Unknown</option>
+    </select></td>
+    <td><input type="text" value="${esc(r.submission_value)}" onchange="_scoutReviewRows[${i}].submission_value=this.value" style="width:100%;min-width:180px;padding:4px 6px;background:#181c3a;border:1px solid #2d325a;border-radius:4px;color:#fff;font-size:11px;" placeholder="email@example.com or URL"></td>
+    <td><input type="text" value="${esc(r.website)}" onchange="_scoutReviewRows[${i}].website=this.value" style="width:100%;min-width:160px;padding:4px 6px;background:#181c3a;border:1px solid #2d325a;border-radius:4px;color:#fff;font-size:11px;"></td>
+    <td><input type="text" value="${esc(r.notes)}" onchange="_scoutReviewRows[${i}].notes=this.value" style="width:100%;min-width:200px;padding:4px 6px;background:#181c3a;border:1px solid #2d325a;border-radius:4px;color:#fff;font-size:11px;"></td>
+  </tr>`).join('');
+
+  document.getElementById('scoutReviewCount').textContent = `${_scoutReviewRows.length} contacts ready for review`;
+  document.getElementById('scoutConfirmResult').innerHTML = '';
+  document.getElementById('scoutReviewPanel').style.display = 'block';
+  document.getElementById('scoutReviewPanel').scrollIntoView({ behavior: 'smooth' });
+}
+
+function scoutRemoveReviewRow(idx) {
+  _scoutReviewRows[idx]._removed = true;
+  const row = document.getElementById('scoutReviewRow-' + idx);
+  if (row) { row.style.opacity = '0.3'; row.style.textDecoration = 'line-through'; }
+  const remaining = _scoutReviewRows.filter(r => !r._removed).length;
+  document.getElementById('scoutReviewCount').textContent = `${remaining} contacts remaining`;
+}
+
+async function scoutConfirmAdd() {
+  const toAdd = _scoutReviewRows.filter(r => !r._removed && r.name.trim());
+  if (!toAdd.length) { alert('No contacts to add. All removed or blank.'); return; }
+
+  const resultDiv = document.getElementById('scoutConfirmResult');
   resultDiv.innerHTML = '<span style="color:#00d4ff;">Adding to outreach list...</span>';
 
   try {
     const resp = await fetch('/api/admin/music-agent/add-to-list', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contacts: selected.map(r => r._outreach) })
+      body: JSON.stringify({ contacts: toAdd })
     });
     if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Failed'); }
     const data = await resp.json();
-    resultDiv.innerHTML = `<span style="color:#4ade80;font-weight:700;">Added ${data.added} contacts to Outreach List v${data.version}</span>${data.skipped ? ` <span style="color:#888;">(${data.skipped} skipped — already in list or blank)</span>` : ''}`;
+    resultDiv.innerHTML = `<span style="color:#4ade80;font-weight:700;">Added ${data.added} contacts to Outreach List v${data.version}</span>${data.skipped ? ` <span style="color:#888;">(${data.skipped} skipped — duplicates)</span>` : ''}`;
   } catch(err) {
     resultDiv.innerHTML = `<span style="color:#ff6b6b;">Error: ${esc(err.message)}</span>`;
   }
