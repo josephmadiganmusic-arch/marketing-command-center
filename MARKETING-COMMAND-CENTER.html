@@ -989,6 +989,7 @@
 </header>
 <div class="container">
   <div class="tabs" id="mainTabs">
+    <button class="tab" id="royaltyTab" style="display:none;background:linear-gradient(135deg,rgba(74,222,128,0.15),rgba(0,212,255,0.15));border:1px solid rgba(74,222,128,0.3);" onclick="showPanel('royalties')">Royalty Dashboard</button>
     <button class="tab" id="backlogTab" style="display:none;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(123,47,247,0.15));border:1px solid rgba(0,212,255,0.3);" onclick="showPanel('backlog')">Bulk Backlog</button>
     <button class="tab active" onclick="showPanel('intake')">Intake</button>
     <button class="tab" onclick="showPanel('registration')">Registration</button>
@@ -1009,6 +1010,101 @@
   <div class="site-panels">
 
   <!-- BULK BACKLOG TAB (admin only) -->
+  <!-- ROYALTY DASHBOARD TAB -->
+  <div class="panel" id="panel-royalties">
+    <h2>Royalty Dashboard</h2>
+    <p class="subtitle">Upload distributor statements to track earnings across all platforms.</p>
+
+    <!-- Summary Cards -->
+    <div id="rySummaryCards" style="display:none;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
+      <div class="form-section" style="padding:16px;margin-bottom:0;text-align:center;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Total Earned</div>
+        <div id="ryTotalEarned" style="font-size:28px;font-weight:800;background:linear-gradient(135deg,#4ade80,#00d4ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">$0.00</div>
+      </div>
+      <div class="form-section" style="padding:16px;margin-bottom:0;text-align:center;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Total Streams</div>
+        <div id="ryTotalStreams" style="font-size:28px;font-weight:800;color:#00d4ff;">0</div>
+      </div>
+      <div class="form-section" style="padding:16px;margin-bottom:0;text-align:center;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Statements</div>
+        <div id="ryTotalStatements" style="font-size:28px;font-weight:800;color:#7b2ff7;">0</div>
+      </div>
+      <div class="form-section" style="padding:16px;margin-bottom:0;text-align:center;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Tracks Tracked</div>
+        <div id="ryTotalTracks" style="font-size:28px;font-weight:800;color:#fbbf24;">0</div>
+      </div>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="form-section">
+      <div class="form-section-title">Upload Royalty Statement</div>
+      <p style="font-size:11px;color:#888;margin-bottom:10px;">Upload CSV or XLSX statements from DistroKid, TuneCore, CD Baby, BMI, ASCAP, SoundExchange, MLC, etc.</p>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div class="form-group"><label>Source/Platform</label>
+          <select class="form-control" id="rySource" style="font-size:12px;padding:8px;">
+            <option value="">Select platform...</option>
+            <option value="DistroKid">DistroKid</option>
+            <option value="TuneCore">TuneCore</option>
+            <option value="CD Baby">CD Baby</option>
+            <option value="Amuse">Amuse</option>
+            <option value="UnitedMasters">UnitedMasters</option>
+            <option value="BMI">BMI</option>
+            <option value="ASCAP">ASCAP</option>
+            <option value="SESAC">SESAC</option>
+            <option value="SoundExchange">SoundExchange</option>
+            <option value="MLC">MLC (Mechanical Licensing)</option>
+            <option value="YouTube">YouTube / Content ID</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Period Start</label><input type="date" class="form-control" id="ryPeriodStart" style="font-size:12px;padding:8px;"></div>
+        <div class="form-group"><label>Period End</label><input type="date" class="form-control" id="ryPeriodEnd" style="font-size:12px;padding:8px;"></div>
+      </div>
+      <div class="upload-zone" style="padding:14px;position:relative;" id="ryUploadZone">
+        <input type="file" id="ryFileInput" accept=".csv,.tsv,.xlsx,.xls" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;" onchange="ryHandleFile(this.files)">
+        <div class="upload-icon">&#128200;</div>
+        <div class="upload-label">Drop or click to upload statement file</div>
+        <div class="upload-hint">CSV, TSV, or XLSX from any distributor or PRO</div>
+        <div class="upload-filename" id="ryFileName" style="display:none;"></div>
+      </div>
+      <div id="ryUploadActions" style="display:none;margin-top:10px;gap:8px;align-items:center;">
+        <button class="btn-primary" onclick="ryUploadStatement()" id="ryUploadBtn" style="font-size:12px;padding:8px 16px;">Upload & Parse</button>
+        <button class="btn-secondary" onclick="ryClearFile()" style="font-size:11px;padding:6px 12px;">Clear</button>
+        <span id="ryUploadStatus" style="font-size:12px;color:#666;margin-left:8px;"></span>
+      </div>
+    </div>
+
+    <!-- Earnings by Song -->
+    <div class="form-section" id="ryBySongSection" style="display:none;">
+      <div class="form-section-title">Earnings by Song</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;" id="ryBySongTable">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
+            <th style="padding:8px;color:#4ade80;">Song Title</th>
+            <th style="padding:8px;color:#4ade80;">Artist</th>
+            <th style="padding:8px;color:#4ade80;">ISRC</th>
+            <th style="padding:8px;color:#4ade80;text-align:right;">Streams</th>
+            <th style="padding:8px;color:#4ade80;text-align:right;">Downloads</th>
+            <th style="padding:8px;color:#4ade80;text-align:right;">Earned</th>
+          </tr></thead>
+          <tbody id="ryBySongBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Earnings by Platform -->
+    <div class="form-section" id="ryBySourceSection" style="display:none;">
+      <div class="form-section-title">Earnings by Platform</div>
+      <div id="ryBySourceBars" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+
+    <!-- Statement History -->
+    <div class="form-section" id="ryStatementsSection" style="display:none;">
+      <div class="form-section-title">Statement History</div>
+      <div id="ryStatementsList"></div>
+    </div>
+  </div>
+
   <div class="panel" id="panel-backlog">
     <h2>Bulk Backlog</h2>
     <p class="subtitle">Drop in artist platform links to pull their full catalog for MLC + SoundExchange registration.</p>
@@ -2965,12 +3061,12 @@ const regPlatforms = [
 // nav button row. Clicking that tab navigates to /redemption directly, so
 // no panel is rendered and showPanel() is never called for it. lockTabs
 // excludes it so it never gets a .locked greyed-out state.
-const panelNames = ['backlog','intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin','regprep'];
+const panelNames = ['royalties','backlog','intake','registration','emailgen','outreach','playlists','content','calendar','checklist','claudeai','achievements','redemption','admin','regprep'];
 let campaignGenerated = false;
 
 function lockTabs() {
   document.querySelectorAll('#mainTabs .tab').forEach((t, i) => {
-    if (panelNames[i] !== 'intake' && panelNames[i] !== 'achievements' && panelNames[i] !== 'redemption') t.classList.add('locked');
+    if (panelNames[i] !== 'intake' && panelNames[i] !== 'achievements' && panelNames[i] !== 'redemption' && panelNames[i] !== 'royalties') t.classList.add('locked');
   });
 }
 function unlockTabs() {
@@ -3063,7 +3159,7 @@ function showPanel(id) {
     return;
   }
   // Block locked tabs (except intake, admin, achievements)
-  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && id !== 'regprep' && id !== 'backlog' && !campaignGenerated) {
+  if (id !== 'intake' && id !== 'admin' && id !== 'achievements' && id !== 'regprep' && id !== 'backlog' && id !== 'royalties' && !campaignGenerated) {
     showToast('Generate your campaign first to unlock all tabs');
     return;
   }
@@ -3078,6 +3174,7 @@ function showPanel(id) {
   if (id === 'admin') adminLoadData();
   if (id === 'achievements') { loadGamification(); renderAchievementsPanel(); }
   if (id === 'regprep') regPrepLoad();
+  if (id === 'royalties') ryLoadDashboard();
 }
 
 function showToast(msg) {
@@ -11086,6 +11183,204 @@ serverLoad().then(() => {
 });
 
 // ============================================================
+// --- ROYALTY DASHBOARD MODULE ---
+// ============================================================
+let _ryFile = null; // { name, data (base64) }
+
+function ryHandleFile(files) {
+  if (!files || !files.length) return;
+  const file = files[0];
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const base64 = e.target.result.split(',')[1] || e.target.result;
+    _ryFile = { name: file.name, data: base64 };
+    document.getElementById('ryFileName').textContent = file.name;
+    document.getElementById('ryFileName').style.display = '';
+    document.getElementById('ryUploadActions').style.display = 'flex';
+    document.getElementById('ryUploadZone').classList.add('has-file');
+  };
+  reader.readAsDataURL(file);
+}
+
+function ryClearFile() {
+  _ryFile = null;
+  document.getElementById('ryFileInput').value = '';
+  document.getElementById('ryFileName').style.display = 'none';
+  document.getElementById('ryUploadActions').style.display = 'none';
+  document.getElementById('ryUploadZone').classList.remove('has-file');
+  document.getElementById('ryUploadStatus').textContent = '';
+}
+
+async function ryUploadStatement() {
+  if (!_ryFile) { showToast('Select a file first'); return; }
+  const btn = document.getElementById('ryUploadBtn');
+  const status = document.getElementById('ryUploadStatus');
+  btn.disabled = true;
+  btn.textContent = 'Parsing...';
+  status.textContent = 'Reading statement...';
+
+  try {
+    const resp = await fetch('/api/royalties/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        filename: _ryFile.name,
+        data: _ryFile.data,
+        source: document.getElementById('rySource').value,
+        period_start: document.getElementById('ryPeriodStart').value || null,
+        period_end: document.getElementById('ryPeriodEnd').value || null
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Upload failed');
+
+    showToast(`Imported ${data.track_count} entries — $${data.total_amount.toFixed(2)} total`);
+    ryClearFile();
+    document.getElementById('rySource').value = '';
+    document.getElementById('ryPeriodStart').value = '';
+    document.getElementById('ryPeriodEnd').value = '';
+    ryLoadDashboard();
+  } catch (e) {
+    showToast('Upload error: ' + e.message);
+    status.textContent = 'Error: ' + e.message;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Upload & Parse';
+}
+
+async function ryLoadDashboard() {
+  try {
+    const [summaryResp, stmtsResp] = await Promise.all([
+      fetch('/api/royalties/summary', { credentials: 'include' }),
+      fetch('/api/royalties/statements', { credentials: 'include' })
+    ]);
+    const summary = await summaryResp.json();
+    const stmts = await stmtsResp.json();
+
+    // Summary cards
+    document.getElementById('rySummaryCards').style.display = 'grid';
+    document.getElementById('ryTotalEarned').textContent = '$' + (summary.grand_total || 0).toFixed(2);
+    const totalStreams = (summary.totals || []).reduce((s, t) => s + (t.total_streams || 0), 0);
+    document.getElementById('ryTotalStreams').textContent = totalStreams.toLocaleString();
+    document.getElementById('ryTotalStatements').textContent = (stmts.statements || []).length;
+    const uniqueTracks = (summary.totals || []).length;
+    document.getElementById('ryTotalTracks').textContent = uniqueTracks;
+
+    // Earnings by song table
+    const songBody = document.getElementById('ryBySongBody');
+    if (summary.totals && summary.totals.length) {
+      document.getElementById('ryBySongSection').style.display = '';
+      songBody.innerHTML = summary.totals.map(t => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+          <td style="padding:8px;color:#fff;font-weight:600;">${ryEsc(t.song_title || 'Unknown')}</td>
+          <td style="padding:8px;color:#ccc;">${ryEsc(t.artist || '')}</td>
+          <td style="padding:8px;color:#888;font-family:monospace;font-size:11px;">${ryEsc(t.isrc || '')}</td>
+          <td style="padding:8px;text-align:right;color:#00d4ff;">${(t.total_streams || 0).toLocaleString()}</td>
+          <td style="padding:8px;text-align:right;color:#888;">${(t.total_downloads || 0).toLocaleString()}</td>
+          <td style="padding:8px;text-align:right;color:#4ade80;font-weight:700;">$${(t.total_earned || 0).toFixed(2)}</td>
+        </tr>
+      `).join('');
+    } else {
+      document.getElementById('ryBySongSection').style.display = 'none';
+    }
+
+    // Earnings by platform bars
+    if (summary.by_source && summary.by_source.length) {
+      document.getElementById('ryBySourceSection').style.display = '';
+      const maxAmt = Math.max(...summary.by_source.map(s => s.total));
+      document.getElementById('ryBySourceBars').innerHTML = summary.by_source.map(s => {
+        const pct = maxAmt > 0 ? (s.total / maxAmt * 100) : 0;
+        return `<div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:120px;font-size:12px;color:#ccc;text-align:right;flex-shrink:0;">${ryEsc(s.source || 'Unknown')}</div>
+          <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:24px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#4ade80,#00d4ff);border-radius:4px;transition:width 0.5s;"></div>
+          </div>
+          <div style="width:90px;font-size:12px;color:#4ade80;font-weight:700;text-align:right;">$${s.total.toFixed(2)}</div>
+          <div style="width:80px;font-size:11px;color:#888;text-align:right;">${(s.streams || 0).toLocaleString()} plays</div>
+        </div>`;
+      }).join('');
+    } else {
+      document.getElementById('ryBySourceSection').style.display = 'none';
+    }
+
+    // Statement history
+    if (stmts.statements && stmts.statements.length) {
+      document.getElementById('ryStatementsSection').style.display = '';
+      document.getElementById('ryStatementsList').innerHTML = stmts.statements.map(s => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <div>
+            <div style="font-size:13px;color:#fff;font-weight:600;">${ryEsc(s.filename)}</div>
+            <div style="font-size:11px;color:#888;">${ryEsc(s.source || '')}${s.period_start ? ' &bull; ' + s.period_start + (s.period_end ? ' to ' + s.period_end : '') : ''} &bull; ${s.track_count} entries</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:14px;color:#4ade80;font-weight:700;">$${(s.total_amount || 0).toFixed(2)}</span>
+            <span style="font-size:11px;color:#888;">${new Date(s.uploaded_at).toLocaleDateString()}</span>
+            <button onclick="ryViewStatement(${s.id})" class="btn-secondary" style="font-size:10px;padding:4px 8px;">View</button>
+            <button onclick="ryDeleteStatement(${s.id})" class="btn-secondary" style="font-size:10px;padding:4px 8px;color:#f44;">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    } else {
+      document.getElementById('ryStatementsSection').style.display = 'none';
+    }
+  } catch (e) { console.error('Royalty dashboard error:', e); }
+}
+
+async function ryViewStatement(id) {
+  try {
+    const resp = await fetch('/api/royalties/statements/' + id + '/entries', { credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+
+    const entries = data.entries || [];
+    const stmt = data.statement;
+    let html = `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;overflow-y:auto;padding:40px;">
+      <div style="max-width:900px;margin:0 auto;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 style="color:#fff;margin:0;">${ryEsc(stmt.filename)}</h3>
+          <button onclick="this.closest('div[style*=fixed]').remove()" class="btn-secondary" style="font-size:12px;padding:6px 14px;">Close</button>
+        </div>
+        <p style="color:#888;font-size:12px;margin-bottom:12px;">${ryEsc(stmt.source || '')} &bull; ${stmt.track_count} entries &bull; $${(stmt.total_amount || 0).toFixed(2)} total</p>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+            <th style="padding:6px;text-align:left;color:#4ade80;">Song</th>
+            <th style="padding:6px;text-align:left;color:#4ade80;">Artist</th>
+            <th style="padding:6px;text-align:left;color:#4ade80;">ISRC</th>
+            <th style="padding:6px;text-align:left;color:#4ade80;">Source</th>
+            <th style="padding:6px;text-align:right;color:#4ade80;">Streams</th>
+            <th style="padding:6px;text-align:right;color:#4ade80;">Amount</th>
+          </tr></thead>
+          <tbody>${entries.map(e => `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.03);">
+              <td style="padding:5px 6px;color:#fff;">${ryEsc(e.song_title || '')}</td>
+              <td style="padding:5px 6px;color:#ccc;">${ryEsc(e.artist || '')}</td>
+              <td style="padding:5px 6px;color:#888;font-family:monospace;">${ryEsc(e.isrc || '')}</td>
+              <td style="padding:5px 6px;color:#888;">${ryEsc(e.source || '')}</td>
+              <td style="padding:5px 6px;text-align:right;color:#00d4ff;">${(e.streams || 0).toLocaleString()}</td>
+              <td style="padding:5px 6px;text-align:right;color:#4ade80;font-weight:600;">$${(e.amount || 0).toFixed(4)}</td>
+            </tr>
+          `).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+  } catch (e) { showToast('Error loading statement: ' + e.message); }
+}
+
+async function ryDeleteStatement(id) {
+  if (!confirm('Delete this statement and all its entries?')) return;
+  try {
+    const resp = await fetch('/api/royalties/statements/' + id, { method: 'DELETE', credentials: 'include' });
+    if (!resp.ok) throw new Error('Delete failed');
+    showToast('Statement deleted');
+    ryLoadDashboard();
+  } catch (e) { showToast('Delete error: ' + e.message); }
+}
+
+function ryEsc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ============================================================
 // --- BULK BACKLOG MODULE ---
 // ============================================================
 let BL_TRACKS = [];
@@ -11097,6 +11392,7 @@ let _blTimerStart = 0;
 function backlogInit() {
   if (USER_ROLE !== 'admin' && USER_TIER !== 'elite_partner') return;
   document.getElementById('backlogTab').style.display = '';
+  document.getElementById('royaltyTab').style.display = '';
   blLoadSavedArtists();
 }
 

@@ -893,6 +893,43 @@ function initDb() {
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_artist ON backlog_catalog(artist_name)');
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_catalog(status)');
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_user ON backlog_catalog(user_id)');
+
+  // --- Royalty Dashboard tables ---
+  db.run(`
+    CREATE TABLE IF NOT EXISTS royalty_statements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      source TEXT,
+      period_start TEXT,
+      period_end TEXT,
+      total_amount REAL DEFAULT 0,
+      track_count INTEGER DEFAULT 0,
+      uploaded_at TEXT DEFAULT (datetime('now')),
+      notes TEXT
+    )
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS royalty_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      statement_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      song_title TEXT,
+      artist TEXT,
+      isrc TEXT,
+      source TEXT,
+      streams INTEGER DEFAULT 0,
+      downloads INTEGER DEFAULT 0,
+      amount REAL DEFAULT 0,
+      territory TEXT,
+      period TEXT,
+      FOREIGN KEY (statement_id) REFERENCES royalty_statements(id)
+    )
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_royalty_stmt_user ON royalty_statements(user_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_royalty_entry_stmt ON royalty_entries(statement_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_royalty_entry_user ON royalty_entries(user_id)');
+
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN writers_json TEXT"); } catch(e) {}
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN publishers_json TEXT"); } catch(e) {}
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN primary_artist TEXT"); } catch(e) {}
@@ -6985,6 +7022,155 @@ app.get('/api/backlog/artists', requireAdminOrPartner, (req, res) => {
     FROM backlog_catalog WHERE user_id = ? GROUP BY artist_name ORDER BY last_fetched DESC
   `).all(req.user.id);
   res.json({ artists: rows });
+});
+
+// =============================================
+// ROYALTY DASHBOARD ENDPOINTS
+// =============================================
+
+// Upload & parse a royalty statement (CSV or XLSX)
+app.post('/api/royalties/upload', requireAdminOrPartner, async (req, res) => {
+  const userId = req.user.id;
+  const { filename, data, source, period_start, period_end, notes } = req.body || {};
+  if (!filename || !data) return res.status(400).json({ error: 'filename and data required' });
+
+  try {
+    let rows = [];
+    const ext = (filename || '').toLowerCase();
+
+    if (ext.endsWith('.xlsx') || ext.endsWith('.xls')) {
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      const buf = Buffer.from(data, 'base64');
+      await wb.xlsx.load(buf);
+      const ws = wb.worksheets[0];
+      if (!ws) return res.status(400).json({ error: 'No worksheet found' });
+      const headers = [];
+      ws.getRow(1).eachCell((cell, col) => { headers[col] = String(cell.value || '').trim().toLowerCase(); });
+      ws.eachRow((row, rowNum) => {
+        if (rowNum === 1) return;
+        const obj = {};
+        row.eachCell((cell, col) => { obj[headers[col] || 'col' + col] = cell.value; });
+        rows.push(obj);
+      });
+    } else if (ext.endsWith('.csv') || ext.endsWith('.tsv')) {
+      const text = Buffer.from(data, 'base64').toString('utf-8');
+      const sep = ext.endsWith('.tsv') ? '\t' : ',';
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) return res.status(400).json({ error: 'Empty file' });
+      const headers = lines[0].split(sep).map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+      for (let i = 1; i < lines.length; i++) {
+        const vals = lines[i].split(sep).map(v => v.replace(/^"|"$/g, '').trim());
+        const obj = {};
+        headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
+        rows.push(obj);
+      }
+    } else {
+      return res.status(400).json({ error: 'Unsupported file type. Use .csv, .tsv, or .xlsx' });
+    }
+
+    // Smart column mapping — try common column names from various distributors
+    const findCol = (obj, ...names) => {
+      for (const n of names) {
+        for (const k of Object.keys(obj)) {
+          if (k.toLowerCase().includes(n)) return obj[k];
+        }
+      }
+      return null;
+    };
+
+    // Insert statement record
+    const stmtResult = db.run(
+      `INSERT INTO royalty_statements (user_id, filename, source, period_start, period_end, notes) VALUES (?,?,?,?,?,?)`,
+      [userId, filename, source || null, period_start || null, period_end || null, notes || null]
+    );
+    const stmtId = stmtResult.lastInsertRowid || stmtResult.changes;
+    // Get the actual ID
+    const stmt = dbHelpers.prepare('SELECT id FROM royalty_statements WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId);
+    const statementId = stmt.id;
+
+    let totalAmount = 0;
+    let trackCount = 0;
+
+    for (const row of rows) {
+      const title = findCol(row, 'song', 'title', 'track', 'name') || '';
+      const artist = findCol(row, 'artist', 'performer') || '';
+      const isrc = findCol(row, 'isrc') || '';
+      const amt = parseFloat(findCol(row, 'earning', 'royalt', 'amount', 'net', 'payable', 'revenue', 'total') || '0') || 0;
+      const streams = parseInt(findCol(row, 'stream', 'play', 'quantity') || '0') || 0;
+      const downloads = parseInt(findCol(row, 'download') || '0') || 0;
+      const territory = findCol(row, 'territory', 'country', 'region') || '';
+      const period = findCol(row, 'period', 'month', 'date', 'reporting') || '';
+      const src = findCol(row, 'store', 'service', 'platform', 'dsp', 'source') || source || '';
+
+      if (!title && !isrc && !amt) continue; // skip empty rows
+
+      db.run(
+        `INSERT INTO royalty_entries (statement_id, user_id, song_title, artist, isrc, source, streams, downloads, amount, territory, period)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [statementId, userId, title, artist, isrc, src, streams, downloads, amt, territory, period]
+      );
+      totalAmount += amt;
+      trackCount++;
+    }
+
+    // Update statement totals
+    db.run('UPDATE royalty_statements SET total_amount = ?, track_count = ? WHERE id = ?', [totalAmount, trackCount, statementId]);
+    saveDb();
+
+    res.json({ id: statementId, filename, total_amount: totalAmount, track_count: trackCount, raw_rows: rows.length });
+  } catch (e) {
+    console.error('[ROYALTY] Upload error:', e.message);
+    res.status(500).json({ error: 'Failed to parse statement: ' + e.message });
+  }
+});
+
+// List all statements for this user
+app.get('/api/royalties/statements', requireAdminOrPartner, (req, res) => {
+  const rows = dbHelpers.prepare(
+    'SELECT * FROM royalty_statements WHERE user_id = ? ORDER BY uploaded_at DESC'
+  ).all(req.user.id);
+  res.json({ statements: rows });
+});
+
+// Get entries for a specific statement
+app.get('/api/royalties/statements/:id/entries', requireAdminOrPartner, (req, res) => {
+  const stmt = dbHelpers.prepare('SELECT * FROM royalty_statements WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!stmt) return res.status(404).json({ error: 'Not found' });
+  const entries = dbHelpers.prepare('SELECT * FROM royalty_entries WHERE statement_id = ? ORDER BY amount DESC').all(stmt.id);
+  res.json({ statement: stmt, entries });
+});
+
+// Summary: totals by song across all statements
+app.get('/api/royalties/summary', requireAdminOrPartner, (req, res) => {
+  const userId = req.user.id;
+  const totals = dbHelpers.prepare(`
+    SELECT song_title, artist, isrc,
+      SUM(amount) as total_earned, SUM(streams) as total_streams,
+      SUM(downloads) as total_downloads, COUNT(*) as entries
+    FROM royalty_entries WHERE user_id = ?
+    GROUP BY LOWER(song_title)
+    ORDER BY total_earned DESC
+  `).all(userId);
+
+  const grandTotal = dbHelpers.prepare('SELECT SUM(amount) as total FROM royalty_entries WHERE user_id = ?').get(userId);
+  const bySource = dbHelpers.prepare(`
+    SELECT source, SUM(amount) as total, SUM(streams) as streams
+    FROM royalty_entries WHERE user_id = ? AND source != ''
+    GROUP BY LOWER(source) ORDER BY total DESC
+  `).all(userId);
+
+  res.json({ totals, grand_total: grandTotal?.total || 0, by_source: bySource });
+});
+
+// Delete a statement and its entries
+app.delete('/api/royalties/statements/:id', requireAdminOrPartner, (req, res) => {
+  const stmt = dbHelpers.prepare('SELECT * FROM royalty_statements WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!stmt) return res.status(404).json({ error: 'Not found' });
+  db.run('DELETE FROM royalty_entries WHERE statement_id = ?', [stmt.id]);
+  db.run('DELETE FROM royalty_statements WHERE id = ?', [stmt.id]);
+  saveDb();
+  res.json({ ok: true });
 });
 
 // Backlog: AI-powered verification — cross-reference all sources
