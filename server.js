@@ -6478,22 +6478,25 @@ app.post('/api/backlog/read-screenshots', requireAdminOrPartner, async (req, res
     }
     content.push({ type: 'text', text: `Extract ALL music releases/tracks visible in these distributor screenshots (DistroKid, TuneCore, CD Baby, Amuse, etc).
 
+IMPORTANT: Read EVERY column in the table carefully. ISRC codes are typically alphanumeric strings like "QZTAU2651320" or "USRC12345678" — copy them EXACTLY as shown. Do NOT skip or omit ISRCs. Split/percent values should also be captured.
+
 For each track return a JSON object with these fields (use null if not visible):
 - song_title (string, required)
-- primary_artist (string)
+- primary_artist (string — the artist shown in the Artist column)
+- featured_artists (string, comma-separated — extract from parentheses like "feat. X" in song or artist name)
 - album_name (string)
 - release_date (string, YYYY-MM-DD format)
-- isrc (string)
+- isrc (string — CRITICAL: copy the ISRC code exactly as displayed, e.g. "QZTAU2651320")
 - upc (string)
 - label (string)
 - genre (string)
-- featured_artists (string, comma-separated)
 - duration_ms (number)
+- split_percent (number — if a Percent/Split column is visible, e.g. 55 for 55%)
 
 ${artist_name ? 'The artist is: ' + artist_name : ''}
 
 Return ONLY a JSON array of track objects, no markdown, no explanation. Example:
-[{"song_title":"My Song","primary_artist":"Artist","album_name":"Album","release_date":"2024-01-15","isrc":"USRC12345678","upc":null,"label":"Independent","genre":"Hip-Hop","featured_artists":null,"duration_ms":null}]` });
+[{"song_title":"I Know","primary_artist":"Lighthouse","album_name":null,"release_date":null,"isrc":"QZTAU2651320","upc":null,"label":null,"genre":null,"featured_artists":null,"duration_ms":null,"split_percent":55}]` });
 
     const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

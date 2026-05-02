@@ -11593,7 +11593,7 @@ async function blProcessScreenshots() {
           featured_artists: t.featured_artists || '', duration_ms: t.duration_ms || null,
           writer_last_name: '', writer_first_name: '', writer_ipi: '',
           writer_role_code: 'CA', publisher_name: '', publisher_ipi: '',
-          iswc: '', collection_share: 100, p_line: '', genre: t.genre || '',
+          iswc: '', collection_share: t.split_percent || 100, p_line: '', genre: t.genre || '',
           status: 'new', _unsaved: true
         });
       }
