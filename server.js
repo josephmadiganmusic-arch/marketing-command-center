@@ -871,12 +871,18 @@ function initDb() {
       status TEXT NOT NULL DEFAULT 'new',
       fetched_at TEXT DEFAULT (datetime('now')),
       saved_at TEXT,
+      user_id INTEGER,
       UNIQUE(artist_name, isrc),
       UNIQUE(artist_name, song_title, album_name)
     )
   `);
+  // Migration: add user_id column if missing (existing installs)
+  try { db.run('ALTER TABLE backlog_catalog ADD COLUMN user_id INTEGER'); } catch(_) {}
+  // Backfill: assign unowned rows to admin (user_id=1) so they don't vanish
+  db.run('UPDATE backlog_catalog SET user_id = 1 WHERE user_id IS NULL');
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_artist ON backlog_catalog(artist_name)');
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_catalog(status)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_backlog_user ON backlog_catalog(user_id)');
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN writers_json TEXT"); } catch(e) {}
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN publishers_json TEXT"); } catch(e) {}
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN primary_artist TEXT"); } catch(e) {}
@@ -6812,13 +6818,14 @@ app.post('/api/backlog/save', requireAdminOrPartner, (req, res) => {
   const { tracks, artist_name, spotify_id } = req.body || {};
   if (!tracks || !tracks.length) return res.status(400).json({ error: 'No tracks' });
 
+  const userId = req.user.id;
   const sql = `INSERT OR REPLACE INTO backlog_catalog (
-    artist_name, spotify_id, primary_artist, song_title, album_name, album_type, release_date,
+    user_id, artist_name, spotify_id, primary_artist, song_title, album_name, album_type, release_date,
     isrc, upc, label, featured_artists, duration_ms, track_number, spotify_uri,
     album_image, genre, writer_last_name, writer_first_name, writer_ipi,
     writer_role_code, publisher_name, publisher_ipi, iswc, collection_share,
     writers_json, publishers_json, p_line, recording_version, catalog_number, status, saved_at
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`;
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`;
 
   let saved = 0;
   db.run("BEGIN");
@@ -6829,7 +6836,7 @@ app.post('/api/backlog/save', requireAdminOrPartner, (req, res) => {
       const wFirst = writerParts.length > 1 ? writerParts.slice(0, -1).join(' ') : '';
       try {
         db.run(sql, [
-          artist_name, spotify_id || null, t.primary_artist || artist_name, t.song_title, t.album_name || null,
+          userId, artist_name, spotify_id || null, t.primary_artist || artist_name, t.song_title, t.album_name || null,
           t.album_type || null, t.release_date || null, t.isrc || null, t.upc || null,
           t.label || null, t.featured_artists || null, t.duration_ms || null,
           t.track_number || null, t.spotify_uri || null, t.album_image || null,
@@ -6849,7 +6856,7 @@ app.post('/api/backlog/save', requireAdminOrPartner, (req, res) => {
   saveDb();
 
   // Auto-age: move tracks older than 3 days from 'new' to 'catalog'
-  db.run(`UPDATE backlog_catalog SET status = 'catalog' WHERE status = 'new' AND fetched_at < datetime('now', '-3 days')`);
+  db.run(`UPDATE backlog_catalog SET status = 'catalog' WHERE status = 'new' AND user_id = ? AND fetched_at < datetime('now', '-3 days')`, [userId]);
 
   res.json({ saved, total: tracks.length });
 });
@@ -6858,13 +6865,14 @@ app.post('/api/backlog/save', requireAdminOrPartner, (req, res) => {
 app.get('/api/backlog/catalog', requireAdminOrPartner, (req, res) => {
   const artist = req.query.artist;
   if (!artist) return res.status(400).json({ error: 'artist query param required' });
+  const userId = req.user.id;
 
   // Auto-age before returning
-  db.run(`UPDATE backlog_catalog SET status = 'catalog' WHERE status = 'new' AND fetched_at < datetime('now', '-3 days')`);
+  db.run(`UPDATE backlog_catalog SET status = 'catalog' WHERE status = 'new' AND user_id = ? AND fetched_at < datetime('now', '-3 days')`, [userId]);
 
   const rows = dbHelpers.prepare(`
-    SELECT * FROM backlog_catalog WHERE artist_name = ? ORDER BY status ASC, release_date DESC
-  `).all(artist);
+    SELECT * FROM backlog_catalog WHERE artist_name = ? AND user_id = ? ORDER BY status ASC, release_date DESC
+  `).all(artist, userId);
   res.json({ tracks: rows });
 });
 
@@ -6884,8 +6892,8 @@ app.patch('/api/backlog/catalog/:id', requireAdminOrPartner, (req, res) => {
     if (allowed.includes(k)) { sets.push(`${k} = ?`); vals.push(v); }
   }
   if (!sets.length) return res.status(400).json({ error: 'No valid fields' });
-  vals.push(id);
-  db.run(`UPDATE backlog_catalog SET ${sets.join(', ')} WHERE id = ?`, vals);
+  vals.push(id, req.user.id);
+  db.run(`UPDATE backlog_catalog SET ${sets.join(', ')} WHERE id = ? AND user_id = ?`, vals);
   saveDb();
   res.json({ ok: true });
 });
@@ -6900,7 +6908,7 @@ app.post('/api/backlog/catalog/bulk-update', requireAdminOrPartner, (req, res) =
   ];
   if (!ids?.length || !allowed.includes(field)) return res.status(400).json({ error: 'Invalid' });
   const placeholders = ids.map(() => '?').join(',');
-  db.run(`UPDATE backlog_catalog SET ${field} = ? WHERE id IN (${placeholders})`, [value, ...ids]);
+  db.run(`UPDATE backlog_catalog SET ${field} = ? WHERE user_id = ? AND id IN (${placeholders})`, [value, req.user.id, ...ids]);
   saveDb();
   res.json({ updated: ids.length });
 });
@@ -6912,8 +6920,8 @@ app.post('/api/backlog/catalog/dedup', requireAdminOrPartner, (req, res) => {
 
   // Find duplicates by lowercase song_title — keep the row with the most non-null fields
   const rows = dbHelpers.prepare(
-    `SELECT * FROM backlog_catalog WHERE artist_name = ? ORDER BY song_title COLLATE NOCASE, saved_at DESC`
-  ).all(artist_name);
+    `SELECT * FROM backlog_catalog WHERE artist_name = ? AND user_id = ? ORDER BY song_title COLLATE NOCASE, saved_at DESC`
+  ).all(artist_name, req.user.id);
 
   const groups = {};
   for (const r of rows) {
@@ -6964,8 +6972,8 @@ app.get('/api/backlog/artists', requireAdminOrPartner, (req, res) => {
       SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) as new_count,
       SUM(CASE WHEN status = 'catalog' THEN 1 ELSE 0 END) as catalog_count,
       MAX(fetched_at) as last_fetched
-    FROM backlog_catalog GROUP BY artist_name ORDER BY last_fetched DESC
-  `).all();
+    FROM backlog_catalog WHERE user_id = ? GROUP BY artist_name ORDER BY last_fetched DESC
+  `).all(req.user.id);
   res.json({ artists: rows });
 });
 
