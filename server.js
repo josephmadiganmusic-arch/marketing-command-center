@@ -6322,79 +6322,135 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
           console.log(`[BACKLOG] Apple Music ISRC enrichment: ${appleFound}/${stillMissing.length} found`);
         }
 
-        // Enrich writer credits + IPIs via MusicBrainz (free, no auth, 1 req/sec)
-        console.log(`[BACKLOG] Enriching writer credits via MusicBrainz...`);
+        // Enrich writer credits + IPIs via BMI Song View (Serper Google search)
+        console.log(`[BACKLOG] Enriching writer credits via BMI Song View...`);
         let writerFound = 0;
-        for (const t of unique) {
-          try {
-            const q = encodeURIComponent(`recording:"${t.song_title}" AND artist:"${artist.name}"`);
-            const mbResp = await fetch(`https://musicbrainz.org/ws/2/recording/?query=${q}&fmt=json&limit=3`, {
-              headers: { 'User-Agent': 'RolloutHeaven/1.0 (https://rolloutheaven.com)' }
-            });
-            if (mbResp.ok) {
-              const mbData = await mbResp.json();
-              const rec = (mbData.recordings || []).find(r =>
-                r.title.toLowerCase().replace(/[^a-z0-9]/g, '') === t.song_title.toLowerCase().replace(/[^a-z0-9]/g, '')
-              );
-              if (rec) {
-                // Get ISRC from MusicBrainz if still missing
-                if (!t.isrc && rec.isrcs && rec.isrcs.length > 0) {
-                  t.isrc = rec.isrcs[0];
-                }
-                // Fetch work relations for writer credits
-                if (rec.id) {
-                  const relResp = await fetch(`https://musicbrainz.org/ws/2/recording/${rec.id}?inc=work-rels+artist-rels&fmt=json`, {
-                    headers: { 'User-Agent': 'RolloutHeaven/1.0 (https://rolloutheaven.com)' }
-                  });
-                  if (relResp.ok) {
-                    const relData = await relResp.json();
-                    const writers = [];
-                    const ipis = [];
-                    for (const rel of (relData.relations || [])) {
-                      if (rel.type === 'writer' || rel.type === 'composer' || rel.type === 'lyricist') {
-                        if (rel.artist) {
-                          writers.push(rel.artist.name);
-                          if (rel.artist.ipis && rel.artist.ipis.length > 0) {
-                            ipis.push(...rel.artist.ipis.map(ipi => `${rel.artist.name}: ${ipi}`));
+        if (SERPER_API_KEY) {
+          // Batch tracks in groups of 5 to reduce Serper API calls
+          for (let i = 0; i < unique.length; i++) {
+            const t = unique[i];
+            try {
+              const serperResp = await fetch('https://google.serper.dev/search', {
+                method: 'POST',
+                headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ q: `site:repertoire.bmi.com "${t.song_title}" ${artist.name}`, num: 3 })
+              });
+              if (serperResp.ok) {
+                const serperData = await serperResp.json();
+                const results = serperData.organic || [];
+                if (results.length > 0) {
+                  // Parse writer/IPI info from snippets and titles
+                  const allText = results.map(r => `${r.title || ''} ${r.snippet || ''}`).join(' ');
+                  // IPI numbers are 9-11 digit numbers, often preceded by "IPI" or a name
+                  const ipiMatches = allText.match(/\b\d{9,11}\b/g);
+                  // Writer names often appear in "Written by: Name" or "WRITER: Name" patterns
+                  const writerPatterns = allText.match(/(?:writer|composer|author)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi);
+
+                  // Try to fetch the actual BMI result page for detailed data
+                  const bmiUrl = results[0].link;
+                  if (bmiUrl && bmiUrl.includes('repertoire.bmi.com')) {
+                    try {
+                      // Set disclaimer cookie and fetch result page
+                      const bmiResp = await fetch(bmiUrl, {
+                        headers: {
+                          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                          'Cookie': 'disc=' + encodeURIComponent(new Date().toISOString())
+                        }
+                      });
+                      if (bmiResp.ok) {
+                        const bmiHtml = await bmiResp.text();
+                        // Parse writer names: BMI shows them in pink links or specific spans
+                        const writerNameMatches = bmiHtml.match(/class="[^"]*writer[^"]*"[^>]*>([^<]+)/gi);
+                        const pubNameMatches = bmiHtml.match(/class="[^"]*publisher[^"]*"[^>]*>([^<]+)/gi);
+                        const ipiInPage = bmiHtml.match(/IPI[#:\s]*(\d{9,11})/gi);
+
+                        const writers = [];
+                        if (writerNameMatches) {
+                          for (const m of writerNameMatches) {
+                            const name = m.replace(/^[^>]+>/, '').trim();
+                            if (name && name.length > 2 && !name.includes('<')) writers.push(name);
                           }
                         }
-                      }
-                    }
-                    // Also check work relations
-                    if (relData.relations) {
-                      for (const rel of relData.relations) {
-                        if (rel.type === 'performance' && rel.work) {
-                          const wResp = await fetch(`https://musicbrainz.org/ws/2/work/${rel.work.id}?inc=artist-rels&fmt=json`, {
-                            headers: { 'User-Agent': 'RolloutHeaven/1.0 (https://rolloutheaven.com)' }
-                          });
-                          if (wResp.ok) {
-                            const wData = await wResp.json();
-                            for (const wRel of (wData.relations || [])) {
-                              if (wRel.type === 'writer' || wRel.type === 'composer' || wRel.type === 'lyricist') {
-                                if (wRel.artist && !writers.includes(wRel.artist.name)) {
-                                  writers.push(wRel.artist.name);
-                                  if (wRel.artist.ipis && wRel.artist.ipis.length > 0) {
-                                    ipis.push(...wRel.artist.ipis.map(ipi => `${wRel.artist.name}: ${ipi}`));
-                                  }
-                                }
-                              }
-                            }
-                          }
-                          await new Promise(r => setTimeout(r, 1100));
+                        if (writers.length > 0) {
+                          t.writer = writers.join(', ');
+                          writerFound++;
+                        }
+                        if (ipiInPage) {
+                          t.ipi = ipiInPage.map(m => m.replace(/IPI[#:\s]*/i, '').trim()).join('; ');
+                        }
+                        if (pubNameMatches) {
+                          const pubs = pubNameMatches.map(m => m.replace(/^[^>]+>/, '').trim()).filter(n => n.length > 2 && !n.includes('<'));
+                          if (pubs.length > 0) t.publisher = pubs[0];
                         }
                       }
-                    }
-                    if (writers.length > 0) { t.writer = writers.join(', '); writerFound++; }
-                    if (ipis.length > 0) { t.ipi = ipis.join('; '); }
+                    } catch (e) { /* BMI page fetch failed, use snippet data */ }
+                  }
+
+                  // Fallback: use snippet data if page scrape didn't find writers
+                  if (!t.writer && writerPatterns) {
+                    const names = writerPatterns.map(p => p.replace(/^(?:writer|composer|author)[:\s]+/i, '').trim());
+                    if (names.length > 0) { t.writer = names.join(', '); writerFound++; }
+                  }
+                  if (!t.ipi && ipiMatches) {
+                    t.ipi = ipiMatches.join('; ');
                   }
                 }
               }
+              // Small delay between Serper calls
+              await new Promise(r => setTimeout(r, 200));
+            } catch (e) { /* skip */ }
+          }
+        } else {
+          // Fallback: direct BMI Song View search (no Serper needed)
+          console.log('[BACKLOG] No SERPER_API_KEY — trying direct BMI Song View search...');
+          // First, get session cookies from BMI
+          let bmiCookies = '';
+          try {
+            const initResp = await fetch('https://repertoire.bmi.com/', {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            });
+            const setCookies = initResp.headers.getSetCookie?.() || [];
+            bmiCookies = setCookies.map(c => c.split(';')[0]).join('; ') + '; disc=' + encodeURIComponent(new Date().toISOString());
+          } catch (e) { console.log('[BACKLOG] BMI session init failed:', e.message); }
+
+          if (bmiCookies) {
+            for (const t of unique) {
+              try {
+                const q = encodeURIComponent(t.song_title);
+                const bmiResp = await fetch(`https://repertoire.bmi.com/Search/Search?Main_Search_Text=${q}&Main_Search_Type=Title&Search_Type=all&View_Count=5&Page_Number=1`, {
+                  method: 'POST',
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Cookie': bmiCookies,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Referer': 'https://repertoire.bmi.com/'
+                  },
+                  body: `Main_Search_Text=${q}&Main_Search_Type=Title&Search_Type=all&View_Count=5&Page_Number=1`
+                });
+                if (bmiResp.ok) {
+                  const html = await bmiResp.text();
+                  // Parse IPI numbers (9-11 digits near "IPI" label)
+                  const ipiMatches = html.match(/\b\d{9,11}\b/g);
+                  // Parse writer/publisher from common BMI HTML patterns
+                  const writerMatches = html.match(/(?:writer|composer)[^<]*<[^>]*>([^<]{2,50})/gi);
+                  const pubMatches = html.match(/publisher[^<]*<[^>]*>([^<]{2,50})/gi);
+
+                  if (writerMatches) {
+                    const names = writerMatches.map(m => m.replace(/^[^>]+>/, '').trim()).filter(n => n.length > 2);
+                    if (names.length > 0) { t.writer = names.join(', '); writerFound++; }
+                  }
+                  if (ipiMatches) t.ipi = ipiMatches.join('; ');
+                  if (pubMatches) {
+                    const pubs = pubMatches.map(m => m.replace(/^[^>]+>/, '').trim()).filter(n => n.length > 2);
+                    if (pubs.length > 0) t.publisher = pubs[0];
+                  }
+                }
+                await new Promise(r => setTimeout(r, 500));
+              } catch (e) { /* skip */ }
             }
-            // MusicBrainz rate limit: 1 request per second
-            await new Promise(r => setTimeout(r, 1100));
-          } catch (e) { /* skip */ }
+          }
         }
-        console.log(`[BACKLOG] MusicBrainz writer enrichment: ${writerFound}/${unique.length} found`);
+        console.log(`[BACKLOG] BMI Song View writer enrichment: ${writerFound}/${unique.length} found`);
 
         return res.json({
           artist: { name: artist.name, spotify_id: artistId, followers: artist.followers?.total, genres: artist.genres, image: artist.images?.[0]?.url },
@@ -6528,26 +6584,35 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
   }
 });
 
-// Backlog: Search BMI Repertoire for writer/publisher info
+// Backlog: Search BMI Repertoire for writer/publisher info (via Serper Google search)
 app.post('/api/backlog/search-bmi', requireAdminOrPartner, async (req, res) => {
   try {
     const { title, artist } = req.body;
     if (!title) return res.status(400).json({ error: 'title required' });
-    const query = encodeURIComponent(title);
-    const url = `https://repertoire.bmi.com/api/catalog/search?query=${query}&searchType=title`;
-    const resp = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
-    });
-    if (!resp.ok) {
-      // Try HTML scrape fallback
-      const htmlUrl = `https://repertoire.bmi.com/Search/Search?Main_Search_Text=${query}&Main_Search_Type=Title&Search_Type=all`;
-      const htmlResp = await fetch(htmlUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      const html = await htmlResp.text();
-      res.json({ raw_html: html.substring(0, 5000), source: 'bmi_html', query: title });
+
+    // Use Serper to search BMI Song View repertoire
+    if (SERPER_API_KEY) {
+      const serperResp = await fetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: `site:repertoire.bmi.com "${title}" ${artist || ''}`, num: 5 })
+      });
+      const serperData = await serperResp.json();
+      res.json({ results: serperData.organic || [], source: 'bmi_serper', query: title });
       return;
     }
-    const data = await resp.json();
-    res.json({ results: data, source: 'bmi_api', query: title });
+
+    // Fallback: direct BMI search with disclaimer cookie
+    const query = encodeURIComponent(title);
+    const htmlUrl = `https://repertoire.bmi.com/Search/Search?Main_Search_Text=${query}&Main_Search_Type=Title&Search_Type=all`;
+    const htmlResp = await fetch(htmlUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Cookie': 'disc=' + encodeURIComponent(new Date().toISOString())
+      }
+    });
+    const html = await htmlResp.text();
+    res.json({ raw_html: html.substring(0, 5000), source: 'bmi_html', query: title });
   } catch (e) {
     res.status(500).json({ error: 'BMI search failed: ' + e.message });
   }
@@ -6885,7 +6950,8 @@ app.post('/api/backlog/catalog/bulk-update', requireAdminOrPartner, (req, res) =
   const { ids, field, value } = req.body || {};
   const allowed = [
     'writer_last_name', 'writer_first_name', 'writer_ipi', 'writer_role_code',
-    'publisher_name', 'publisher_ipi', 'collection_share', 'p_line', 'genre', 'label'
+    'publisher_name', 'publisher_ipi', 'collection_share', 'p_line', 'genre', 'label',
+    'writers_json', 'publishers_json'
   ];
   if (!ids?.length || !allowed.includes(field)) return res.status(400).json({ error: 'Invalid' });
   const placeholders = ids.map(() => '?').join(',');

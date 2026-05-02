@@ -104,6 +104,9 @@
   input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
   .form-group textarea { resize: vertical; min-height: 100px; }
   .form-group select option { background: var(--bg-card); }
+  .form-control { background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: #fff; font-family: 'Inter', sans-serif; transition: all 0.3s ease; }
+  .form-control:focus { outline: none; border-color: var(--accent-1); box-shadow: 0 0 8px rgba(123,47,247,0.15); }
+  select.form-control option { background: var(--bg-card); }
   .upload-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.3s ease; position: relative; background: var(--bg-input); }
   .upload-zone:hover { border-color: var(--accent-1); background: rgba(123,47,247,0.05); box-shadow: var(--glow-purple); }
   .upload-zone.has-file { border-color: var(--accent-2); border-style: solid; box-shadow: var(--glow-cyan); }
@@ -1077,6 +1080,7 @@
             <th style="padding:6px;color:#4ade80;">Publishers (Name, IPI)</th>
             <th style="padding:6px;color:#4ade80;">ISWC</th>
             <th style="padding:6px;color:#4ade80;">Label</th>
+            <th style="padding:6px;color:#4ade80;"></th>
           </tr></thead>
           <tbody id="blNewBody"></tbody>
         </table>
@@ -1100,6 +1104,7 @@
             <th style="padding:6px;color:#00d4ff;">Publishers (Name, IPI)</th>
             <th style="padding:6px;color:#00d4ff;">ISWC</th>
             <th style="padding:6px;color:#00d4ff;">Label</th>
+            <th style="padding:6px;color:#00d4ff;"></th>
           </tr></thead>
           <tbody id="blCatalogBody"></tbody>
         </table>
@@ -11260,8 +11265,49 @@ async function blFetchCatalog() {
     blShowArtistInfo(data.artist.name, BL_TRACKS.length,
       newCount < BL_TRACKS.length ? ` | ${newCount} new, ${BL_TRACKS.length - newCount} already in catalog` : '');
 
-    // Merge new tracks into BL_SAVED for rendering
+    // Merge new tracks into BL_SAVED + update existing tracks with fresh enrichment data
     const newTracks = BL_TRACKS.filter(t => t._isNew);
+    const existingTracks = BL_TRACKS.filter(t => !t._isNew);
+
+    // Update existing saved tracks with any new enrichment data from this fetch
+    for (const fetched of existingTracks) {
+      const saved = BL_SAVED.find(s =>
+        (fetched.isrc && s.isrc === fetched.isrc) ||
+        ((s.song_title || '').toLowerCase() === (fetched.song_title || '').toLowerCase() &&
+         (s.album_name || '').toLowerCase() === (fetched.album_name || '').toLowerCase())
+      );
+      if (saved) {
+        // Fill in missing fields from the fresh fetch (don't overwrite user edits)
+        if (!saved.isrc && fetched.isrc) saved.isrc = fetched.isrc;
+        if (!saved.upc && fetched.upc) saved.upc = fetched.upc;
+        if (!saved.iswc && fetched.iswc) saved.iswc = fetched.iswc;
+        if (!saved.label && fetched.label) saved.label = fetched.label;
+        if (!saved.duration_ms && fetched.duration_ms) saved.duration_ms = fetched.duration_ms;
+        if (!saved.spotify_uri && fetched.spotify_uri) saved.spotify_uri = fetched.spotify_uri;
+        if (!saved.album_image && fetched.album_image) saved.album_image = fetched.album_image;
+        // Update writer/publisher/IPI if saved track has none
+        if (fetched.writer && !saved.writer_last_name && !saved.writers_json) {
+          saved.writer_last_name = fetched.writer;
+        }
+        if (fetched.ipi && !saved.writer_ipi) saved.writer_ipi = fetched.ipi;
+        if (fetched.publisher && !saved.publisher_name) saved.publisher_name = fetched.publisher;
+        // Patch updated fields to DB if track has an ID
+        if (saved.id) {
+          const updates = {};
+          if (fetched.isrc && !saved._origIsrc) updates.isrc = saved.isrc;
+          if (fetched.ipi) updates.writer_ipi = saved.writer_ipi;
+          if (fetched.writer) updates.writer_last_name = saved.writer_last_name;
+          if (fetched.publisher) updates.publisher_name = saved.publisher_name;
+          if (Object.keys(updates).length) {
+            fetch('/api/backlog/catalog/' + saved.id, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+              body: JSON.stringify(updates)
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+
     if (newTracks.length) {
       BL_SAVED = [...newTracks.map(t => ({
         song_title: t.song_title, primary_artist: t.primary_artist || BL_ARTIST?.name || '',
@@ -11420,6 +11466,7 @@ function blTrackRow(t, dataIdx) {
     <td style="padding:5px;">${pubsHtml}</td>
     <td style="padding:5px;">${inp('iswc', t.iswc, '100px')}</td>
     <td style="padding:5px;">${inp('label', t.label, '80px')}</td>
+    <td style="padding:5px;text-align:center;"><button onclick="blSendToIntake(${dataIdx})" class="btn-secondary" style="font-size:10px;padding:4px 8px;white-space:nowrap;" title="Create release on Intake tab from this track">Intake</button></td>
   </tr>`;
 }
 
@@ -11435,6 +11482,90 @@ function blUpdateField(idx, field, value) {
   }
 }
 
+// --- Send Catalog Track to Intake Tab ---
+function blSendToIntake(idx) {
+  const t = BL_SAVED[idx];
+  if (!t) { showToast('Track not found'); return; }
+
+  // Map catalog data to intake form structure
+  const writers = blGetWriters(t);
+  const pubs = blGetPubs(t);
+
+  // Build songwriter array for intake (name = "First Last", role, ipi, split)
+  const songwriters = writers.map(w => ({
+    name: [w.first, w.last].filter(Boolean).join(' ') || '',
+    role: { 'CA': 'Both', 'C': 'Composer', 'A': 'Lyricist', 'AR': 'Both', 'AD': 'Both', 'TR': 'Both' }[w.role] || 'Both',
+    ipi: w.ipi || '',
+    split: w.share ? String(w.share) : '',
+    pro: ''
+  })).filter(s => s.name);
+
+  // Build publisher array for intake
+  const publishers = pubs.map(p => ({
+    name: p.name || '',
+    ipi: p.ipi || '',
+    split: ''
+  })).filter(p => p.name);
+
+  // Convert duration_ms to min/sec
+  const durMin = t.duration_ms ? String(Math.floor(t.duration_ms / 60000)) : '';
+  const durSec = t.duration_ms ? String(Math.floor((t.duration_ms % 60000) / 1000)) : '';
+
+  // Split primary artist name into first/last for artist profile
+  const artistParts = (t.primary_artist || '').split(/\s+/);
+  const artistFirst = artistParts.length > 1 ? artistParts.slice(0, -1).join(' ') : artistParts[0] || '';
+  const artistLast = artistParts.length > 1 ? artistParts[artistParts.length - 1] : '';
+
+  const releaseData = {
+    songTitle: t.song_title || '',
+    primaryArtist: t.primary_artist || '',
+    featArtist: t.featured_artists || '',
+    producer: '',
+    albumName: t.album_name || '',
+    genrePrimary: t.genre || '',
+    genreSecondary: '',
+    language: 'English',
+    releaseDate: t.release_date || '',
+    durationMin: durMin,
+    durationSec: durSec,
+    workContent: 'Music and Lyrics',
+    explicit: 'No',
+    instrumental: false,
+    songDescription: '',
+    lyrics: '',
+    pressRelease: '',
+    songwriters,
+    publishers,
+    isrc: t.isrc || '',
+    upc: t.upc || '',
+    iswc: t.iswc || '',
+    firstName: artistFirst,
+    lastName: artistLast,
+    legalName: '',
+    stageName: t.primary_artist || '',
+    email: '',
+    phone: '',
+    label: t.label || '',
+    pro: '',
+    proAccount: '',
+    publisherEntity: publishers[0]?.name || '',
+    filmTV: 'No',
+    hometownCity: '',
+    hometownState: '',
+    linkSpotify: t.spotify_uri ? 'https://open.spotify.com/track/' + (t.spotify_uri.split(':').pop() || '') : '',
+    bio: '',
+    emailIntro: '',
+    marketingPlan: ''
+  };
+
+  // Fill the intake form
+  intakeFillForm(releaseData);
+
+  // Switch to intake tab
+  showPanel('intake');
+  showToast(`"${t.song_title}" loaded into Intake — review and save`);
+}
+
 // --- Bulk Apply ---
 function blApplyBulk() {
   const fields = ['writer_last_name','writer_first_name','writer_ipi','writer_role_code',
@@ -11447,6 +11578,26 @@ function blApplyBulk() {
     if (!val && f !== 'collection_share') continue;
     for (const t of BL_SAVED) { t[f] = val; }
     updates.push({ field: f, value: val });
+  }
+  // Sync bulk writer/publisher fields into writers_json/publishers_json for each track
+  const bulkLast = document.getElementById('blBulk-writer_last_name')?.value.trim() || '';
+  const bulkFirst = document.getElementById('blBulk-writer_first_name')?.value.trim() || '';
+  const bulkWIpi = document.getElementById('blBulk-writer_ipi')?.value.trim() || '';
+  const bulkRole = document.getElementById('blBulk-writer_role_code')?.value || 'CA';
+  const bulkShare = document.getElementById('blBulk-collection_share')?.value || '100';
+  const bulkPubName = document.getElementById('blBulk-publisher_name')?.value.trim() || '';
+  const bulkPubIpi = document.getElementById('blBulk-publisher_ipi')?.value.trim() || '';
+  if (bulkLast || bulkFirst) {
+    for (const t of BL_SAVED) {
+      t.writers_json = JSON.stringify([{ last: bulkLast, first: bulkFirst, ipi: bulkWIpi, role: bulkRole, share: bulkShare }]);
+    }
+    updates.push({ field: 'writers_json', value: JSON.stringify([{ last: bulkLast, first: bulkFirst, ipi: bulkWIpi, role: bulkRole, share: bulkShare }]) });
+  }
+  if (bulkPubName) {
+    for (const t of BL_SAVED) {
+      t.publishers_json = JSON.stringify([{ name: bulkPubName, ipi: bulkPubIpi }]);
+    }
+    updates.push({ field: 'publishers_json', value: JSON.stringify([{ name: bulkPubName, ipi: bulkPubIpi }]) });
   }
   // Batch all bulk updates to saved tracks
   const savedIds = BL_SAVED.filter(t => t.id).map(t => t.id);
@@ -11480,7 +11631,8 @@ async function blSaveCatalog() {
       publisher_name: t.publisher_name, publisher_ipi: t.publisher_ipi,
       iswc: t.iswc, collection_share: t.collection_share || 100,
       p_line: t.p_line, recording_version: t.recording_version,
-      catalog_number: t.catalog_number, status: t.status || 'new'
+      catalog_number: t.catalog_number, status: t.status || 'new',
+      writers_json: t.writers_json || null, publishers_json: t.publishers_json || null
     }));
     const resp = await fetch('/api/backlog/save', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
