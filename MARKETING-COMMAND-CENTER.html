@@ -1045,8 +1045,8 @@
         <div class="upload-icon">&#128247;</div>
         <div class="upload-label">Drop or click to upload distributor screenshots</div>
       </div>
-      <div id="blScreenshotPreview" style="display:none;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"></div>
-      <div id="blScreenshotActions" style="display:none;margin-top:10px;display:flex;gap:8px;align-items:center;">
+      <div id="blScreenshotPreview" style="display:none;margin-top:10px;gap:8px;flex-wrap:wrap;"></div>
+      <div id="blScreenshotActions" style="display:none;margin-top:10px;gap:8px;align-items:center;">
         <button class="btn-primary" onclick="blProcessScreenshots()" id="blProcessBtn" style="font-size:12px;">Read Screenshots with AI</button>
         <button class="btn-secondary" onclick="blClearScreenshots()" style="font-size:11px;">Clear</button>
         <span id="blScreenshotStatus" style="font-size:12px;color:#666;"></span>
@@ -1062,6 +1062,7 @@
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;">
         <div class="form-group"><label>Writer Last Name</label><input class="form-control" id="blBulk-writer_last_name" style="font-size:11px;padding:4px 8px;"></div>
         <div class="form-group"><label>Writer First Name</label><input class="form-control" id="blBulk-writer_first_name" style="font-size:11px;padding:4px 8px;"></div>
+        <div class="form-group"><label>Writer Middle Name</label><input class="form-control" id="blBulk-writer_middle_name" style="font-size:11px;padding:4px 8px;"></div>
         <div class="form-group"><label>Writer IPI #</label><input class="form-control" id="blBulk-writer_ipi" placeholder="9-11 digits" style="font-size:11px;padding:4px 8px;"></div>
         <div class="form-group"><label>Writer Role</label>
           <select class="form-control" id="blBulk-writer_role_code" style="font-size:11px;padding:4px 8px;">
@@ -11620,7 +11621,7 @@ function blSendToIntake(idx) {
 
   // Build songwriter array for intake (name = "First Last", role, ipi, split)
   const songwriters = writers.map(w => ({
-    name: [w.first, w.last].filter(Boolean).join(' ') || '',
+    name: [w.first, w.middle, w.last].filter(Boolean).join(' ') || '',
     role: { 'CA': 'Both', 'C': 'Composer', 'A': 'Lyricist', 'AR': 'Both', 'AD': 'Both', 'TR': 'Both' }[w.role] || 'Both',
     ipi: w.ipi || '',
     split: w.share ? String(w.share) : '',
@@ -11695,7 +11696,7 @@ function blSendToIntake(idx) {
 
 // --- Bulk Apply ---
 function blApplyBulk() {
-  const fields = ['writer_last_name','writer_first_name','writer_ipi','writer_role_code',
+  const fields = ['writer_last_name','writer_first_name','writer_middle_name','writer_ipi','writer_role_code',
     'publisher_name','publisher_ipi','collection_share','p_line','label','genre'];
   const updates = [];
   for (const f of fields) {
@@ -11709,6 +11710,7 @@ function blApplyBulk() {
   // Sync bulk writer/publisher fields into writers_json/publishers_json for each track
   const bulkLast = document.getElementById('blBulk-writer_last_name')?.value.trim() || '';
   const bulkFirst = document.getElementById('blBulk-writer_first_name')?.value.trim() || '';
+  const bulkMiddle = document.getElementById('blBulk-writer_middle_name')?.value.trim() || '';
   const bulkWIpi = document.getElementById('blBulk-writer_ipi')?.value.trim() || '';
   const bulkRole = document.getElementById('blBulk-writer_role_code')?.value || 'CA';
   const bulkShare = document.getElementById('blBulk-collection_share')?.value || '100';
@@ -11716,9 +11718,9 @@ function blApplyBulk() {
   const bulkPubIpi = document.getElementById('blBulk-publisher_ipi')?.value.trim() || '';
   if (bulkLast || bulkFirst) {
     for (const t of BL_SAVED) {
-      t.writers_json = JSON.stringify([{ last: bulkLast, first: bulkFirst, ipi: bulkWIpi, role: bulkRole, share: bulkShare }]);
+      t.writers_json = JSON.stringify([{ last: bulkLast, first: bulkFirst, middle: bulkMiddle, ipi: bulkWIpi, role: bulkRole, share: bulkShare }]);
     }
-    updates.push({ field: 'writers_json', value: JSON.stringify([{ last: bulkLast, first: bulkFirst, ipi: bulkWIpi, role: bulkRole, share: bulkShare }]) });
+    updates.push({ field: 'writers_json', value: JSON.stringify([{ last: bulkLast, first: bulkFirst, middle: bulkMiddle, ipi: bulkWIpi, role: bulkRole, share: bulkShare }]) });
   }
   if (bulkPubName) {
     for (const t of BL_SAVED) {
