@@ -6322,83 +6322,9 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
           console.log(`[BACKLOG] Apple Music ISRC enrichment: ${appleFound}/${stillMissing.length} found`);
         }
 
-        // Enrich writer credits + IPIs via Google search (Serper) for BMI/ASCAP/Genius/etc
-        console.log(`[BACKLOG] Enriching writer credits via Serper search...`);
-        let writerFound = 0;
-        if (SERPER_API_KEY) {
-          // Search in batches — one Serper call per unique song to find writer/IPI data
-          for (let i = 0; i < unique.length; i++) {
-            const t = unique[i];
-            try {
-              // Broad search: look for songwriter/writer credits across BMI, ASCAP, Genius, Wikipedia, etc.
-              const searchQuery = `"${t.song_title}" "${artist.name}" songwriter writer credits IPI`;
-              const serperResp = await fetch('https://google.serper.dev/search', {
-                method: 'POST',
-                headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ q: searchQuery, num: 5 })
-              });
-              if (serperResp.ok) {
-                const serperData = await serperResp.json();
-                const results = serperData.organic || [];
-                if (results.length > 0) {
-                  const allText = results.map(r => `${r.title || ''} ${r.snippet || ''}`).join(' ');
-
-                  // Extract IPI numbers (9-11 digits, often near "IPI" label)
-                  const ipiMatches = allText.match(/IPI[#:\s]*(\d{9,11})/gi);
-                  // Also catch standalone 9-11 digit numbers in IPI context
-                  const ipiNums = ipiMatches ? ipiMatches.map(m => m.replace(/IPI[#:\s]*/i, '').trim()) : [];
-
-                  // Extract writer names from common patterns:
-                  // "Written by X, Y, Z" / "Songwriter(s): X" / "Writer: X" / "Composed by X"
-                  // Also: "by X" / "featuring X" credit patterns
-                  const writerPatterns = allText.match(/(?:written\s+by|songwriter|composed\s+by|writer|lyricist|author|credits?)[:\s]+([^.;[\]]{2,120}?)(?:\.|;|\[|$)/gi);
-                  const writerNames = [];
-                  if (writerPatterns) {
-                    for (const p of writerPatterns) {
-                      const nameStr = p.replace(/^(?:written\s+by|songwriter|composed\s+by|writer|lyricist|author|credits?)[:\s]+/i, '').trim()
-                        .replace(/\s*\(.*$/, '').trim(); // remove trailing parentheticals
-                      // Split by comma or " and " to get individual names
-                      const names = nameStr.split(/,\s*|\s+and\s+|\s+&\s+/).map(n => n.trim().replace(/[^a-zA-Z\s'-]/g, '').trim()).filter(n => n.length > 2 && /^[A-Z]/.test(n));
-                      writerNames.push(...names);
-                    }
-                  }
-
-                  // Extract publisher names
-                  const pubPatterns = allText.match(/(?:publisher|publishing|label)[:\s]+([A-Z][^.;()\[\]]{2,60}?)(?:\.|;|\(|$)/gi);
-                  const pubNames = [];
-                  if (pubPatterns) {
-                    for (const p of pubPatterns) {
-                      const name = p.replace(/^(?:publisher|publishing|label)[:\s]+/i, '').trim();
-                      if (name.length > 2 && /^[A-Z]/.test(name)) pubNames.push(name);
-                    }
-                  }
-
-                  if (writerNames.length > 0) {
-                    t.writer = [...new Set(writerNames)].join(', ');
-                    writerFound++;
-                    console.log(`[BACKLOG]   "${t.song_title}" writers: ${t.writer}`);
-                  }
-                  if (ipiNums.length > 0) {
-                    t.ipi = [...new Set(ipiNums)].join('; ');
-                    console.log(`[BACKLOG]   "${t.song_title}" IPIs: ${t.ipi}`);
-                  }
-                  if (pubNames.length > 0) {
-                    t.publisher = pubNames[0];
-                  }
-                } else {
-                  console.log(`[BACKLOG]   "${t.song_title}" — no Serper results`);
-                }
-              }
-              // Small delay between Serper calls
-              await new Promise(r => setTimeout(r, 150));
-            } catch (e) {
-              console.log(`[BACKLOG]   "${t.song_title}" search error: ${e.message}`);
-            }
-          }
-        } else {
-          console.log('[BACKLOG] No SERPER_API_KEY — skipping writer enrichment');
-        }
-        console.log(`[BACKLOG] Writer enrichment: ${writerFound}/${unique.length} found`);
+        // Writer/IPI enrichment skipped during auto-fetch — too unreliable for common song titles.
+        // Use the "Verify with AI" button or manual BMI/ASCAP search per-track instead.
+        console.log(`[BACKLOG] Writer/IPI enrichment: use Bulk Apply or per-track lookup (auto-search disabled — too many false matches for common titles)`);
 
         return res.json({
           artist: { name: artist.name, spotify_id: artistId, followers: artist.followers?.total, genres: artist.genres, image: artist.images?.[0]?.url },
