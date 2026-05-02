@@ -1032,6 +1032,7 @@
         <button class="btn-secondary" onclick="blExportMLC()" id="blExportMlcBtn" style="display:none;">Export MLC (.xlsx)</button>
         <button class="btn-secondary" onclick="blExportSE()" id="blExportSeBtn" style="display:none;">Export SoundExchange (.xlsx)</button>
         <button class="btn-primary" onclick="blSaveCatalog()" id="blSaveBtn" style="display:none;background:linear-gradient(135deg,#4ade80,#22c55e);">Save Catalog</button>
+        <button class="btn-secondary" onclick="blDedup()" id="blDedupBtn" style="display:none;font-size:11px;">Remove Duplicates</button>
         <span id="blStatus" style="font-size:12px;color:#666;"></span>
       </div>
     </div>
@@ -11160,6 +11161,7 @@ async function blLoadArtistCatalog(artistName) {
     document.getElementById('blExportMlcBtn').style.display = '';
     document.getElementById('blExportSeBtn').style.display = '';
     document.getElementById('blSaveBtn').style.display = '';
+    document.getElementById('blDedupBtn').style.display = '';
     document.getElementById('blBulkApply').style.display = '';
   } catch (e) { showToast('Error loading catalog'); }
 }
@@ -11346,6 +11348,7 @@ async function blFetchCatalog() {
     document.getElementById('blExportMlcBtn').style.display = '';
     document.getElementById('blExportSeBtn').style.display = '';
     document.getElementById('blSaveBtn').style.display = '';
+    document.getElementById('blDedupBtn').style.display = '';
     document.getElementById('blBulkApply').style.display = '';
     document.getElementById('blStatus').textContent = `${BL_TRACKS.length} tracks — ${newCount} new`;
 
@@ -11568,12 +11571,20 @@ async function blProcessScreenshots() {
     if (!tracks.length) { status.textContent = 'No tracks found in screenshots'; btn.disabled = false; btn.textContent = 'Read Screenshots with AI'; return; }
 
     // Add extracted tracks to BL_SAVED as new unsaved tracks
+    let skipped = 0;
     for (const t of tracks) {
-      // Check if already exists
-      const exists = BL_SAVED.some(s =>
-        (s.song_title || '').toLowerCase() === (t.song_title || '').toLowerCase() &&
-        (s.album_name || '').toLowerCase() === (t.album_name || '').toLowerCase()
-      );
+      // Check if already exists — match on title alone (case-insensitive, trimmed)
+      // Also match on ISRC if both have one
+      const tTitle = (t.song_title || '').toLowerCase().trim();
+      const tIsrc = (t.isrc || '').trim().toUpperCase();
+      const exists = BL_SAVED.some(s => {
+        const sTitle = (s.song_title || '').toLowerCase().trim();
+        if (sTitle === tTitle) return true;
+        const sIsrc = (s.isrc || '').trim().toUpperCase();
+        if (tIsrc && sIsrc && tIsrc === sIsrc) return true;
+        return false;
+      });
+      if (exists) { skipped++; }
       if (!exists) {
         BL_SAVED.unshift({
           song_title: t.song_title || '', primary_artist: t.primary_artist || BL_ARTIST?.name || '',
@@ -11595,12 +11606,14 @@ async function blProcessScreenshots() {
 
     blRenderSections();
     document.getElementById('blSaveBtn').style.display = '';
+    document.getElementById('blDedupBtn').style.display = '';
     document.getElementById('blBulkApply').style.display = '';
     document.getElementById('blExportMlcBtn').style.display = '';
     document.getElementById('blExportSeBtn').style.display = '';
 
-    status.textContent = `Found ${tracks.length} tracks from screenshots`;
-    showToast(`${tracks.length} tracks extracted from screenshots — review and save`);
+    const added = tracks.length - skipped;
+    status.textContent = `Found ${tracks.length} tracks` + (skipped ? ` (${skipped} already in catalog, ${added} new)` : '');
+    showToast(skipped ? `${added} new tracks added, ${skipped} duplicates skipped` : `${tracks.length} tracks extracted — review and save`);
     blClearScreenshots();
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
@@ -11740,6 +11753,30 @@ function blApplyBulk() {
   }
   blRenderSections();
   showToast(`Applied ${updates.length} fields to ${BL_SAVED.length} tracks`);
+}
+
+// --- Remove Duplicates ---
+async function blDedup() {
+  if (!BL_ARTIST) { showToast('No artist loaded'); return; }
+  const btn = document.getElementById('blDedupBtn');
+  btn.disabled = true;
+  btn.textContent = 'Cleaning...';
+  try {
+    const resp = await fetch('/api/backlog/catalog/dedup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ artist_name: BL_ARTIST.name })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed');
+    if (data.removed > 0) {
+      showToast(`Removed ${data.removed} duplicate(s) — ${data.remaining} tracks remaining`);
+      await blLoadArtistCatalog(BL_ARTIST.name);
+    } else {
+      showToast('No duplicates found');
+    }
+  } catch (e) { showToast('Dedup error: ' + e.message); }
+  btn.disabled = false;
+  btn.textContent = 'Remove Duplicates';
 }
 
 // --- Save Catalog ---

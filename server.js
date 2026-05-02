@@ -6902,6 +6902,58 @@ app.post('/api/backlog/catalog/bulk-update', requireAdminOrPartner, (req, res) =
   res.json({ updated: ids.length });
 });
 
+// Backlog: Remove duplicate tracks for an artist (keeps row with most data)
+app.post('/api/backlog/catalog/dedup', requireAdminOrPartner, (req, res) => {
+  const { artist_name } = req.body || {};
+  if (!artist_name) return res.status(400).json({ error: 'artist_name required' });
+
+  // Find duplicates by lowercase song_title — keep the row with the most non-null fields
+  const rows = dbHelpers.prepare(
+    `SELECT * FROM backlog_catalog WHERE artist_name = ? ORDER BY song_title COLLATE NOCASE, saved_at DESC`
+  ).all(artist_name);
+
+  const groups = {};
+  for (const r of rows) {
+    const key = (r.song_title || '').toLowerCase().trim();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  }
+
+  const idsToDelete = [];
+  for (const [, dupes] of Object.entries(groups)) {
+    if (dupes.length <= 1) continue;
+    // Score each row by how many useful fields it has
+    const scored = dupes.map(r => {
+      let score = 0;
+      if (r.isrc) score += 3;
+      if (r.writers_json) score += 2;
+      if (r.publishers_json) score += 2;
+      if (r.writer_last_name) score++;
+      if (r.writer_ipi) score++;
+      if (r.publisher_name) score++;
+      if (r.iswc) score++;
+      if (r.genre) score++;
+      if (r.label) score++;
+      if (r.upc) score++;
+      if (r.p_line) score++;
+      return { id: r.id, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    // Keep the best, delete the rest
+    for (let i = 1; i < scored.length; i++) {
+      idsToDelete.push(scored[i].id);
+    }
+  }
+
+  if (idsToDelete.length) {
+    const placeholders = idsToDelete.map(() => '?').join(',');
+    db.run(`DELETE FROM backlog_catalog WHERE id IN (${placeholders})`, idsToDelete);
+    saveDb();
+  }
+
+  res.json({ removed: idsToDelete.length, remaining: rows.length - idsToDelete.length });
+});
+
 // Backlog: Get list of saved artists
 app.get('/api/backlog/artists', requireAdminOrPartner, (req, res) => {
   const rows = dbHelpers.prepare(`
