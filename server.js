@@ -6350,13 +6350,15 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
 
                   // Extract writer names from common patterns:
                   // "Written by X, Y, Z" / "Songwriter(s): X" / "Writer: X" / "Composed by X"
-                  const writerPatterns = allText.match(/(?:written|songwriter|composed|writer|lyricist|author)(?:s|\(s\))?[:\s]+([A-Z][^.;()\[\]]{2,80}?)(?:\.|;|\(|$)/gi);
+                  // Also: "by X" / "featuring X" credit patterns
+                  const writerPatterns = allText.match(/(?:written\s+by|songwriter|composed\s+by|writer|lyricist|author|credits?)[:\s]+([^.;[\]]{2,120}?)(?:\.|;|\[|$)/gi);
                   const writerNames = [];
                   if (writerPatterns) {
                     for (const p of writerPatterns) {
-                      const nameStr = p.replace(/^(?:written|songwriter|composed|writer|lyricist|author)(?:s|\(s\))?[:\s]+/i, '').trim();
+                      const nameStr = p.replace(/^(?:written\s+by|songwriter|composed\s+by|writer|lyricist|author|credits?)[:\s]+/i, '').trim()
+                        .replace(/\s*\(.*$/, '').trim(); // remove trailing parentheticals
                       // Split by comma or " and " to get individual names
-                      const names = nameStr.split(/,\s*|\s+and\s+|\s+&\s+/).map(n => n.trim()).filter(n => n.length > 2 && /^[A-Z]/.test(n));
+                      const names = nameStr.split(/,\s*|\s+and\s+|\s+&\s+/).map(n => n.trim().replace(/[^a-zA-Z\s'-]/g, '').trim()).filter(n => n.length > 2 && /^[A-Z]/.test(n));
                       writerNames.push(...names);
                     }
                   }
