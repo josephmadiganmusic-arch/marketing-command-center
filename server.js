@@ -2959,7 +2959,7 @@ app.get('/api/research/status', requireAccess, (req, res) => {
 // ─── Music Agent Pro: Spotify Playlist Search + Curator Contact Finder ───
 const rlMusicAgent = rateLimit({ name: 'music_agent', windowMs: 60 * 60 * 1000, max: 30 });
 
-app.post('/api/music-agent/search', requireAccess, rlMusicAgent, async (req, res) => {
+app.post('/api/music-agent/search', requireAdmin, rlMusicAgent, async (req, res) => {
   const { songTitle, artistName, featArtist, genre, genre2, songDescription, mood, similarArtists } = req.body;
   if (!genre && !songTitle && !artistName) return res.status(400).json({ error: 'Release metadata required (genre, song title, or artist name)' });
 
@@ -3163,6 +3163,59 @@ app.post('/api/music-agent/search', requireAccess, rlMusicAgent, async (req, res
     console.error('[MUSIC-AGENT] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// Add Playlist Scout results to outreach_contacts list (admin only)
+app.post('/api/admin/music-agent/add-to-list', requireAdmin, (req, res) => {
+  const { contacts } = req.body;
+  if (!Array.isArray(contacts) || !contacts.length) return res.status(400).json({ error: 'No contacts provided' });
+
+  // Get current outreach list version
+  const versionRow = dbHelpers.prepare("SELECT current_version FROM outreach_list_version WHERE singleton_key = 'current'").get();
+  const version = versionRow ? versionRow.current_version : 0;
+  // We'll add to the current version so they show up immediately
+  const targetVersion = version || 1;
+
+  // If version is 0 (no list published yet), bump to 1
+  if (version === 0) {
+    dbHelpers.prepare("UPDATE outreach_list_version SET current_version = 1, updated_at = datetime('now') WHERE singleton_key = 'current'").run();
+  }
+
+  const insert = dbHelpers.prepare(`
+    INSERT INTO outreach_contacts (version, category, name, submission_type, submission_value, website, phone, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let added = 0;
+  let skipped = 0;
+  const existingNames = new Set(
+    dbHelpers.prepare('SELECT LOWER(name) as n FROM outreach_contacts WHERE version = ? AND category = ?')
+      .all(targetVersion, 'spotify_playlist')
+      .map(r => r.n)
+  );
+
+  for (const c of contacts) {
+    const name = (c.name || '').trim();
+    if (!name) { skipped++; continue; }
+    // Skip duplicates
+    if (existingNames.has(name.toLowerCase())) { skipped++; continue; }
+    existingNames.add(name.toLowerCase());
+
+    insert.run(
+      targetVersion,
+      c.category || 'spotify_playlist',
+      name.slice(0, 200),
+      (c.submission_type || 'email').slice(0, 40),
+      (c.submission_value || '').slice(0, 500),
+      (c.website || '').slice(0, 500),
+      (c.phone || '').slice(0, 80),
+      (c.notes || '').slice(0, 1000)
+    );
+    added++;
+  }
+
+  logOperation(req, 'admin.playlist_scout_add', 'outreach_contacts', targetVersion, { added, skipped });
+  res.json({ ok: true, added, skipped, version: targetVersion });
 });
 
 // --- Admin Middleware ---
