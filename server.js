@@ -878,7 +878,17 @@ function initDb() {
   `);
   // Migration: add user_id column if missing (existing installs)
   try { db.run('ALTER TABLE backlog_catalog ADD COLUMN user_id INTEGER'); } catch(_) {}
-  // Backfill: assign unowned rows to admin (user_id=1) so they don't vanish
+  // Backfill: assign catalog rows to the partner whose name matches artist_name
+  // (runs every boot to catch any unowned rows or fix mis-assigned ones)
+  const partnerUsers = dbHelpers.prepare("SELECT id, email FROM users WHERE subscription_tier = 'elite_partner' AND deleted_at IS NULL").all();
+  const partnerMap = { 'lighthousewis@gmail.com': 'Lighthouse', 'brandonteague101422@gmail.com': 'J Truth' };
+  for (const pu of partnerUsers) {
+    const artistName = partnerMap[pu.email];
+    if (artistName) {
+      db.run('UPDATE backlog_catalog SET user_id = ? WHERE artist_name = ? AND (user_id IS NULL OR user_id != ?)', [pu.id, artistName, pu.id]);
+    }
+  }
+  // Any remaining unowned rows go to admin
   db.run('UPDATE backlog_catalog SET user_id = 1 WHERE user_id IS NULL');
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_artist ON backlog_catalog(artist_name)');
   db.run('CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_catalog(status)');
