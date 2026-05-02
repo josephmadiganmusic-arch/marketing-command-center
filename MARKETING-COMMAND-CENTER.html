@@ -11445,7 +11445,8 @@ function blTrackRow(t, dataIdx) {
       <input class="form-control" ${si(0,'35px')} value="${w.share||''}" placeholder="%" onchange="blUpdateWriter(${dataIdx},${wi},'share',this.value)">
       ${writers.length > 1 ? `<span onclick="blRemoveWriter(${dataIdx},${wi})" style="color:#f44;cursor:pointer;font-size:14px;" title="Remove">×</span>` : ''}
     </div>`
-  ).join('') + `<span onclick="blAddWriter(${dataIdx})" style="color:#4ade80;cursor:pointer;font-size:11px;">+ Writer</span>`;
+  ).join('') + `<span onclick="blAddWriter(${dataIdx})" style="color:#4ade80;cursor:pointer;font-size:11px;">+ Writer</span>`
+    + ` <span onclick="window.open('https://repertoire.bmi.com/Search/Search?Main_Search_Text='+encodeURIComponent('${title.replace(/'/g,"\\'")}')+'\&Main_Search_Type=Title\&Search_Type=all','_blank')" style="color:#00d4ff;cursor:pointer;font-size:10px;margin-left:4px;" title="Look up IPI on BMI Song View">BMI</span>`;
 
   const pubsHtml = pubs.map((p, pi) =>
     `<div style="display:flex;gap:3px;align-items:center;margin-bottom:2px;">
