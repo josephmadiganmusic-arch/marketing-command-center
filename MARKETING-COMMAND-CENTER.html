@@ -8056,9 +8056,10 @@ async function runPlaylistScout() {
       : '(No Spotify API results — check SPOTIFY_CLIENT_ID/SECRET)';
 
     const contactSection = data.curatorContacts.length
-      ? data.curatorContacts.map((c, i) =>
-          `${i+1}. ${c.title}\n   URL: ${c.link}\n   ${c.snippet}${c.email ? '\n   EMAIL FOUND: ' + c.email : ''}\n   Type: ${c.type}`
-        ).join('\n')
+      ? data.curatorContacts.map((c, i) => {
+          const emails = (c.emails && c.emails.length) ? c.emails : (c.email ? [c.email] : []);
+          return `${i+1}. ${c.title}${c.forCurator ? ' [for curator: ' + c.forCurator + ']' : ''}\n   URL: ${c.link}\n   ${c.snippet}${emails.length ? '\n   EMAILS FOUND: ' + emails.join(', ') : ''}\n   Type: ${c.type}`;
+        }).join('\n')
       : '(No curator contacts found)';
 
     const webSection = data.webPlaylists.length
@@ -8074,41 +8075,48 @@ async function runPlaylistScout() {
     const analysis = await callClaude(claudePrompt);
 
     // Build CSV from raw data
-    const csvRows = [['Type','Name','Owner','URL','Tracks','Followers','Description','Matched Query','Contact Email','Contact Type','Contact Link'].join(',')];
+    const csvQ = (s) => '"' + (s || '').replace(/"/g, '""').replace(/\n/g, ' ') + '"';
+    const csvRows = [['Type','Playlist Name','Owner/Curator','Spotify URL','Owner Profile URL','Tracks','Followers','Description','Matched Query','Emails Found','Contact Type','Contact Link','For Curator','Snippet'].join(',')];
     for (const pl of data.spotifyPlaylists) {
       csvRows.push([
         'Spotify Playlist',
-        '"' + (pl.name || '').replace(/"/g, '""') + '"',
-        '"' + (pl.owner.name || '').replace(/"/g, '""') + '"',
-        pl.url,
+        csvQ(pl.name),
+        csvQ(pl.owner.name),
+        pl.url || '',
+        pl.owner.profileUrl || '',
         pl.tracks || '',
         pl.followers !== null ? pl.followers : '',
-        '"' + (pl.description || '').replace(/"/g, '""').replace(/\n/g, ' ') + '"',
+        csvQ(pl.description),
         pl.matchedQuery || '',
-        '', '', ''
+        '', '', '', '', ''
       ].join(','));
     }
     for (const c of data.curatorContacts) {
+      const emails = (c.emails && c.emails.length) ? c.emails.join('; ') : (c.email || '');
       csvRows.push([
         'Curator Contact',
-        '"' + (c.title || '').replace(/"/g, '""') + '"',
-        '',
-        '',
+        csvQ(c.title),
+        csvQ(c.forCurator),
+        '', '',
         '', '', '',
         '',
-        c.email || '',
+        csvQ(emails),
         c.type || '',
-        c.link || ''
+        c.link || '',
+        csvQ(c.forCurator),
+        csvQ(c.snippet)
       ].join(','));
     }
     for (const w of data.webPlaylists) {
       csvRows.push([
-        'Web/Submission',
-        '"' + (w.title || '').replace(/"/g, '""') + '"',
-        '',
+        'Web/Submission Platform',
+        csvQ(w.title),
+        '', '',
         w.link || '',
-        '', '', '"' + (w.snippet || '').replace(/"/g, '""').replace(/\n/g, ' ') + '"',
-        '', '', '', ''
+        '', '', '',
+        '',
+        '', '', '', '',
+        csvQ(w.snippet)
       ].join(','));
     }
     const csvContent = csvRows.join('\n');
