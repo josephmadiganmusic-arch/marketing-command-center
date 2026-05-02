@@ -6458,6 +6458,72 @@ app.post('/api/backlog/fetch-spotify', requireAdminOrPartner, async (req, res) =
   }
 });
 
+// Backlog: Read distributor screenshots with Claude Vision to extract track data
+app.post('/api/backlog/read-screenshots', requireAdminOrPartner, async (req, res) => {
+  const CLAUDE_KEY = process.env.CLAUDE_API_KEY || '';
+  if (!CLAUDE_KEY) return res.status(503).json({ error: 'AI not configured' });
+  const { images, artist_name } = req.body || {};
+  if (!images || !images.length) return res.status(400).json({ error: 'No images' });
+  if (images.length > 10) return res.status(400).json({ error: 'Max 10 screenshots at a time' });
+
+  try {
+    // Build content array with all images
+    const content = [];
+    for (const img of images) {
+      const match = img.match(/^data:(image\/[^;]+);base64,(.+)$/);
+      if (!match) continue;
+      content.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
+    }
+    content.push({ type: 'text', text: `Extract ALL music releases/tracks visible in these distributor screenshots (DistroKid, TuneCore, CD Baby, Amuse, etc).
+
+For each track return a JSON object with these fields (use null if not visible):
+- song_title (string, required)
+- primary_artist (string)
+- album_name (string)
+- release_date (string, YYYY-MM-DD format)
+- isrc (string)
+- upc (string)
+- label (string)
+- genre (string)
+- featured_artists (string, comma-separated)
+- duration_ms (number)
+
+${artist_name ? 'The artist is: ' + artist_name : ''}
+
+Return ONLY a JSON array of track objects, no markdown, no explanation. Example:
+[{"song_title":"My Song","primary_artist":"Artist","album_name":"Album","release_date":"2024-01-15","isrc":"USRC12345678","upc":null,"label":"Independent","genre":"Hip-Hop","featured_artists":null,"duration_ms":null}]` });
+
+    const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': CLAUDE_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: DEFAULT_CLAUDE_MODEL, max_tokens: 4000, messages: [{ role: 'user', content }] }),
+      signal: AbortSignal.timeout(120000)
+    });
+
+    if (!aiResp.ok) {
+      const errText = await aiResp.text();
+      console.error('[BACKLOG] Screenshot AI error:', aiResp.status, errText.slice(0, 300));
+      return res.status(502).json({ error: 'AI service error' });
+    }
+
+    const aiData = await aiResp.json();
+    const text = (aiData.content && aiData.content[0] && aiData.content[0].text) || '[]';
+    // Parse JSON from response (handle markdown code blocks)
+    const jsonStr = text.replace(/^```json?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    let tracks = [];
+    try { tracks = JSON.parse(jsonStr); } catch (e) {
+      console.error('[BACKLOG] Screenshot parse error:', e.message, 'Raw:', text.slice(0, 500));
+      return res.status(422).json({ error: 'Could not parse AI response', raw: text.slice(0, 1000) });
+    }
+    if (!Array.isArray(tracks)) tracks = [tracks];
+    console.log(`[BACKLOG] Screenshot extraction: ${tracks.length} tracks from ${images.length} image(s)`);
+    res.json({ tracks, count: tracks.length });
+  } catch (e) {
+    console.error('[BACKLOG] Screenshot error:', e.message);
+    res.status(500).json({ error: 'Screenshot processing failed: ' + e.message });
+  }
+});
+
 // Backlog: Search BMI Repertoire for writer/publisher info (via Serper Google search)
 app.post('/api/backlog/search-bmi', requireAdminOrPartner, async (req, res) => {
   try {

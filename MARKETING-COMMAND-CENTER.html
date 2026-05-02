@@ -1036,6 +1036,23 @@
       </div>
     </div>
 
+    <!-- Distro Screenshot Upload -->
+    <div class="form-section">
+      <div class="form-section-title">Import from Distributor Screenshots</div>
+      <p style="font-size:11px;color:#888;margin-bottom:10px;">Upload screenshots of your releases from DistroKid, TuneCore, CD Baby, etc. AI will read and extract track data into the catalog.</p>
+      <div id="blScreenshotZone" class="upload-zone" style="padding:14px;" onclick="document.getElementById('blScreenshotInput').click()">
+        <input type="file" id="blScreenshotInput" accept="image/*" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;" onchange="blHandleScreenshots(this.files)">
+        <div class="upload-icon">&#128247;</div>
+        <div class="upload-label">Drop or click to upload distributor screenshots</div>
+      </div>
+      <div id="blScreenshotPreview" style="display:none;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"></div>
+      <div id="blScreenshotActions" style="display:none;margin-top:10px;display:flex;gap:8px;align-items:center;">
+        <button class="btn-primary" onclick="blProcessScreenshots()" id="blProcessBtn" style="font-size:12px;">Read Screenshots with AI</button>
+        <button class="btn-secondary" onclick="blClearScreenshots()" style="font-size:11px;">Clear</button>
+        <span id="blScreenshotStatus" style="font-size:12px;color:#666;"></span>
+      </div>
+    </div>
+
     <div id="blArtistInfo" style="display:none;margin-bottom:16px;"></div>
 
     <!-- Bulk Apply Section -->
@@ -11481,6 +11498,114 @@ function blUpdateField(idx, field, value) {
       body: JSON.stringify({ [field]: value })
     }).catch(() => {});
   }
+}
+
+// --- Distro Screenshot Upload ---
+let _blScreenshots = []; // array of { file, dataUrl }
+
+function blHandleScreenshots(files) {
+  if (!files || !files.length) return;
+  const preview = document.getElementById('blScreenshotPreview');
+  const actions = document.getElementById('blScreenshotActions');
+  preview.style.display = 'flex';
+  actions.style.display = 'flex';
+  for (const file of files) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      _blScreenshots.push({ file, dataUrl: e.target.result });
+      preview.innerHTML = _blScreenshots.map((s, i) =>
+        `<div style="position:relative;"><img src="${s.dataUrl}" style="width:120px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">
+        <span onclick="_blScreenshots.splice(${i},1);blRefreshScreenshotPreview()" style="position:absolute;top:-4px;right:-4px;background:#f44;color:#fff;border-radius:50%;width:16px;height:16px;font-size:11px;line-height:16px;text-align:center;cursor:pointer;">x</span></div>`
+      ).join('');
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function blRefreshScreenshotPreview() {
+  const preview = document.getElementById('blScreenshotPreview');
+  if (!_blScreenshots.length) {
+    preview.style.display = 'none';
+    document.getElementById('blScreenshotActions').style.display = 'none';
+    return;
+  }
+  preview.innerHTML = _blScreenshots.map((s, i) =>
+    `<div style="position:relative;"><img src="${s.dataUrl}" style="width:120px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">
+    <span onclick="_blScreenshots.splice(${i},1);blRefreshScreenshotPreview()" style="position:absolute;top:-4px;right:-4px;background:#f44;color:#fff;border-radius:50%;width:16px;height:16px;font-size:11px;line-height:16px;text-align:center;cursor:pointer;">x</span></div>`
+  ).join('');
+}
+
+function blClearScreenshots() {
+  _blScreenshots = [];
+  document.getElementById('blScreenshotPreview').style.display = 'none';
+  document.getElementById('blScreenshotActions').style.display = 'none';
+  document.getElementById('blScreenshotInput').value = '';
+  document.getElementById('blScreenshotStatus').textContent = '';
+}
+
+async function blProcessScreenshots() {
+  if (!_blScreenshots.length) { showToast('Upload screenshots first'); return; }
+  const btn = document.getElementById('blProcessBtn');
+  const status = document.getElementById('blScreenshotStatus');
+  btn.disabled = true;
+  btn.textContent = 'Reading...';
+  status.textContent = `Processing ${_blScreenshots.length} screenshot(s)...`;
+
+  try {
+    const images = _blScreenshots.map(s => s.dataUrl);
+    const resp = await fetch('/api/backlog/read-screenshots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ images, artist_name: BL_ARTIST?.name || '' })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed');
+
+    const tracks = data.tracks || [];
+    if (!tracks.length) { status.textContent = 'No tracks found in screenshots'; btn.disabled = false; btn.textContent = 'Read Screenshots with AI'; return; }
+
+    // Add extracted tracks to BL_SAVED as new unsaved tracks
+    for (const t of tracks) {
+      // Check if already exists
+      const exists = BL_SAVED.some(s =>
+        (s.song_title || '').toLowerCase() === (t.song_title || '').toLowerCase() &&
+        (s.album_name || '').toLowerCase() === (t.album_name || '').toLowerCase()
+      );
+      if (!exists) {
+        BL_SAVED.unshift({
+          song_title: t.song_title || '', primary_artist: t.primary_artist || BL_ARTIST?.name || '',
+          album_name: t.album_name || '', release_date: t.release_date || '',
+          isrc: t.isrc || '', upc: t.upc || '', label: t.label || '',
+          featured_artists: t.featured_artists || '', duration_ms: t.duration_ms || null,
+          writer_last_name: '', writer_first_name: '', writer_ipi: '',
+          writer_role_code: 'CA', publisher_name: '', publisher_ipi: '',
+          iswc: '', collection_share: 100, p_line: '', genre: t.genre || '',
+          status: 'new', _unsaved: true
+        });
+      }
+    }
+
+    // Set artist info if not already set
+    if (!BL_ARTIST && tracks[0]?.primary_artist) {
+      BL_ARTIST = { name: tracks[0].primary_artist };
+    }
+
+    blRenderSections();
+    document.getElementById('blSaveBtn').style.display = '';
+    document.getElementById('blBulkApply').style.display = '';
+    document.getElementById('blExportMlcBtn').style.display = '';
+    document.getElementById('blExportSeBtn').style.display = '';
+
+    status.textContent = `Found ${tracks.length} tracks from screenshots`;
+    showToast(`${tracks.length} tracks extracted from screenshots — review and save`);
+    blClearScreenshots();
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    showToast('Screenshot read failed: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Read Screenshots with AI';
 }
 
 // --- Send Catalog Track to Intake Tab ---
