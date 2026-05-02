@@ -1093,7 +1093,7 @@
             <th style="padding:6px;color:#4ade80;">Album</th>
             <th style="padding:6px;color:#4ade80;">Date</th>
             <th style="padding:6px;color:#4ade80;">ISRC</th>
-            <th style="padding:6px;color:#4ade80;">Writers (Last, First, IPI, Role, %)</th>
+            <th style="padding:6px;color:#4ade80;">Writers (Last, First, Mid, IPI, Role, %)</th>
             <th style="padding:6px;color:#4ade80;">Publishers (Name, IPI)</th>
             <th style="padding:6px;color:#4ade80;">ISWC</th>
             <th style="padding:6px;color:#4ade80;">Label</th>
@@ -1117,7 +1117,7 @@
             <th style="padding:6px;color:#00d4ff;">Album</th>
             <th style="padding:6px;color:#00d4ff;">Date</th>
             <th style="padding:6px;color:#00d4ff;">ISRC</th>
-            <th style="padding:6px;color:#00d4ff;">Writers (Last, First, IPI, Role, %)</th>
+            <th style="padding:6px;color:#00d4ff;">Writers (Last, First, Mid, IPI, Role, %)</th>
             <th style="padding:6px;color:#00d4ff;">Publishers (Name, IPI)</th>
             <th style="padding:6px;color:#00d4ff;">ISWC</th>
             <th style="padding:6px;color:#00d4ff;">Label</th>
@@ -11385,8 +11385,8 @@ function blRenderSections() {
 
 function blGetWriters(t) {
   try { if (t.writers_json) return JSON.parse(t.writers_json); } catch(e) {}
-  if (t.writer_last_name || t.writer_first_name) return [{ last: t.writer_last_name||'', first: t.writer_first_name||'', ipi: t.writer_ipi||'', role: t.writer_role_code||'CA', share: t.collection_share||100 }];
-  return [{ last:'', first:'', ipi:'', role:'CA', share:100 }];
+  if (t.writer_last_name || t.writer_first_name) return [{ last: t.writer_last_name||'', first: t.writer_first_name||'', middle: t.writer_middle_name||'', ipi: t.writer_ipi||'', role: t.writer_role_code||'CA', share: t.collection_share||100 }];
+  return [{ last:'', first:'', middle:'', ipi:'', role:'CA', share:100 }];
 }
 function blGetPubs(t) {
   try { if (t.publishers_json) return JSON.parse(t.publishers_json); } catch(e) {}
@@ -11395,7 +11395,7 @@ function blGetPubs(t) {
 }
 function blAddWriter(idx) {
   const t = BL_SAVED[idx]; if (!t) return;
-  const w = blGetWriters(t); w.push({ last:'', first:'', ipi:'', role:'CA', share:'' });
+  const w = blGetWriters(t); w.push({ last:'', first:'', middle:'', ipi:'', role:'CA', share:'' });
   t.writers_json = JSON.stringify(w);
   blSyncField(idx, 'writers_json', t.writers_json);
   blRenderSections();
@@ -11455,6 +11455,7 @@ function blTrackRow(t, dataIdx) {
     `<div style="display:flex;gap:3px;align-items:center;margin-bottom:2px;">
       <input class="form-control" ${si(0,'55px')} value="${blEsc(w.last||'')}" placeholder="Last" onchange="blUpdateWriter(${dataIdx},${wi},'last',this.value)">
       <input class="form-control" ${si(0,'55px')} value="${blEsc(w.first||'')}" placeholder="First" onchange="blUpdateWriter(${dataIdx},${wi},'first',this.value)">
+      <input class="form-control" ${si(0,'45px')} value="${blEsc(w.middle||'')}" placeholder="Mid" onchange="blUpdateWriter(${dataIdx},${wi},'middle',this.value)">
       <input class="form-control" ${si(0,'75px')} value="${blEsc(w.ipi||'')}" placeholder="IPI" onchange="blUpdateWriter(${dataIdx},${wi},'ipi',this.value)">
       <select class="form-control" ${si(0,'50px')} onchange="blUpdateWriter(${dataIdx},${wi},'role',this.value)">
         <option value="CA"${w.role==='CA'?' selected':''}>CA</option><option value="C"${w.role==='C'?' selected':''}>C</option><option value="A"${w.role==='A'?' selected':''}>A</option><option value="AR"${w.role==='AR'?' selected':''}>AR</option>

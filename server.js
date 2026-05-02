@@ -1125,6 +1125,8 @@ app.use((req, res, next) => {
   if (req.path === '/api/intake/transcribe-lyrics') return next();
   // Slack interactions come as x-www-form-urlencoded; need raw body for signature
   if (req.path === '/api/slack/interactions') return next();
+  // Screenshot uploads are base64-heavy — allow up to 50MB
+  if (req.path === '/api/backlog/read-screenshots') return express.json({ limit: '50mb' })(req, res, next);
   express.json({ limit: '10mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true }));
@@ -6652,7 +6654,7 @@ app.post('/api/backlog/export/mlc', requireAdminOrPartner, async (req, res) => {
           j === 0 ? (t.iswc || '') : '',                 // ISWC
           '', '',                                        // AKA TITLE, AKA TITLE TYPE CODE
           w.last || '',                                  // WRITER LAST NAME
-          w.first || '',                                 // WRITER FIRST NAME
+          [w.first, w.middle].filter(Boolean).join(' ') || '', // WRITER FIRST NAME (+ middle)
           w.ipi || '',                                   // WRITER IPI NUMBER
           w.role || 'CA',                                // WRITER ROLE CODE
           '',                                            // MLC PUBLISHER NUMBER
