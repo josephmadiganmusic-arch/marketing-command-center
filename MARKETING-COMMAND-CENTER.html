@@ -1013,7 +1013,7 @@
   <!-- ROYALTY DASHBOARD TAB -->
   <div class="panel" id="panel-royalties">
     <h2>Royalty Dashboard</h2>
-    <p class="subtitle">Upload distributor statements to track earnings across all platforms.</p>
+    <p class="subtitle">Upload statements from BMI, SoundExchange, MLC, Songtrust, and distributors to track all royalties.</p>
 
     <!-- Summary Cards -->
     <div id="rySummaryCards" style="display:none;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
@@ -1032,6 +1032,14 @@
       <div class="form-section" style="padding:16px;margin-bottom:0;text-align:center;">
         <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Tracks Tracked</div>
         <div id="ryTotalTracks" style="font-size:28px;font-weight:800;color:#fbbf24;">0</div>
+      </div>
+      <div class="form-section" style="padding:16px;margin-bottom:0;text-align:center;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Radio Plays</div>
+        <div id="ryTotalPerformances" style="font-size:28px;font-weight:800;color:#fbbf24;">0</div>
+      </div>
+      <div class="form-section" style="padding:16px;margin-bottom:0;text-align:center;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Sources</div>
+        <div id="ryTotalSources" style="font-size:28px;font-weight:800;color:#f472b6;">0</div>
       </div>
     </div>
 
@@ -1053,6 +1061,7 @@
             <option value="SESAC">SESAC</option>
             <option value="SoundExchange">SoundExchange</option>
             <option value="MLC">MLC (Mechanical Licensing)</option>
+            <option value="Songtrust">Songtrust</option>
             <option value="YouTube">YouTube / Content ID</option>
             <option value="Other">Other</option>
           </select>
@@ -1082,8 +1091,10 @@
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);text-align:left;">
             <th style="padding:8px;color:#4ade80;">Song Title</th>
             <th style="padding:8px;color:#4ade80;">Artist</th>
+            <th style="padding:8px;color:#4ade80;">Writer</th>
             <th style="padding:8px;color:#4ade80;">ISRC</th>
             <th style="padding:8px;color:#4ade80;text-align:right;">Streams</th>
+            <th style="padding:8px;color:#4ade80;text-align:right;">Radio Plays</th>
             <th style="padding:8px;color:#4ade80;text-align:right;">Downloads</th>
             <th style="padding:8px;color:#4ade80;text-align:right;">Earned</th>
           </tr></thead>
@@ -1096,6 +1107,12 @@
     <div class="form-section" id="ryBySourceSection" style="display:none;">
       <div class="form-section-title">Earnings by Platform</div>
       <div id="ryBySourceBars" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+
+    <!-- Earnings by Royalty Type -->
+    <div class="form-section" id="ryByTypeSection" style="display:none;">
+      <div class="form-section-title">Earnings by Royalty Type</div>
+      <div id="ryByTypeBars" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
     <!-- Statement History -->
@@ -11552,6 +11569,8 @@ async function ryLoadDashboard() {
     document.getElementById('ryTotalStatements').textContent = (stmts.statements || []).length;
     const uniqueTracks = (summary.totals || []).length;
     document.getElementById('ryTotalTracks').textContent = uniqueTracks;
+    document.getElementById('ryTotalPerformances').textContent = (summary.total_performances || 0).toLocaleString();
+    document.getElementById('ryTotalSources').textContent = (summary.by_source || []).length;
 
     // Earnings by song table
     const songBody = document.getElementById('ryBySongBody');
@@ -11561,8 +11580,10 @@ async function ryLoadDashboard() {
         <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
           <td style="padding:8px;color:#fff;font-weight:600;">${ryEsc(t.song_title || 'Unknown')}</td>
           <td style="padding:8px;color:#ccc;">${ryEsc(t.artist || '')}</td>
+          <td style="padding:8px;color:#aaa;font-size:11px;">${ryEsc(t.writer || '')}</td>
           <td style="padding:8px;color:#888;font-family:monospace;font-size:11px;">${ryEsc(t.isrc || '')}</td>
           <td style="padding:8px;text-align:right;color:#00d4ff;">${(t.total_streams || 0).toLocaleString()}</td>
+          <td style="padding:8px;text-align:right;color:#fbbf24;">${(t.total_performances || 0).toLocaleString()}</td>
           <td style="padding:8px;text-align:right;color:#888;">${(t.total_downloads || 0).toLocaleString()}</td>
           <td style="padding:8px;text-align:right;color:#4ade80;font-weight:700;">$${(t.total_earned || 0).toFixed(2)}</td>
         </tr>
@@ -11588,6 +11609,29 @@ async function ryLoadDashboard() {
       }).join('');
     } else {
       document.getElementById('ryBySourceSection').style.display = 'none';
+    }
+
+    // Earnings by royalty type bars
+    if (summary.by_type && summary.by_type.length) {
+      document.getElementById('ryByTypeSection').style.display = '';
+      const typeLabels = { performance: 'Performance (PRO)', mechanical: 'Mechanical (MLC)', digital: 'Digital Radio (SoundExchange)', sync: 'Sync Licensing', other: 'Other' };
+      const typeColors = { performance: '#7b2ff7', mechanical: '#00d4ff', digital: '#fbbf24', sync: '#f472b6', other: '#888' };
+      const maxType = Math.max(...summary.by_type.map(t => t.total));
+      document.getElementById('ryByTypeBars').innerHTML = summary.by_type.map(t => {
+        const pct = maxType > 0 ? (t.total / maxType * 100) : 0;
+        const color = typeColors[t.royalty_type] || '#888';
+        const label = typeLabels[t.royalty_type] || t.royalty_type;
+        return `<div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:160px;font-size:12px;color:#ccc;text-align:right;flex-shrink:0;">${ryEsc(label)}</div>
+          <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:24px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width 0.5s;"></div>
+          </div>
+          <div style="width:90px;font-size:12px;color:#4ade80;font-weight:700;text-align:right;">$${t.total.toFixed(2)}</div>
+          <div style="width:80px;font-size:11px;color:#888;text-align:right;">${(t.performances || 0).toLocaleString()} plays</div>
+        </div>`;
+      }).join('');
+    } else {
+      document.getElementById('ryByTypeSection').style.display = 'none';
     }
 
     // Statement history
@@ -11632,18 +11676,24 @@ async function ryViewStatement(id) {
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
             <th style="padding:6px;text-align:left;color:#4ade80;">Song</th>
             <th style="padding:6px;text-align:left;color:#4ade80;">Artist</th>
+            <th style="padding:6px;text-align:left;color:#4ade80;">Writer</th>
             <th style="padding:6px;text-align:left;color:#4ade80;">ISRC</th>
             <th style="padding:6px;text-align:left;color:#4ade80;">Source</th>
+            <th style="padding:6px;text-align:left;color:#4ade80;">Type</th>
             <th style="padding:6px;text-align:right;color:#4ade80;">Streams</th>
+            <th style="padding:6px;text-align:right;color:#4ade80;">Plays</th>
             <th style="padding:6px;text-align:right;color:#4ade80;">Amount</th>
           </tr></thead>
           <tbody>${entries.map(e => `
             <tr style="border-bottom:1px solid rgba(255,255,255,0.03);">
               <td style="padding:5px 6px;color:#fff;">${ryEsc(e.song_title || '')}</td>
               <td style="padding:5px 6px;color:#ccc;">${ryEsc(e.artist || '')}</td>
+              <td style="padding:5px 6px;color:#aaa;font-size:10px;">${ryEsc(e.writer || '')}</td>
               <td style="padding:5px 6px;color:#888;font-family:monospace;">${ryEsc(e.isrc || '')}</td>
-              <td style="padding:5px 6px;color:#888;">${ryEsc(e.source || '')}</td>
+              <td style="padding:5px 6px;color:#888;">${ryEsc(e.source || '')}${e.collection_source ? ' <span style="color:#666;font-size:9px;">via ' + ryEsc(e.collection_source) + '</span>' : ''}</td>
+              <td style="padding:5px 6px;color:#7b2ff7;font-size:10px;">${ryEsc(e.royalty_type || '')}</td>
               <td style="padding:5px 6px;text-align:right;color:#00d4ff;">${(e.streams || 0).toLocaleString()}</td>
+              <td style="padding:5px 6px;text-align:right;color:#fbbf24;">${(e.performances || 0).toLocaleString()}</td>
               <td style="padding:5px 6px;text-align:right;color:#4ade80;font-weight:600;">$${(e.amount || 0).toFixed(4)}</td>
             </tr>
           `).join('')}</tbody>

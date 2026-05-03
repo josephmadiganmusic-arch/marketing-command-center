@@ -930,6 +930,13 @@ function initDb() {
   db.run('CREATE INDEX IF NOT EXISTS idx_royalty_entry_stmt ON royalty_entries(statement_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_royalty_entry_user ON royalty_entries(user_id)');
 
+  // Royalty entries — extended columns for PRO/MLC/SoundExchange parsing
+  try { db.run("ALTER TABLE royalty_entries ADD COLUMN writer TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE royalty_entries ADD COLUMN performances INTEGER DEFAULT 0"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE royalty_entries ADD COLUMN work_id TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE royalty_entries ADD COLUMN royalty_type TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+  try { db.run("ALTER TABLE royalty_entries ADD COLUMN collection_source TEXT"); } catch(e) { if (!isDupColErr(e)) throw e; }
+
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN writers_json TEXT"); } catch(e) {}
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN publishers_json TEXT"); } catch(e) {}
   try { db.run("ALTER TABLE backlog_catalog ADD COLUMN primary_artist TEXT"); } catch(e) {}
@@ -7354,23 +7361,93 @@ app.post('/api/royalties/upload', requireAdminOrPartner, async (req, res) => {
     let totalAmount = 0;
     let trackCount = 0;
 
+    // Source-specific column mappings for PRO/MLC/SoundExchange statements
+    const SOURCE_COLUMN_MAPS = {
+      'BMI': {
+        title: ['work title', 'title', 'song title'],
+        artist: ['performer', 'artist'],
+        writer: ['writer', 'writer name', 'interested party'],
+        amount: ['royalty amount', 'current royalty', 'royalties', 'amount'],
+        streams: ['performances', 'detections', 'plays'],
+        work_id: ['work id', 'work #', 'work number', 'bmi work id', 'bmi work #'],
+        territory: ['territory', 'country'],
+        period: ['performance quarter', 'quarter', 'period', 'perf quarter'],
+        source: ['medium', 'use type', 'venue type', 'source'],
+        royalty_type_default: 'performance'
+      },
+      'SoundExchange': {
+        title: ['sound recording title', 'track title', 'title', 'song title', 'recording title'],
+        artist: ['featured artist', 'artist', 'performer'],
+        isrc: ['isrc', 'isrc code'],
+        amount: ['royalty', 'royalty amount', 'amount', 'total royalty', 'net amount'],
+        streams: ['performances', 'number of performances', 'plays', 'transmissions'],
+        territory: ['territory', 'country'],
+        period: ['period', 'reporting period', 'quarter'],
+        source: ['service', 'service name', 'licensee', 'platform'],
+        royalty_type_default: 'digital'
+      },
+      'MLC': {
+        title: ['song title', 'title', 'musical work', 'work title'],
+        artist: ['artist', 'performer', 'recording artist'],
+        isrc: ['isrc', 'isrc code', 'sound recording isrc'],
+        amount: ['royalty amount', 'amount', 'net amount', 'payable', 'earned'],
+        streams: ['streams', 'plays', 'units', 'quantity'],
+        work_id: ['hfa song code', 'hfa code', 'song code', 'work id'],
+        territory: ['territory', 'country'],
+        period: ['period', 'usage period', 'reporting period'],
+        source: ['service', 'service name', 'dsp', 'platform', 'digital service'],
+        royalty_type_default: 'mechanical'
+      },
+      'Songtrust': {
+        title: ['song', 'song title', 'title', 'work title', 'composition'],
+        artist: ['artist', 'performer'],
+        writer: ['writer', 'writer name', 'author'],
+        amount: ['earned amount', 'earned', 'amount', 'net amount', 'royalty'],
+        streams: ['units', 'streams', 'plays', 'quantity'],
+        territory: ['territory', 'country', 'region'],
+        period: ['collection period', 'period', 'statement period', 'quarter'],
+        source: ['source', 'income source', 'collection source', 'society', 'platform'],
+        collection_source: ['collection source', 'collecting society', 'society', 'sub source'],
+        royalty_type_default: 'performance'
+      }
+    };
+
+    const sourceMap = SOURCE_COLUMN_MAPS[source] || null;
+
+    // Source-aware column finder: tries source-specific columns first, then generic
+    const findColSmart = (obj, field, ...genericNames) => {
+      if (sourceMap && sourceMap[field]) {
+        for (const n of sourceMap[field]) {
+          for (const k of Object.keys(obj)) {
+            if (k.toLowerCase().includes(n) || k.toLowerCase() === n) return obj[k];
+          }
+        }
+      }
+      return findCol(obj, ...genericNames);
+    };
+
     for (const row of rows) {
-      const title = findCol(row, 'song', 'title', 'track', 'name') || '';
-      const artist = findCol(row, 'artist', 'performer') || '';
-      const isrc = findCol(row, 'isrc') || '';
-      const amt = parseFloat(findCol(row, 'earning', 'royalt', 'amount', 'net', 'payable', 'revenue', 'total') || '0') || 0;
-      const streams = parseInt(findCol(row, 'stream', 'play', 'quantity') || '0') || 0;
+      const title = findColSmart(row, 'title', 'song', 'title', 'track', 'name') || '';
+      const artist = findColSmart(row, 'artist', 'artist', 'performer') || '';
+      const isrc = findColSmart(row, 'isrc', 'isrc') || '';
+      const writer = findColSmart(row, 'writer', 'writer') || '';
+      const amt = parseFloat(findColSmart(row, 'amount', 'earning', 'royalt', 'amount', 'net', 'payable', 'revenue', 'total') || '0') || 0;
+      const streams = parseInt(findColSmart(row, 'streams', 'stream', 'play', 'quantity') || '0') || 0;
+      const performances = parseInt(findColSmart(row, 'streams', 'performance', 'detection', 'transmission') || '0') || 0;
       const downloads = parseInt(findCol(row, 'download') || '0') || 0;
-      const territory = findCol(row, 'territory', 'country', 'region') || '';
-      const period = findCol(row, 'period', 'month', 'date', 'reporting') || '';
-      const src = findCol(row, 'store', 'service', 'platform', 'dsp', 'source') || source || '';
+      const territory = findColSmart(row, 'territory', 'territory', 'country', 'region') || '';
+      const period = findColSmart(row, 'period', 'period', 'month', 'date', 'reporting') || '';
+      const src = findColSmart(row, 'source', 'store', 'service', 'platform', 'dsp', 'source') || source || '';
+      const workId = findColSmart(row, 'work_id', 'work id', 'hfa') || '';
+      const collectionSource = findColSmart(row, 'collection_source', 'society', 'collecting') || '';
+      const royaltyType = (sourceMap && sourceMap.royalty_type_default) || 'other';
 
       if (!title && !isrc && !amt) continue; // skip empty rows
 
       db.run(
-        `INSERT INTO royalty_entries (statement_id, user_id, song_title, artist, isrc, source, streams, downloads, amount, territory, period)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [statementId, userId, title, artist, isrc, src, streams, downloads, amt, territory, period]
+        `INSERT INTO royalty_entries (statement_id, user_id, song_title, artist, isrc, source, streams, downloads, amount, territory, period, writer, performances, work_id, royalty_type, collection_source)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [statementId, userId, title, artist, isrc, src, streams, downloads, amt, territory, period, writer, performances || streams, workId, royaltyType, collectionSource]
       );
       totalAmount += amt;
       trackCount++;
@@ -7407,9 +7484,9 @@ app.get('/api/royalties/statements/:id/entries', requireAdminOrPartner, (req, re
 app.get('/api/royalties/summary', requireAdminOrPartner, (req, res) => {
   const userId = req.user.id;
   const totals = dbHelpers.prepare(`
-    SELECT song_title, artist, isrc,
+    SELECT song_title, artist, isrc, writer,
       SUM(amount) as total_earned, SUM(streams) as total_streams,
-      SUM(downloads) as total_downloads, COUNT(*) as entries
+      SUM(downloads) as total_downloads, SUM(performances) as total_performances, COUNT(*) as entries
     FROM royalty_entries WHERE user_id = ?
     GROUP BY LOWER(song_title)
     ORDER BY total_earned DESC
@@ -7422,7 +7499,15 @@ app.get('/api/royalties/summary', requireAdminOrPartner, (req, res) => {
     GROUP BY LOWER(source) ORDER BY total DESC
   `).all(userId);
 
-  res.json({ totals, grand_total: grandTotal?.total || 0, by_source: bySource });
+  const byType = dbHelpers.prepare(`
+    SELECT royalty_type, SUM(amount) as total, SUM(streams) as streams, SUM(performances) as performances, COUNT(*) as entries
+    FROM royalty_entries WHERE user_id = ? AND royalty_type != '' AND royalty_type IS NOT NULL
+    GROUP BY royalty_type ORDER BY total DESC
+  `).all(userId);
+
+  const totalPerformances = dbHelpers.prepare('SELECT SUM(performances) as total FROM royalty_entries WHERE user_id = ?').get(userId);
+
+  res.json({ totals, grand_total: grandTotal?.total || 0, by_source: bySource, by_type: byType, total_performances: totalPerformances?.total || 0 });
 });
 
 // Delete a statement and its entries
